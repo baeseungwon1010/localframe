@@ -483,6 +483,8 @@ export class Editor {
       }
     }
 
+    this.fitGroups();
+
     // auto layout, bottom-up
     const frames = new Set<string>();
     const addChain = (pid: string | null | undefined) => {
@@ -507,6 +509,8 @@ export class Editor {
       if (out.frame !== doc.get(fid)) this.put(out.frame);
     }
 
+    this.fitGroups();
+
     // connectors whose own line or bound layers (or their ancestors) changed
     const changed = new Set(tx.keys());
     const near = (id: string | undefined) => {
@@ -529,6 +533,67 @@ export class Editor {
       if (line.endBind && !valid(line.endBind)) line = { ...line, endBind: undefined };
       line = settleLine(doc, line);
       if (line !== n) this.put(line);
+    }
+  }
+
+  /** Groups always fit their children: refit the touched ones (deepest first); empty groups go away. */
+  private fitGroups() {
+    const tx = this.tx;
+    if (!tx) return;
+    const doc = this.doc;
+    const groups = new Set<string>();
+    const addChain = (id: string | null | undefined) => {
+      let cur = id ? doc.get(id) : undefined;
+      for (let guard = 0; cur && guard < 200; guard++) {
+        if (cur.type === 'GROUP') groups.add(cur.id);
+        cur = cur.parentId ? doc.get(cur.parentId) : undefined;
+      }
+    };
+    for (const [id, before] of tx) {
+      addChain(id);
+      addChain(before?.parentId);
+    }
+    const ordered = [...groups].filter((id) => doc.has(id)).sort((a, b) => doc.depth(b) - doc.depth(a));
+    for (const gid of ordered) {
+      const g = doc.get(gid);
+      if (!g) continue;
+      const kids = doc.children(gid).map((k) => doc.get(k)!);
+      if (kids.length === 0) {
+        this.drop(gid);
+        this.selection = this.selection.filter((s) => s !== gid);
+        continue;
+      }
+      const pts = kids.flatMap((k) => {
+        const m = localMatrix(k.x, k.y, k.rotation);
+        const corners = k.type === 'LINE' ? [{ x: 0, y: 0 }, { x: k.width, y: 0 }] : [{ x: 0, y: 0 }, { x: k.width, y: 0 }, { x: k.width, y: k.height }, { x: 0, y: k.height }];
+        return corners.map((c) => apply(m, c));
+      });
+      const b = boundsOfPoints(pts);
+      const w = Math.max(0.01, round2(b.width));
+      const h = Math.max(0.01, round2(b.height));
+      if (Math.abs(b.x) < 0.005 && Math.abs(b.y) < 0.005 && w === g.width && h === g.height) continue;
+      const origin = apply(localMatrix(g.x, g.y, g.rotation), { x: b.x, y: b.y });
+      this.put({ ...g, x: round2(origin.x), y: round2(origin.y), width: w, height: h });
+      for (const k of kids) this.put({ ...k, x: round2(k.x - b.x), y: round2(k.y - b.y) });
+    }
+  }
+
+  /** Scales a layer's content in its own coordinates (for resizing groups). */
+  private scaleContent(id: string, sx: number, sy: number) {
+    for (const cid of this.doc.children(id)) {
+      const c = this.doc.get(cid)!;
+      if (c.type === 'LINE') {
+        const [a, b] = lineEnds(c);
+        this.put(lineFromEnds(c, { x: a.x * sx, y: a.y * sy }, { x: b.x * sx, y: b.y * sy }));
+        continue;
+      }
+      const w = c.rotation === 0 ? c.width * sx : c.width;
+      const h = c.rotation === 0 ? c.height * sy : c.height;
+      let next: SceneNode = { ...c, x: round2(c.x * sx), y: round2(c.y * sy), width: Math.max(0.01, round2(w)), height: Math.max(0.01, round2(h)) };
+      if (next.type === 'TEXT') next = fitText({ ...next, text: { ...next.text!, autoResize: 'height' } });
+      this.put(next);
+      if (c.type === 'GROUP') this.scaleContent(cid, sx, sy);
+      else if (canHaveChildren(c) && !c.layout && c.rotation === 0) this.applyFrameConstraints(c, c.width, c.height, next.width, next.height);
     }
   }
 
@@ -1171,7 +1236,12 @@ export class Editor {
   }
 
   /** Wraps the selection in a new frame that fits it (Ctrl/Cmd+Alt+G). */
-  wrapInFrame() {
+  /** Ctrl/Cmd+G: a group that fits the selection. */
+  groupSelection() {
+    this.wrapInFrame('GROUP');
+  }
+
+  wrapInFrame(type: 'FRAME' | 'GROUP' = 'FRAME') {
     const roots = this.selectionRoots();
     if (roots.length === 0) return;
     const parentId = this.doc.get(roots[0])!.parentId;
@@ -1182,17 +1252,16 @@ export class Editor {
     this.transact(() => {
       const sibs = this.doc.children(parentId);
       const topIndex = Math.max(...roots.map((id) => sibs.indexOf(id))) + 1;
-      const frame = {
-        ...createNode(this.doc, 'FRAME', parentId, {
-          x: round2(origin.x),
-          y: round2(origin.y),
-          width: Math.max(1, round2(b.width)),
-          height: Math.max(1, round2(b.height)),
-        }),
-        order: keyAt(this.doc, sibs, topIndex),
-        fills: [],
-        clipsContent: false,
-      };
+      const base = createNode(this.doc, type, parentId, {
+        x: round2(origin.x),
+        y: round2(origin.y),
+        width: Math.max(1, round2(b.width)),
+        height: Math.max(1, round2(b.height)),
+      });
+      const frame: SceneNode =
+        type === 'GROUP'
+          ? { ...base, order: keyAt(this.doc, sibs, topIndex) }
+          : { ...base, order: keyAt(this.doc, sibs, topIndex), fills: [], clipsContent: false };
       this.put(frame);
       const frameWorld = multiply(parentWorld, localMatrix(frame.x, frame.y, 0));
       const keys = keysOnTop(this.doc, frame.id, roots.length);
@@ -1208,9 +1277,9 @@ export class Editor {
     this.emit('selection');
   }
 
-  /** Removes the selected frames and keeps their contents in place (Ctrl/Cmd+Shift+G). */
+  /** Removes the selected groups or frames and keeps their contents in place (Ctrl/Cmd+Shift+G). */
   unwrapFrames() {
-    const frames = this.selectionRoots().filter((id) => this.doc.get(id)!.type === 'FRAME');
+    const frames = this.selectionRoots().filter((id) => ['FRAME', 'GROUP'].includes(this.doc.get(id)!.type));
     if (frames.length === 0) return;
     this.transact(() => {
       const released: string[] = [];
@@ -1848,7 +1917,9 @@ export class Editor {
       // restore all descendants first so constraints start from the originals
       for (const [id, orig] of it.originals) if (id !== o.id) this.put(orig);
       this.put(next);
-      if (canHaveChildren(o) && !o.layout) {
+      if (o.type === 'GROUP') {
+        this.scaleContent(o.id, o.width > 0 ? next.width / o.width : 1, o.height > 0 ? next.height / o.height : 1);
+      } else if (canHaveChildren(o) && !o.layout) {
         if (e.mod) {
           // Ctrl/Cmd: children stay where they are on the page
           const oldWorld = world;
@@ -1895,7 +1966,9 @@ export class Editor {
             height: Math.max(0.01, round2(o.height * sy)),
           };
           if (o.type === 'TEXT') next = fitText({ ...next, text: { ...o.text!, autoResize: 'height' } });
+          if (o.type === 'GROUP') for (const d of this.doc.descendants(o.id)) this.put(it.originals.get(d) ?? this.doc.get(d)!);
           this.put(next);
+          if (o.type === 'GROUP') this.scaleContent(o.id, sx, sy);
         } else {
           const c = map({ x: ob.x + ob.width / 2, y: ob.y + ob.height / 2 });
           const cOld = { x: ob.x + ob.width / 2, y: ob.y + ob.height / 2 };
@@ -2056,9 +2129,10 @@ export class Editor {
           this.selectAll();
           return true;
         case 'KeyG':
-          // Ctrl/Cmd+G (and +Alt) wrap in a frame; with Shift they remove the frame
+          // Ctrl/Cmd+G groups, Ctrl/Cmd+Alt+G wraps in a frame, Ctrl/Cmd+Shift+G ungroups or removes the frame
           if (shift) this.unwrapFrames();
-          else this.wrapInFrame();
+          else if (alt) this.wrapInFrame();
+          else this.groupSelection();
           return true;
         case 'KeyK':
           if (alt) {
