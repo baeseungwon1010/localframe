@@ -13,6 +13,8 @@ export class SyncQueue {
   error: string | null = null;
   private dirty = new Set<string>();
   private pagesDirty = false;
+  private stylesDirty = false;
+  private variablesDirty = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private inflight = false;
   private retryMs = 1000;
@@ -42,14 +44,20 @@ export class SyncQueue {
     this.listeners.forEach((fn) => fn());
   }
 
-  get pending() {
-    return this.dirty.size > 0 || this.pagesDirty || this.inflight;
+  private get fileDirty() {
+    return this.pagesDirty || this.stylesDirty || this.variablesDirty;
   }
 
-  private add({ patches, pagesChanged }: CommitInfo) {
+  get pending() {
+    return this.dirty.size > 0 || this.fileDirty || this.inflight;
+  }
+
+  private add({ patches, pagesChanged, stylesChanged, variablesChanged }: CommitInfo) {
     if (this.status === 'conflict') return;
     for (const p of patches) this.dirty.add(p.id);
     if (pagesChanged) this.pagesDirty = true;
+    if (stylesChanged) this.stylesDirty = true;
+    if (variablesChanged) this.variablesDirty = true;
     this.setStatus('saving');
     this.schedule(DEBOUNCE_MS);
   }
@@ -64,22 +72,35 @@ export class SyncQueue {
 
   private takeBatch() {
     const ids = [...this.dirty];
-    const pages = this.pagesDirty ? this.editor.pages : undefined;
+    const flags = { pages: this.pagesDirty, styles: this.stylesDirty, variables: this.variablesDirty };
     this.dirty.clear();
-    this.pagesDirty = false;
+    this.pagesDirty = this.stylesDirty = this.variablesDirty = false;
     const upserts = ids.map((id) => this.editor.doc.get(id)).filter((n) => n !== undefined);
     const deletes = ids.filter((id) => !this.editor.doc.has(id));
-    return { ids, pagesWereDirty: pages !== undefined, changes: { baseVersion: this.version, upserts, deletes, ...(pages ? { pages } : {}) } };
+    return {
+      ids,
+      pagesWereDirty: flags,
+      changes: {
+        baseVersion: this.version,
+        upserts,
+        deletes,
+        ...(flags.pages ? { pages: this.editor.pages } : {}),
+        ...(flags.styles ? { styles: this.editor.styles } : {}),
+        ...(flags.variables ? { variables: this.editor.variables } : {}),
+      },
+    };
   }
 
-  private restore(ids: string[], pagesWereDirty: boolean) {
+  private restore(ids: string[], flags: { pages: boolean; styles: boolean; variables: boolean }) {
     for (const id of ids) this.dirty.add(id);
-    if (pagesWereDirty) this.pagesDirty = true;
+    if (flags.pages) this.pagesDirty = true;
+    if (flags.styles) this.stylesDirty = true;
+    if (flags.variables) this.variablesDirty = true;
   }
 
   async flush(): Promise<void> {
     if (this.inflight || this.status === 'conflict') return;
-    if (this.dirty.size === 0 && !this.pagesDirty) {
+    if (this.dirty.size === 0 && !this.fileDirty) {
       if (this.status === 'saving') this.setStatus('saved');
       return;
     }
@@ -98,7 +119,7 @@ export class SyncQueue {
       this.version = res.version;
       this.retryMs = 1000;
       this.inflight = false;
-      if (this.dirty.size > 0 || this.pagesDirty) this.schedule(0);
+      if (this.dirty.size > 0 || this.fileDirty) this.schedule(0);
       else {
         this.setStatus('saved');
         this.onSaved();
@@ -122,7 +143,7 @@ export class SyncQueue {
 
   /** Best effort save when the page is closing. */
   flushOnExit() {
-    if ((this.dirty.size === 0 && !this.pagesDirty) || this.inflight || this.status === 'conflict') return;
+    if ((this.dirty.size === 0 && !this.fileDirty) || this.inflight || this.status === 'conflict') return;
     const { changes } = this.takeBatch();
     if (JSON.stringify(changes).length < KEEPALIVE_LIMIT) void api.saveChanges(this.fileId, changes, true).catch(() => {});
   }
