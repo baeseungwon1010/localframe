@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { generateKeyBetween } from 'fractional-indexing';
 
-export const NODE_TYPES = ['FRAME', 'GROUP', 'COMPONENT', 'INSTANCE', 'RECTANGLE', 'ELLIPSE', 'LINE', 'TEXT'] as const;
+export const NODE_TYPES = ['FRAME', 'GROUP', 'BOOLEAN', 'COMPONENT', 'INSTANCE', 'RECTANGLE', 'ELLIPSE', 'VECTOR', 'LINE', 'TEXT'] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
 
 const hexColor = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
@@ -153,6 +153,20 @@ export const LayoutChildSchema = z
 export type LayoutChild = z.infer<typeof LayoutChildSchema>;
 
 /** 'auto' picks the side that faces the other end of the line, every time either end moves. */
+const vpt = z.object({ x: z.number().min(-1e8).max(1e8), y: z.number().min(-1e8).max(1e8) }).strict();
+/** A path in the layer's own coordinates; `in` and `out` are absolute curve handles. */
+export const VectorSchema = z
+  .object({
+    closed: z.boolean(),
+    points: z.array(z.object({ x: vpt.shape.x, y: vpt.shape.y, in: vpt.optional(), out: vpt.optional() }).strict()).min(1).max(10_000),
+  })
+  .strict();
+export type Vector = z.infer<typeof VectorSchema>;
+export type VectorPoint = Vector['points'][number];
+
+export const BOOLEAN_OPS = ['union', 'subtract', 'intersect', 'exclude'] as const;
+export type BooleanOp = (typeof BOOLEAN_OPS)[number];
+
 export const ANCHORS = ['top', 'right', 'bottom', 'left', 'auto'] as const;
 export const BindingSchema = z.object({ nodeId: id, anchor: z.enum(ANCHORS) }).strict();
 export type Binding = z.infer<typeof BindingSchema>;
@@ -200,6 +214,10 @@ export const SceneNodeSchema = z
     startBind: BindingSchema.optional(),
     endBind: BindingSchema.optional(),
     text: TextStyleSchema.optional(),
+    vector: VectorSchema.optional(),
+    booleanOp: z.enum(BOOLEAN_OPS).optional(),
+    /** Clips the layers above it in the same parent. */
+    isMask: z.boolean().optional(),
     componentId: id.optional(),
     overrides: z
       .record(id, OverrideSchema)
@@ -212,6 +230,9 @@ export const SceneNodeSchema = z
     const container = n.type === 'FRAME' || n.type === 'COMPONENT';
     if (n.type === 'GROUP' && (n.fills.length || n.strokes.length || n.clipsContent || n.layout))
       issue('groups have no fills, strokes, clipping or auto layout');
+    if ((n.type === 'VECTOR') !== (n.vector !== undefined)) issue('VECTOR needs vector');
+    if ((n.type === 'BOOLEAN') !== (n.booleanOp !== undefined)) issue('BOOLEAN needs booleanOp');
+    if (n.type === 'BOOLEAN' && (n.clipsContent || n.layout)) issue('booleans have no clipping or auto layout');
     if (n.type === 'TEXT' && !n.text) issue('TEXT needs text');
     if (n.type !== 'TEXT' && n.text) issue('only TEXT has text');
     if (!container && n.type !== 'INSTANCE' && n.clipsContent !== undefined) issue('only frames have clipsContent');
@@ -226,7 +247,9 @@ export const SceneNodeSchema = z
 export type SceneNode = z.infer<typeof SceneNodeSchema>;
 
 /** Types whose children are stored layers. */
-export const isContainerType = (t: NodeType) => t === 'FRAME' || t === 'COMPONENT' || t === 'GROUP';
+export const isContainerType = (t: NodeType) => t === 'FRAME' || t === 'COMPONENT' || t === 'GROUP' || t === 'BOOLEAN';
+/** Containers whose box always fits their children. */
+export const fitsChildren = (t: NodeType) => t === 'GROUP' || t === 'BOOLEAN';
 /** Containers that are frames (own box, fills, clipping, auto layout, drop target). */
 export const isFrameLike = (t: NodeType) => t === 'FRAME' || t === 'COMPONENT';
 

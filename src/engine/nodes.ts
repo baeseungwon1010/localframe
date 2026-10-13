@@ -9,6 +9,8 @@ export const newId = () => crypto.randomUUID();
 export const TYPE_LABEL: Record<NodeType, string> = {
   FRAME: 'Frame',
   GROUP: 'Group',
+  BOOLEAN: 'Boolean',
+  VECTOR: 'Vector',
   COMPONENT: 'Component',
   INSTANCE: 'Instance',
   RECTANGLE: 'Rectangle',
@@ -106,6 +108,10 @@ export function createNode(
       return { ...base, componentId: '', overrides: {} };
     case 'GROUP':
       return base;
+    case 'BOOLEAN':
+      return { ...base, fills: [solid('#D9D9D9')], booleanOp: 'union' };
+    case 'VECTOR':
+      return { ...base, fills: [], strokes: [solid('#1B1D21')], strokeWeight: 2, strokeAlign: 'center', vector: { closed: false, points: [{ x: 0, y: 0 }] } };
     case 'RECTANGLE':
       return { ...base, fills: [solid('#D9D9D9')], radii: [0, 0, 0, 0] };
     case 'ELLIPSE':
