@@ -1,11 +1,13 @@
 import { type SceneNode, isContainerType, isFrameLike } from '../../shared/schema.ts';
 import type { SceneDoc } from './doc.ts';
 import { type Point, type Rect, apply, distToSegment, invert, rectsIntersect } from './math.ts';
+import { hitsVector } from './vector.ts';
 
 /** Is the world point on this node's own shape (children not included)? */
 export function hitsShape(doc: SceneDoc, n: SceneNode, p: Point, tolerance: number): boolean {
-  if (n.type === 'GROUP') return false; // a group is hit through its children
+  if (n.type === 'GROUP' || n.type === 'BOOLEAN') return false; // hit through their children
   const local = apply(invert(doc.world(n.id)), p);
+  if (n.type === 'VECTOR' && n.vector) return hitsVector(n, local, tolerance);
   if (n.type === 'LINE') {
     return distToSegment(local, { x: 0, y: 0 }, { x: n.width, y: 0 }) <= Math.max(n.strokeWeight / 2, tolerance);
   }

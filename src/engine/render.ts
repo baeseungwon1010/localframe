@@ -4,6 +4,7 @@ import { getImage } from './images.ts';
 import { instanceDoc } from './instances.ts';
 import { type Rect, localMatrix, rectsIntersect } from './math.ts';
 import { fontString, layoutText, lineOffset } from './text.ts';
+import { tracePath } from './vector.ts';
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -86,9 +87,12 @@ export function clampRadii(n: SceneNode): [number, number, number, number] {
   return r.map((v) => Math.max(0, Math.min(v, max))) as [number, number, number, number];
 }
 
-/** Outline of a layer's own shape, grown by `grow` (for shadow spread). */
-function shapePath(ctx: Ctx, n: SceneNode, grow = 0) {
-  ctx.beginPath();
+/** Adds a layer's own outline to the current path, grown by `grow` (for shadow spread). */
+function addShape(ctx: Ctx, n: SceneNode, grow = 0) {
+  if (n.type === 'VECTOR' && n.vector) {
+    tracePath(ctx, n.vector);
+    return;
+  }
   const w = Math.max(0, n.width + grow * 2);
   const h = Math.max(0, n.height + grow * 2);
   if (n.type === 'ELLIPSE') {
@@ -99,6 +103,14 @@ function shapePath(ctx: Ctx, n: SceneNode, grow = 0) {
     else ctx.rect(-grow, -grow, w, h);
   }
 }
+
+function shapePath(ctx: Ctx, n: SceneNode, grow = 0) {
+  ctx.beginPath();
+  addShape(ctx, n, grow);
+}
+
+/** Open paths can only be stroked along their centre line. */
+const strokeAlignOf = (n: SceneNode) => (n.type === 'VECTOR' && !n.vector?.closed ? 'center' : n.strokeAlign);
 
 /** Where an image lands inside a w x h box for a scale mode. */
 export function imageRect(p: ImagePaint, iw: number, ih: number, w: number, h: number): Rect {
@@ -141,10 +153,12 @@ function strokeShape(ctx: Ctx, n: SceneNode) {
   if (paints.length === 0 || n.strokeWeight <= 0) return;
   ctx.save();
   ctx.setLineDash(n.strokeDash);
-  ctx.lineJoin = 'miter';
-  if (n.strokeAlign === 'center') {
+  ctx.lineJoin = n.type === 'VECTOR' ? 'round' : 'miter';
+  ctx.lineCap = n.type === 'VECTOR' ? 'round' : 'butt';
+  const align = strokeAlignOf(n);
+  if (align === 'center') {
     ctx.lineWidth = n.strokeWeight;
-  } else if (n.strokeAlign === 'inside') {
+  } else if (align === 'inside') {
     ctx.clip();
     ctx.lineWidth = n.strokeWeight * 2;
   } else {
@@ -153,12 +167,7 @@ function strokeShape(ctx: Ctx, n: SceneNode) {
     ctx.save();
     ctx.beginPath();
     ctx.rect(-pad, -pad, n.width + pad * 2, n.height + pad * 2);
-    if (n.type === 'ELLIPSE') {
-      ctx.ellipse(n.width / 2, n.height / 2, n.width / 2, n.height / 2, 0, 0, Math.PI * 2);
-    } else {
-      const [tl, tr, br, bl] = clampRadii(n);
-      ctx.roundRect(0, 0, n.width, n.height, [tl, tr, br, bl]);
-    }
+    addShape(ctx, n);
     ctx.clip('evenodd');
     shapePath(ctx, n);
     ctx.lineWidth = n.strokeWeight * 2;
@@ -269,6 +278,14 @@ function drawBody(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions, root
     case 'GROUP':
       drawChildren(ctx, doc, n.id, { ...opts, root });
       break;
+    case 'BOOLEAN':
+      drawBoolean(ctx, doc, n, { ...opts, root });
+      break;
+    case 'VECTOR':
+      shapePath(ctx, n);
+      fillShape(ctx, n);
+      strokeShape(ctx, n);
+      break;
     case 'INSTANCE': {
       const depth = opts.depth ?? 0;
       const budget = opts.budget ?? { left: INSTANCE_DRAW_BUDGET };
@@ -295,7 +312,100 @@ function drawBody(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions, root
 // ------------------------------------------------------------------ effects
 
 /** Layers whose shadows follow their own outline (with spread); others cast the shadow of what they draw. */
-const hasShapeOutline = (n: SceneNode) => n.type === 'RECTANGLE' || n.type === 'ELLIPSE' || isBox(n);
+const hasShapeOutline = (n: SceneNode) =>
+  n.type === 'RECTANGLE' || n.type === 'ELLIPSE' || (n.type === 'VECTOR' && !!n.vector?.closed) || isBox(n);
+
+// ------------------------------------------------------------------ booleans
+
+const BOOLEAN_COMPOSITE: Record<string, GlobalCompositeOperation> = {
+  union: 'source-over',
+  subtract: 'destination-out',
+  intersect: 'destination-in',
+  exclude: 'xor',
+};
+
+/** A child's shape in solid black (its alpha is what counts). */
+function silhouette(ctx: Ctx, doc: SceneDoc, k: SceneNode, opts: DrawOptions) {
+  if (!k.visible) return;
+  if (k.type === 'RECTANGLE' || k.type === 'ELLIPSE' || k.type === 'VECTOR' || isBox(k) || k.type === 'INSTANCE') {
+    ctx.save();
+    const m = localMatrix(k.x, k.y, k.rotation);
+    ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+    shapePath(ctx, k);
+    ctx.fillStyle = '#000';
+    if (k.type === 'VECTOR' && !k.vector?.closed) {
+      ctx.lineWidth = Math.max(1, k.strokeWeight);
+      ctx.strokeStyle = '#000';
+      ctx.stroke();
+    } else ctx.fill();
+    ctx.restore();
+    return;
+  }
+  if (k.type === 'GROUP') {
+    ctx.save();
+    const m = localMatrix(k.x, k.y, k.rotation);
+    ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+    for (const id of doc.children(k.id)) silhouette(ctx, doc, doc.get(id)!, opts);
+    ctx.restore();
+    return;
+  }
+  drawNode(ctx, doc, k, opts);
+}
+
+/** The children combined by the operation, painted with the boolean's own fills. */
+function drawBoolean(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions) {
+  const kids = doc.children(n.id).map((id) => doc.get(id)!).filter((k) => k.visible);
+  if (kids.length === 0) return;
+  const layer = renderLayer(ctx, { x: -2, y: -2, width: n.width + 4, height: n.height + 4 }, (lc) => {
+    kids.forEach((k, i) => {
+      lc.globalCompositeOperation = i === 0 ? 'source-over' : BOOLEAN_COMPOSITE[n.booleanOp ?? 'union'];
+      silhouette(lc, doc, k, opts);
+    });
+    let first = true;
+    for (const p of n.fills) {
+      if (!p.visible) continue;
+      lc.globalCompositeOperation = first ? 'source-in' : 'source-atop';
+      first = false;
+      lc.beginPath();
+      lc.rect(-2, -2, n.width + 4, n.height + 4);
+      if (p.type === 'IMAGE') {
+        lc.save();
+        lc.beginPath();
+        lc.rect(0, 0, n.width, n.height);
+        fillImage(lc, n, p);
+        lc.restore();
+      } else {
+        lc.fillStyle = paintStyle(lc, p, n.width, n.height);
+        lc.fill();
+      }
+    }
+    if (first) {
+      // no visible fill: nothing shows
+      lc.globalCompositeOperation = 'destination-out';
+      lc.fillRect(-2, -2, n.width + 4, n.height + 4);
+    }
+    lc.globalCompositeOperation = 'source-over';
+  });
+  if (!layer) return;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(layer.canvas, layer.x, layer.y);
+  ctx.restore();
+}
+
+// ------------------------------------------------------------------ masks
+
+/** Clips everything drawn next to the mask layer's shape (its box if it has no outline). */
+function clipToMask(ctx: Ctx, n: SceneNode) {
+  const t = ctx.getTransform();
+  const m = localMatrix(n.x, n.y, n.rotation);
+  ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+  ctx.beginPath();
+  if (n.type === 'RECTANGLE' || n.type === 'ELLIPSE' || n.type === 'VECTOR' || isBox(n)) addShape(ctx, n);
+  else ctx.rect(0, 0, n.width, n.height);
+  ctx.clip();
+  ctx.setTransform(t);
+}
 
 function deviceScale(ctx: Ctx): number {
   const m = ctx.getTransform();
@@ -472,7 +582,20 @@ export function drawNode(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOption
 
 export function drawChildren(ctx: Ctx, doc: SceneDoc, parentId: string | null, opts: DrawOptions = {}) {
   const o = opts.root && opts.budget ? opts : { ...opts, root: opts.root ?? doc, budget: opts.budget ?? { left: INSTANCE_DRAW_BUDGET } };
-  for (const id of doc.children(parentId)) drawNode(ctx, doc, doc.get(id)!, o);
+  let masked = false;
+  for (const id of doc.children(parentId)) {
+    const n = doc.get(id)!;
+    if (n.isMask && n.visible && typeof ctx.getTransform === 'function') {
+      // a mask clips the layers above it, up to the next mask; the mask itself isn't drawn
+      if (masked) ctx.restore();
+      ctx.save();
+      masked = true;
+      clipToMask(ctx, n);
+      continue;
+    }
+    drawNode(ctx, doc, n, o);
+  }
+  if (masked) ctx.restore();
 }
 
 /** Image ids a subtree needs (including through instances), for preloading before an export. */
