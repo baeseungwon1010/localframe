@@ -117,6 +117,27 @@ describe('files api', () => {
   });
 });
 
+describe('import limits', () => {
+  it('refuses a deeply nested file quickly instead of stalling the server', async () => {
+    const nodes = Array.from({ length: 15_000 }, (_, i) => ({
+      ...rect(`f${i}`, i === 0 ? null : `f${i - 1}`),
+      type: 'FRAME' as const,
+      clipsContent: false,
+    }));
+    const t0 = Date.now();
+    const r = await call('POST', '/api/files/import', {
+      format: 'localframe-file',
+      version: 1,
+      name: 'deep',
+      background: '#FFFFFF',
+      nodes,
+    });
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toMatch(/nested more than/);
+    expect(Date.now() - t0).toBeLessThan(3000);
+  });
+});
+
 describe('local-only guards', () => {
   it('refuses writes from other origins', async () => {
     const r = await call('POST', '/api/files', {}, { Origin: 'https://evil.example' });

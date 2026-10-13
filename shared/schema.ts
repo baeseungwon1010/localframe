@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { generateKeyBetween } from 'fractional-indexing';
 
 export const NODE_TYPES = ['FRAME', 'RECTANGLE', 'ELLIPSE', 'LINE', 'TEXT'] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
@@ -6,6 +7,22 @@ export type NodeType = (typeof NODE_TYPES)[number];
 const hexColor = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
 const finite = z.number().finite();
 const id = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/);
+
+export const MAX_DEPTH = 100;
+export const MAX_NODES_PER_FILE = 100_000;
+
+/** A fractional-index order key the editor can insert next to. */
+export function isValidOrderKey(key: string): boolean {
+  if (!/^[A-Za-z][0-9A-Za-z]*$/.test(key)) return false;
+  try {
+    generateKeyBetween(key, null);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const orderKey = z.string().min(1).max(200).refine(isValidOrderKey, 'invalid order key');
 
 export const PaintSchema = z
   .object({
@@ -43,7 +60,7 @@ export const SceneNodeSchema = z
     id,
     type: z.enum(NODE_TYPES),
     parentId: id.nullable(),
-    order: z.string().min(1).max(200),
+    order: orderKey,
     name: z.string().min(1).max(500),
     visible: z.boolean(),
     locked: z.boolean(),
@@ -116,31 +133,51 @@ export const ExportedFileSchema = z
   .object({
     format: z.literal(EXPORT_FORMAT),
     version: z.literal(EXPORT_VERSION),
-    name: z.string().min(1).max(200),
+    name: z.string().trim().min(1).max(200),
     background: hexColor,
-    nodes: z.array(SceneNodeSchema).max(50_000),
+    nodes: z.array(SceneNodeSchema).max(MAX_NODES_PER_FILE),
   })
   .strict();
 export type ExportedFile = z.infer<typeof ExportedFileSchema>;
 
-/** Tree checks that need all nodes at once: parents exist, only frames have children, no cycles. */
+/**
+ * Tree checks that need all nodes at once: unique ids, parents exist, only frames have children,
+ * no cycles, nesting at most MAX_DEPTH. Linear in the number of nodes.
+ */
 export function validateTree(nodes: Iterable<SceneNode>): string | null {
   const byId = new Map<string, SceneNode>();
   for (const n of nodes) {
     if (byId.has(n.id)) return `duplicate id ${n.id}`;
     byId.set(n.id, n);
   }
-  for (const n of byId.values()) {
-    if (n.parentId === null) continue;
-    const parent = byId.get(n.parentId);
-    if (!parent) return `node ${n.id} has a missing parent`;
-    if (parent.type !== 'FRAME') return `node ${n.id} is inside a ${parent.type.toLowerCase()}`;
-    const seen = new Set<string>([n.id]);
-    let cur: SceneNode | undefined = parent;
+  if (byId.size > MAX_NODES_PER_FILE) return `more than ${MAX_NODES_PER_FILE} layers`;
+  const depth = new Map<string, number>(); // finished nodes
+  for (const start of byId.values()) {
+    if (depth.has(start.id)) continue;
+    // Walk up until a node with a known depth (or the page), then fill the path in.
+    const path: SceneNode[] = [];
+    const onPath = new Set<string>();
+    let cur: SceneNode | undefined = start;
+    let base = -1;
     while (cur) {
-      if (seen.has(cur.id)) return `cycle at ${cur.id}`;
-      seen.add(cur.id);
-      cur = cur.parentId === null ? undefined : byId.get(cur.parentId);
+      const known = depth.get(cur.id);
+      if (known !== undefined) {
+        base = known;
+        break;
+      }
+      if (onPath.has(cur.id)) return `cycle at ${cur.id}`;
+      onPath.add(cur.id);
+      path.push(cur);
+      if (cur.parentId === null) break;
+      const parent = byId.get(cur.parentId);
+      if (!parent) return `node ${cur.id} has a missing parent`;
+      if (parent.type !== 'FRAME') return `node ${cur.id} is inside a ${parent.type.toLowerCase()}`;
+      cur = parent;
+    }
+    for (let i = path.length - 1; i >= 0; i--) {
+      base += 1;
+      if (base >= MAX_DEPTH) return `layers are nested more than ${MAX_DEPTH} deep`;
+      depth.set(path[i].id, base);
     }
   }
   return null;
