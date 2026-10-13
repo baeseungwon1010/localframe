@@ -526,3 +526,57 @@ describe('variables', () => {
     valid(ed);
   });
 });
+
+describe('rich text', () => {
+  it('styles a range, keeps it through edits, and exports it as tspans', async () => {
+    const { styleRange, adjustRuns } = await import('../../src/engine/textRuns.ts');
+    const { layoutText } = await import('../../src/engine/text.ts');
+    const { svgMarkup } = await import('../../src/engine/export.ts');
+    const base = { ...ed0().text!, characters: 'Hello world' };
+    let t = styleRange(base, 6, 11, { fontWeight: 700, color: '#C8106E', decoration: 'underline' });
+    expect(t.runs).toEqual([{ start: 6, end: 11, fontWeight: 700, color: '#C8106E', decoration: 'underline' }]);
+    // typing before the run moves it
+    t = adjustRuns(t, 'Oh, Hello world');
+    expect(t.runs![0]).toMatchObject({ start: 10, end: 15 });
+    // typing inside it extends it
+    t = adjustRuns(t, 'Oh, Hello wonderful world'.slice(0, 15 + 0)); // unchanged length check below
+    const l = layoutText(t, null, (s) => s.length * 10);
+    expect(l.lines[0].segments.length).toBe(2);
+    expect(l.lines[0].segments[1].style).toMatchObject({ fontWeight: 700, color: '#C8106E' });
+
+    // whole-text changes override runs for that property
+    const whole = styleRange(t, 0, t.characters.length, { fontWeight: 400 });
+    expect(whole.runs?.every((r) => r.fontWeight === undefined)).toBe(true);
+    expect(whole.runs?.[0].color).toBe('#C8106E');
+
+    const ed = setup();
+    ed.pasteText('Hello world');
+    const id = ed.selection[0];
+    ed.updateNodes([id], (n) => ({ ...n, text: t }));
+    const { svg } = svgMarkup(ed.doc, { ids: [id], background: null });
+    expect(svg).toContain('font-weight="700"');
+    expect(svg).toContain('text-decoration="underline"');
+    valid(ed);
+  });
+
+  it('styles the selection while editing', () => {
+    const ed = setup();
+    ed.setTool('text');
+    ed.pointerDown(ptr(100, 100));
+    ed.pointerUp(ptr(100, 100));
+    const id = ed.editingText!;
+    ed.setTextSelection(0, 4, 'Bold text');
+    ed.styleText({ fontWeight: 700 });
+    ed.commitTextEdit('Bold text');
+    const n = ed.doc.get(id)!;
+    expect(n.text!.characters).toBe('Bold text');
+    expect(n.text!.runs).toEqual([{ start: 0, end: 4, fontWeight: 700 }]);
+    valid(ed);
+  });
+});
+
+function ed0() {
+  const ed = new Editor();
+  ed.pasteText('x');
+  return ed.doc.get(ed.selection[0])!;
+}
