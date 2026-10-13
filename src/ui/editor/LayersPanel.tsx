@@ -34,6 +34,7 @@ export function LayersPanel({ editor }: { editor: Editor }) {
   const [drag, setDrag] = useState<{ ids: string[]; startY: number; active: boolean; drop: Drop | null } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const anchor = useRef<string | null>(null);
+  const justDragged = useRef(false);
 
   // expand ancestors of the selection so it is visible
   useEffect(() => {
@@ -133,7 +134,11 @@ export function LayersPanel({ editor }: { editor: Editor }) {
       setDrag({ ...drag, active: true, drop: computeDrop(e.clientY, drag.ids) });
     };
     const onUp = () => {
-      if (drag.active && drag.drop) editor.moveInTree(drag.ids, drag.drop.parentId, drag.drop.index);
+      if (drag.active) {
+        justDragged.current = true;
+        setTimeout(() => (justDragged.current = false), 0);
+        if (drag.drop) editor.moveInTree(drag.ids, drag.drop.parentId, drag.drop.index);
+      }
       setDrag(null);
     };
     window.addEventListener('pointermove', onMove);
@@ -216,7 +221,7 @@ export function LayersPanel({ editor }: { editor: Editor }) {
                 onPointerEnter={() => !drag?.active && editor.setHover(id)}
                 onPointerLeave={() => editor.setHover(null)}
                 onPointerDown={(e) => onRowPointerDown(e, id)}
-                onClick={(e) => select(id, e)}
+                onClick={(e) => !justDragged.current && select(id, e)}
                 onDoubleClick={() => setRenaming(id)}
               >
                 <button

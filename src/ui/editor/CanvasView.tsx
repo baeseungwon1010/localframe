@@ -5,7 +5,7 @@ import { multiply } from '../../engine/math.ts';
 import { type OverlayColors, renderEditor } from '../../engine/overlay.ts';
 import { paintCss } from '../../engine/render.ts';
 import { fontStack, layoutText, lineHeightPx } from '../../engine/text.ts';
-import { ALT, MOD, Menu, type MenuItem, SHIFT } from '../components.tsx';
+import { MOD, Menu, type MenuItem, SHIFT } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
 
 function readColors(): OverlayColors {
@@ -191,7 +191,13 @@ export function CanvasView({ editor, onReady }: { editor: Editor; onReady: () =>
     { label: 'Send backward', shortcut: `${MOD}[`, disabled: !hasSel, onSelect: () => editor.reorder('backward') },
     { label: 'Send to back', shortcut: `${MOD}${SHIFT}[`, disabled: !hasSel, onSelect: () => editor.reorder('back') },
     'separator',
-    { label: 'Wrap in frame', shortcut: `${MOD}${ALT}G`, disabled: !hasSel, onSelect: () => editor.wrapInFrame() },
+    { label: 'Wrap in frame', shortcut: `${MOD}G`, disabled: !hasSel, onSelect: () => editor.wrapInFrame() },
+    {
+      label: 'Remove frame',
+      shortcut: `${MOD}${SHIFT}G`,
+      disabled: !sel.some((n) => n.type === 'FRAME'),
+      onSelect: () => editor.unwrapFrames(),
+    },
     'separator',
     {
       label: sel.some((n) => n.visible) ? 'Hide' : 'Show',

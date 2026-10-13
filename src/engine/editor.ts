@@ -33,7 +33,7 @@ import {
   round2,
   unionRects,
 } from './math.ts';
-import { canHaveChildren, createNode, keyAt, keyOnTop, keysOnTop, newId, nextName } from './nodes.ts';
+import { canHaveChildren, createNode, keyAt, keyOnTop, keysAbove, keysOnTop, newId, nextName } from './nodes.ts';
 import { layoutText } from './text.ts';
 
 export type Tool = 'move' | 'hand' | 'frame' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'text';
@@ -630,6 +630,30 @@ export class Editor {
           this.put({ ...reparentKeepWorld(n, parentWorld, frameWorld), parentId: frame.id, order: keys[i] });
         });
       this.selection = [frame.id];
+    });
+    this.emit('selection');
+  }
+
+  /** Removes the selected frames and keeps their contents in place (Ctrl/Cmd+Shift+G). */
+  unwrapFrames() {
+    const frames = this.selectionRoots().filter((id) => this.doc.get(id)!.type === 'FRAME');
+    if (frames.length === 0) return;
+    this.transact(() => {
+      const released: string[] = [];
+      for (const fid of frames) {
+        const f = this.doc.get(fid)!;
+        const kids = this.doc.children(fid);
+        const frameWorld = this.doc.world(fid);
+        const parentWorld = this.doc.parentWorld(f);
+        const keys = kids.length ? keysAbove(this.doc, fid, kids.length) : [];
+        kids.forEach((cid, i) => {
+          const c = this.doc.get(cid)!;
+          this.put({ ...reparentKeepWorld(c, frameWorld, parentWorld), parentId: f.parentId, order: keys[i] });
+          released.push(cid);
+        });
+        this.drop(fid);
+      }
+      this.selection = released;
     });
     this.emit('selection');
   }
@@ -1363,11 +1387,10 @@ export class Editor {
           this.selectAll();
           return true;
         case 'KeyG':
-          if (alt) {
-            this.wrapInFrame();
-            return true;
-          }
-          return false;
+          // Ctrl/Cmd+G (and +Alt) wrap in a frame; with Shift they remove the frame
+          if (shift) this.unwrapFrames();
+          else this.wrapInFrame();
+          return true;
         case 'BracketRight':
           this.reorder(shift || alt ? 'front' : 'forward');
           return true;

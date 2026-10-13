@@ -47,6 +47,15 @@ export function keyAt(doc: SceneDoc, siblings: string[], index: number, exclude:
   return generateKeyBetween(before, after);
 }
 
+/** `n` keys right above sibling `id` (between it and the next sibling up). */
+export function keysAbove(doc: SceneDoc, id: string, n: number): string[] {
+  const node = doc.get(id)!;
+  const sibs = doc.children(node.parentId);
+  const i = sibs.indexOf(id);
+  const after = i + 1 < sibs.length ? doc.get(sibs[i + 1])!.order : null;
+  return generateNKeysBetween(node.order, after, n);
+}
+
 export function nextName(doc: SceneDoc, typeOrLabel: NodeType | string): string {
   const label = (TYPE_LABEL as Record<string, string>)[typeOrLabel] ?? typeOrLabel;
   const re = new RegExp(`^${label} (\\d+)$`);
