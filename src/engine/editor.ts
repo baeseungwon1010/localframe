@@ -70,6 +70,7 @@ import {
 } from './math.ts';
 import { canHaveChildren, createNode, fitText, keyAt, keyOnTop, keysAbove, keysOnTop, newId, nextName } from './nodes.ts';
 import { canvasMeasure } from './text.ts';
+import { type RunProps, adjustRuns, styleRange } from './textRuns.ts';
 import { fitVector, scaleVector } from './vector.ts';
 
 export { fitText };
@@ -1838,7 +1839,40 @@ export class Editor {
   }
 
   /** Ends editing. Empty text removes the layer. Joins the creation step if the layer was just created. */
+  /** Selection in the text being edited, and the text typed so far (set by the text editor overlay). */
+  textSelection: { start: number; end: number } | null = null;
+  textDraft: string | null = null;
+
+  setTextSelection(start: number, end: number, draft: string) {
+    this.textDraft = draft;
+    const next = end > start ? { start, end } : null;
+    if (JSON.stringify(next) === JSON.stringify(this.textSelection)) return;
+    this.textSelection = next;
+    this.emit('selection');
+  }
+
+  /**
+   * Styles text: the selected range while editing, otherwise the whole text of the selected layers.
+   * While editing, the typed text is saved first so the range lines up.
+   */
+  styleText(patch: RunProps) {
+    const editing = this.editingText ? this.doc.get(this.editingText) : undefined;
+    if (editing?.text && this.textSelection) {
+      const draft = this.textDraft ?? editing.text.characters;
+      const sel = this.textSelection;
+      this.transact(() => {
+        const t = adjustRuns(editing.text!, draft);
+        this.put(fitText({ ...editing, text: styleRange(t, sel.start, sel.end, patch) }));
+      });
+      return;
+    }
+    const ids = this.selection.filter((id) => this.doc.get(id)?.type === 'TEXT');
+    this.updateNodes(ids, (n) => ({ ...n, text: styleRange(n.text!, 0, n.text!.characters.length, patch) }));
+  }
+
   commitTextEdit(characters: string) {
+    this.textSelection = null;
+    this.textDraft = null;
     const id = this.editingText;
     if (!id) return;
     this.editingText = null;
@@ -1848,7 +1882,7 @@ export class Editor {
         if (characters.trim() === '') {
           this.drop(id);
           this.selection = [];
-        } else this.put(fitText({ ...n, text: { ...n.text!, characters } }));
+        } else this.put(fitText({ ...n, text: adjustRuns(n.text!, characters) }));
       });
       this.mergeLastTwoIfSameNode(id);
     }
