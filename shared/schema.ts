@@ -1,15 +1,23 @@
 import { z } from 'zod';
 import { generateKeyBetween } from 'fractional-indexing';
 
-export const NODE_TYPES = ['FRAME', 'RECTANGLE', 'ELLIPSE', 'LINE', 'TEXT'] as const;
+export const NODE_TYPES = ['FRAME', 'COMPONENT', 'INSTANCE', 'RECTANGLE', 'ELLIPSE', 'LINE', 'TEXT'] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
 
 const hexColor = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
 const finite = z.number().finite();
-const id = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/);
+export const IdSchema = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/);
+const id = IdSchema;
+/** Images are stored by the SHA-256 of their bytes. */
+export const ImageIdSchema = z.string().regex(/^[0-9a-f]{64}$/);
 
 export const MAX_DEPTH = 100;
 export const MAX_NODES_PER_FILE = 100_000;
+export const MAX_PAGES = 100;
+export const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const;
+export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+/** An exported file carries its images, so imports may be larger than other requests. */
+export const MAX_IMPORT_BYTES = 150 * 1024 * 1024;
 
 /** A fractional-index order key the editor can insert next to. */
 export function isValidOrderKey(key: string): boolean {
@@ -24,14 +32,30 @@ export function isValidOrderKey(key: string): boolean {
 
 const orderKey = z.string().min(1).max(200).refine(isValidOrderKey, 'invalid order key');
 
-export const PaintSchema = z
+export const SolidPaintSchema = z
   .object({
+    type: z.literal('SOLID').optional(),
     color: hexColor,
     opacity: z.number().min(0).max(1),
     visible: z.boolean(),
   })
   .strict();
+
+export const ImagePaintSchema = z
+  .object({
+    type: z.literal('IMAGE'),
+    imageId: ImageIdSchema,
+    scaleMode: z.enum(['fill', 'fit', 'stretch']),
+    opacity: z.number().min(0).max(1),
+    visible: z.boolean(),
+  })
+  .strict();
+
+export const PaintSchema = z.union([ImagePaintSchema, SolidPaintSchema]);
+export type SolidPaint = z.infer<typeof SolidPaintSchema>;
+export type ImagePaint = z.infer<typeof ImagePaintSchema>;
 export type Paint = z.infer<typeof PaintSchema>;
+export const isImagePaint = (p: Paint): p is ImagePaint => p.type === 'IMAGE';
 
 export const TextStyleSchema = z
   .object({
@@ -55,11 +79,51 @@ export const ConstraintsSchema = z
   .strict();
 export type Constraints = z.infer<typeof ConstraintsSchema>;
 
+/** Auto layout on a frame or component. */
+export const LayoutSchema = z
+  .object({
+    mode: z.enum(['horizontal', 'vertical']),
+    gap: z.number().min(-10_000).max(10_000),
+    padding: z.tuple([finite, finite, finite, finite]), // top, right, bottom, left
+    primaryAlign: z.enum(['start', 'center', 'end', 'space-between']),
+    crossAlign: z.enum(['start', 'center', 'end', 'stretch']),
+    widthMode: z.enum(['fixed', 'hug']),
+    heightMode: z.enum(['fixed', 'hug']),
+  })
+  .strict();
+export type Layout = z.infer<typeof LayoutSchema>;
+
+/** How a child of an auto layout frame is sized and placed. */
+export const LayoutChildSchema = z
+  .object({
+    horizontal: z.enum(['fixed', 'fill']),
+    vertical: z.enum(['fixed', 'fill']),
+    absolute: z.boolean(),
+  })
+  .strict();
+export type LayoutChild = z.infer<typeof LayoutChildSchema>;
+
+/** 'auto' picks the side that faces the other end of the line, every time either end moves. */
+export const ANCHORS = ['top', 'right', 'bottom', 'left', 'auto'] as const;
+export const BindingSchema = z.object({ nodeId: id, anchor: z.enum(ANCHORS) }).strict();
+export type Binding = z.infer<typeof BindingSchema>;
+
+export const OverrideSchema = z
+  .object({
+    characters: z.string().max(100_000).optional(),
+    fills: z.array(PaintSchema).max(16).optional(),
+    visible: z.boolean().optional(),
+  })
+  .strict();
+export type Override = z.infer<typeof OverrideSchema>;
+
 export const SceneNodeSchema = z
   .object({
     id,
     type: z.enum(NODE_TYPES),
     parentId: id.nullable(),
+    /** Page of a top-level node. Missing means the first page. Children inherit their parent's page. */
+    pageId: id.optional(),
     order: orderKey,
     name: z.string().min(1).max(500),
     visible: z.boolean(),
@@ -72,34 +136,66 @@ export const SceneNodeSchema = z
     height: z.number().min(0).max(1e7),
     rotation: z.number().min(-360).max(360),
     fills: z.array(PaintSchema).max(16),
-    strokes: z.array(PaintSchema).max(16),
+    strokes: z.array(SolidPaintSchema).max(16),
     strokeWeight: z.number().min(0).max(1000),
     strokeAlign: z.enum(['inside', 'center', 'outside']),
     strokeDash: z.array(z.number().min(0).max(1000)).max(8),
     radii: z.tuple([finite, finite, finite, finite]).optional(),
     clipsContent: z.boolean().optional(),
     constraints: ConstraintsSchema.optional(),
+    layout: LayoutSchema.optional(),
+    layoutChild: LayoutChildSchema.optional(),
     arrowStart: z.boolean().optional(),
     arrowEnd: z.boolean().optional(),
+    startBind: BindingSchema.optional(),
+    endBind: BindingSchema.optional(),
     text: TextStyleSchema.optional(),
+    componentId: id.optional(),
+    overrides: z
+      .record(id, OverrideSchema)
+      .refine((o) => Object.keys(o).length <= 2000, 'too many overrides')
+      .optional(),
   })
   .strict()
   .superRefine((n, ctx) => {
-    if (n.type === 'TEXT' && !n.text) ctx.addIssue({ code: 'custom', message: 'TEXT needs text' });
-    if (n.type !== 'TEXT' && n.text) ctx.addIssue({ code: 'custom', message: 'only TEXT has text' });
-    if (n.type !== 'FRAME' && n.clipsContent !== undefined)
-      ctx.addIssue({ code: 'custom', message: 'only FRAME has clipsContent' });
-    if (n.type !== 'LINE' && (n.arrowStart !== undefined || n.arrowEnd !== undefined))
-      ctx.addIssue({ code: 'custom', message: 'only LINE has arrows' });
-    if (n.parentId === n.id) ctx.addIssue({ code: 'custom', message: 'node cannot be its own parent' });
+    const issue = (message: string) => ctx.addIssue({ code: 'custom', message });
+    const container = n.type === 'FRAME' || n.type === 'COMPONENT';
+    if (n.type === 'TEXT' && !n.text) issue('TEXT needs text');
+    if (n.type !== 'TEXT' && n.text) issue('only TEXT has text');
+    if (!container && n.type !== 'INSTANCE' && n.clipsContent !== undefined) issue('only frames have clipsContent');
+    if (!container && n.layout) issue('only frames have auto layout');
+    if (n.type !== 'LINE' && (n.arrowStart !== undefined || n.arrowEnd !== undefined)) issue('only LINE has arrows');
+    if (n.type !== 'LINE' && (n.startBind || n.endBind)) issue('only LINE has bindings');
+    if ((n.type === 'INSTANCE') !== (n.componentId !== undefined)) issue('INSTANCE needs componentId');
+    if (n.type !== 'INSTANCE' && n.overrides) issue('only INSTANCE has overrides');
+    if (n.parentId === n.id) issue('node cannot be its own parent');
+    if (n.parentId !== null && n.pageId !== undefined) issue('only top-level layers have a page');
   });
 export type SceneNode = z.infer<typeof SceneNodeSchema>;
+
+export const isContainerType = (t: NodeType) => t === 'FRAME' || t === 'COMPONENT';
+
+export const PageSchema = z
+  .object({
+    id,
+    name: z.string().trim().min(1).max(200),
+    background: hexColor,
+  })
+  .strict();
+export type Page = z.infer<typeof PageSchema>;
+
+export const PagesSchema = z
+  .array(PageSchema)
+  .min(1)
+  .max(MAX_PAGES)
+  .refine((pages) => new Set(pages.map((p) => p.id)).size === pages.length, 'duplicate page id');
 
 export const FileMetaSchema = z
   .object({
     id,
     name: z.string().min(1).max(200),
     background: hexColor,
+    pages: PagesSchema,
     version: z.number().int().min(0),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -109,15 +205,14 @@ export const FileMetaSchema = z
 export type FileMeta = z.infer<typeof FileMetaSchema>;
 
 export const CreateFileSchema = z.object({ name: z.string().trim().min(1).max(200).optional() }).strict();
-export const UpdateFileSchema = z
-  .object({ name: z.string().trim().min(1).max(200).optional(), background: hexColor.optional() })
-  .strict();
+export const UpdateFileSchema = z.object({ name: z.string().trim().min(1).max(200).optional() }).strict();
 
 export const ChangesSchema = z
   .object({
     baseVersion: z.number().int().min(0),
     upserts: z.array(SceneNodeSchema).max(50_000),
     deletes: z.array(id).max(50_000),
+    pages: PagesSchema.optional(),
   })
   .strict();
 export type Changes = z.infer<typeof ChangesSchema>;
@@ -127,31 +222,59 @@ export const ThumbnailSchema = z
   .strict();
 
 export const EXPORT_FORMAT = 'localframe-file';
-export const EXPORT_VERSION = 1;
+export const EXPORT_VERSION = 2;
+
+export const ExportedImageSchema = z
+  .object({
+    id: ImageIdSchema,
+    mime: z.enum(IMAGE_TYPES),
+    data: z.string().max(Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 4).regex(/^[A-Za-z0-9+/=]*$/),
+  })
+  .strict();
 
 export const ExportedFileSchema = z
   .object({
     format: z.literal(EXPORT_FORMAT),
-    version: z.literal(EXPORT_VERSION),
+    version: z.union([z.literal(1), z.literal(2)]),
     name: z.string().trim().min(1).max(200),
     background: hexColor,
+    pages: PagesSchema.optional(),
     nodes: z.array(SceneNodeSchema).max(MAX_NODES_PER_FILE),
+    images: z.array(ExportedImageSchema).max(500).optional(),
   })
   .strict();
 export type ExportedFile = z.infer<typeof ExportedFileSchema>;
 
+/** Recognises image bytes by their signature; SVG and anything else is refused. */
+export function sniffImage(bytes: Uint8Array): (typeof IMAGE_TYPES)[number] | null {
+  const b = (i: number) => bytes[i];
+  if (bytes.length > 8 && b(0) === 0x89 && b(1) === 0x50 && b(2) === 0x4e && b(3) === 0x47) return 'image/png';
+  if (bytes.length > 3 && b(0) === 0xff && b(1) === 0xd8 && b(2) === 0xff) return 'image/jpeg';
+  if (bytes.length > 12 && String.fromCharCode(b(0), b(1), b(2), b(3)) === 'RIFF' && String.fromCharCode(b(8), b(9), b(10), b(11)) === 'WEBP')
+    return 'image/webp';
+  if (bytes.length > 6) {
+    const sig = String.fromCharCode(b(0), b(1), b(2), b(3), b(4), b(5));
+    if (sig === 'GIF89a' || sig === 'GIF87a') return 'image/gif';
+  }
+  return null;
+}
+
 /**
- * Tree checks that need all nodes at once: unique ids, parents exist, only frames have children,
- * no cycles, nesting at most MAX_DEPTH. Linear in the number of nodes.
+ * Checks that need all nodes at once: unique ids, parents exist, only frames and components have children,
+ * no cycles, nesting at most MAX_DEPTH, top-level layers on known pages, and no component that contains an
+ * instance of itself (directly or through other components). Linear in the number of nodes.
  */
-export function validateTree(nodes: Iterable<SceneNode>): string | null {
+export function validateTree(nodes: Iterable<SceneNode>, pages?: Page[]): string | null {
   const byId = new Map<string, SceneNode>();
   for (const n of nodes) {
     if (byId.has(n.id)) return `duplicate id ${n.id}`;
     byId.set(n.id, n);
   }
   if (byId.size > MAX_NODES_PER_FILE) return `more than ${MAX_NODES_PER_FILE} layers`;
+  const pageIds = pages ? new Set(pages.map((p) => p.id)) : null;
   const depth = new Map<string, number>(); // finished nodes
+  // nearest component ancestor of each finished node (null = none)
+  const owner = new Map<string, string | null>();
   for (const start of byId.values()) {
     if (depth.has(start.id)) continue;
     // Walk up until a node with a known depth (or the page), then fill the path in.
@@ -159,25 +282,65 @@ export function validateTree(nodes: Iterable<SceneNode>): string | null {
     const onPath = new Set<string>();
     let cur: SceneNode | undefined = start;
     let base = -1;
+    let baseOwner: string | null = null;
     while (cur) {
       const known = depth.get(cur.id);
       if (known !== undefined) {
         base = known;
+        baseOwner = cur.type === 'COMPONENT' ? cur.id : (owner.get(cur.id) ?? null);
         break;
       }
       if (onPath.has(cur.id)) return `cycle at ${cur.id}`;
       onPath.add(cur.id);
       path.push(cur);
-      if (cur.parentId === null) break;
+      if (cur.parentId === null) {
+        if (pageIds && cur.pageId !== undefined && !pageIds.has(cur.pageId)) return `node ${cur.id} is on a missing page`;
+        break;
+      }
       const parent = byId.get(cur.parentId);
       if (!parent) return `node ${cur.id} has a missing parent`;
-      if (parent.type !== 'FRAME') return `node ${cur.id} is inside a ${parent.type.toLowerCase()}`;
+      if (!isContainerType(parent.type)) return `node ${cur.id} is inside a ${parent.type.toLowerCase()}`;
       cur = parent;
     }
     for (let i = path.length - 1; i >= 0; i--) {
       base += 1;
       if (base >= MAX_DEPTH) return `layers are nested more than ${MAX_DEPTH} deep`;
       depth.set(path[i].id, base);
+      owner.set(path[i].id, baseOwner);
+      if (path[i].type === 'COMPONENT') baseOwner = path[i].id;
+    }
+  }
+  // component graph: component -> components it uses through instances
+  const uses = new Map<string, Set<string>>();
+  for (const n of byId.values()) {
+    if (n.type !== 'INSTANCE' || !n.componentId) continue;
+    const target = byId.get(n.componentId);
+    if (target && target.type !== 'COMPONENT') return `instance ${n.id} points at a ${target.type.toLowerCase()}`;
+    const from = owner.get(n.id);
+    if (from) {
+      if (!uses.has(from)) uses.set(from, new Set());
+      uses.get(from)!.add(n.componentId);
+    }
+  }
+  const state = new Map<string, 1 | 2>(); // 1 = visiting, 2 = done
+  for (const startId of uses.keys()) {
+    if (state.get(startId) === 2) continue;
+    const stack: [string, Iterator<string>][] = [[startId, (uses.get(startId) ?? new Set<string>()).values()]];
+    state.set(startId, 1);
+    while (stack.length) {
+      const [cid, it] = stack[stack.length - 1];
+      const next = it.next();
+      if (next.done) {
+        state.set(cid, 2);
+        stack.pop();
+        continue;
+      }
+      const s = state.get(next.value);
+      if (s === 1) return `component ${next.value} contains an instance of itself`;
+      if (s === undefined) {
+        state.set(next.value, 1);
+        stack.push([next.value, (uses.get(next.value) ?? new Set<string>()).values()]);
+      }
     }
   }
   return null;
