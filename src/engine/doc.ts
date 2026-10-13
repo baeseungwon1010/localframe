@@ -91,11 +91,11 @@ export class SceneDoc {
   ancestors(id: string): string[] {
     const out: string[] = [];
     let cur = this.nodes.get(id);
-    while (cur && cur.parentId !== null) {
-      out.unshift(cur.parentId);
+    while (cur && cur.parentId !== null && out.length <= 10_000) {
+      out.push(cur.parentId);
       cur = this.nodes.get(cur.parentId);
     }
-    return out;
+    return out.reverse();
   }
 
   isAncestor(ancestorId: string, id: string): boolean {
@@ -107,15 +107,16 @@ export class SceneDoc {
     return false;
   }
 
+  /** All nodes under `id`, depth first (iterative, so deep trees cannot overflow the stack). */
   descendants(id: string): string[] {
     const out: string[] = [];
-    const walk = (pid: string) => {
-      for (const c of this.children(pid)) {
-        out.push(c);
-        walk(c);
-      }
-    };
-    walk(id);
+    const stack = [...this.children(id)].reverse();
+    while (stack.length) {
+      const c = stack.pop()!;
+      out.push(c);
+      const kids = this.children(c);
+      for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]);
+    }
     return out;
   }
 
@@ -127,11 +128,29 @@ export class SceneDoc {
   world(id: string): Mat {
     const cached = this.worldCache.get(id);
     if (cached) return cached;
-    const n = this.nodes.get(id);
-    if (!n) return IDENTITY;
-    const local = localMatrix(n.x, n.y, n.rotation);
-    const m = n.parentId === null ? local : multiply(this.world(n.parentId), local);
-    this.worldCache.set(id, m);
+    // Collect the uncached ancestors, then compose top-down (no recursion).
+    const chain: SceneNode[] = [];
+    let cur = this.nodes.get(id);
+    let base: Mat = IDENTITY;
+    const seen = new Set<string>();
+    while (cur) {
+      const c = this.worldCache.get(cur.id);
+      if (c) {
+        base = c;
+        break;
+      }
+      if (seen.has(cur.id)) break; // a cycle; never valid, but don't hang
+      seen.add(cur.id);
+      chain.push(cur);
+      cur = cur.parentId === null ? undefined : this.nodes.get(cur.parentId);
+    }
+    if (chain.length === 0) return base;
+    let m = base;
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const n = chain[i];
+      m = multiply(m, localMatrix(n.x, n.y, n.rotation));
+      this.worldCache.set(n.id, m);
+    }
     return m;
   }
 
