@@ -7,6 +7,7 @@ import { type Mat, type Rect, IDENTITY, localMatrix, unionRects } from './math.t
 import { buildPdf, type PdfPage } from './pdf.ts';
 import { arrowSize, clampRadii, drawNode, effectReach, imageRect, imagesUsed } from './render.ts';
 import { fontStack, layoutText, lineOffset } from './text.ts';
+import { svgPathData } from './vector.ts';
 
 export type ExportTarget = { ids: string[]; background: string | null };
 export type RasterFormat = 'png' | 'jpg' | 'webp';
@@ -158,6 +159,7 @@ function roundedRectPath(n: SceneNode): string {
 }
 
 function shapeElement(n: SceneNode, attrs: string): string {
+  if (n.type === 'VECTOR' && n.vector) return `<path d="${svgPathData(n.vector)}"${attrs}/>`;
   if (n.type === 'ELLIPSE') {
     return `<ellipse cx="${num(n.width / 2)}" cy="${num(n.height / 2)}" rx="${num(n.width / 2)}" ry="${num(n.height / 2)}"${attrs}/>`;
   }
@@ -293,13 +295,15 @@ class SvgWriter {
     let wrapOpen = '';
     let wrapClose = '';
     let width = n.strokeWeight;
-    if (n.strokeAlign === 'inside') {
+    const align = n.type === 'VECTOR' && !n.vector?.closed ? 'center' : n.strokeAlign;
+    const caps = n.type === 'VECTOR' ? ' stroke-linecap="round" stroke-linejoin="round"' : '';
+    if (align === 'inside') {
       const cid = this.id('clip');
       this.defs.push(`<clipPath id="${cid}">${shapeElement(n, '')}</clipPath>`);
       wrapOpen = `<g clip-path="url(#${cid})">`;
       wrapClose = '</g>';
       width *= 2;
-    } else if (n.strokeAlign === 'outside') {
+    } else if (align === 'outside') {
       const mid = this.id('mask');
       const pad = n.strokeWeight * 2 + 2;
       this.defs.push(
@@ -312,7 +316,7 @@ class SvgWriter {
       wrapClose = '</g>';
       width *= 2;
     }
-    for (const p of paints) out.push(shapeElement(n, ` fill="none"${this.paint(p, 'stroke', n.width, n.height)} stroke-width="${num(width)}"${dash}`));
+    for (const p of paints) out.push(shapeElement(n, ` fill="none"${this.paint(p, 'stroke', n.width, n.height)} stroke-width="${num(width)}"${dash}${caps}`));
     return wrapOpen + out.join('') + wrapClose;
   }
 
@@ -363,8 +367,74 @@ class SvgWriter {
       .join('');
   }
 
+  /** Children in order; a mask clips the siblings above it. */
+  private kids(doc: SceneDoc, parentId: string, depth: number): string {
+    let out = '';
+    let open = false;
+    for (const id of doc.children(parentId)) {
+      const k = doc.get(id)!;
+      if (k.isMask && k.visible) {
+        if (open) out += '</g>';
+        const cid = this.id('mask');
+        const t = matrixAttr(localMatrix(k.x, k.y, k.rotation));
+        const shape =
+          k.type === 'RECTANGLE' || k.type === 'ELLIPSE' || k.type === 'VECTOR' || k.type === 'FRAME' || k.type === 'COMPONENT'
+            ? shapeElement(k, t)
+            : `<rect width="${num(k.width)}" height="${num(k.height)}"${t}/>`;
+        this.defs.push(`<clipPath id="${cid}">${shape}</clipPath>`);
+        out += `<g clip-path="url(#${cid})">`;
+        open = true;
+        continue;
+      }
+      out += this.node(doc, k, depth);
+    }
+    return open ? out + '</g>' : out;
+  }
+
+  /** A layer's shape in one colour, for boolean masks. */
+  private silhouette(doc: SceneDoc, k: SceneNode, color: string): string {
+    if (!k.visible) return '';
+    const t = matrixAttr(localMatrix(k.x, k.y, k.rotation));
+    if (k.type === 'GROUP' || k.type === 'BOOLEAN')
+      return `<g${t}>${doc.children(k.id).map((c) => this.silhouette(doc, doc.get(c)!, color)).join('')}</g>`;
+    if (k.type === 'VECTOR' && !k.vector?.closed)
+      return `<g${t}>${shapeElement(k, ` fill="none" stroke="${color}" stroke-width="${num(Math.max(1, k.strokeWeight))}"`)}</g>`;
+    if (k.type === 'RECTANGLE' || k.type === 'ELLIPSE' || k.type === 'VECTOR' || k.type === 'FRAME' || k.type === 'COMPONENT')
+      return `<g${t}>${shapeElement(k, ` fill="${color}"`)}</g>`;
+    return `<g${t}><rect width="${num(k.width)}" height="${num(k.height)}" fill="${color}"/></g>`;
+  }
+
+  private boolean(doc: SceneDoc, n: SceneNode): string {
+    const kids = doc.children(n.id).map((id) => doc.get(id)!).filter((k) => k.visible);
+    if (kids.length === 0) return '';
+    const pad = 2;
+    const region = `maskUnits="userSpaceOnUse" x="${num(-pad)}" y="${num(-pad)}" width="${num(n.width + pad * 2)}" height="${num(n.height + pad * 2)}"`;
+    const mask = (content: string) => {
+      const id = this.id('bool');
+      this.defs.push(`<mask id="${id}" ${region}>${content}</mask>`);
+      return id;
+    };
+    const white = (k: SceneNode) => this.silhouette(doc, k, '#fff');
+    const black = (k: SceneNode) => this.silhouette(doc, k, '#000');
+    let content: string;
+    const op = n.booleanOp ?? 'union';
+    if (op === 'union') content = kids.map(white).join('');
+    else if (op === 'subtract') content = white(kids[0]) + kids.slice(1).map(black).join('');
+    else if (op === 'intersect') {
+      content = white(kids[0]);
+      for (const k of kids.slice(1)) content = `<g mask="url(#${mask(white(k))})">${content}</g>`;
+    } else {
+      // exclude: everything once, minus where the first two overlap
+      const overlap = `<g mask="url(#${mask(white(kids[1] ?? kids[0]))})">${black(kids[0])}</g>`;
+      content = kids.map(white).join('') + (kids.length > 1 ? overlap : '');
+    }
+    const id = mask(content);
+    const box: SceneNode = { ...n, type: 'RECTANGLE', radii: [0, 0, 0, 0] };
+    return `<g mask="url(#${id})">${this.fills(box)}</g>`;
+  }
+
   private container(doc: SceneDoc, n: SceneNode, depth: number): string {
-    let kids = doc.children(n.id).map((id) => this.node(doc, doc.get(id)!, depth)).join('');
+    let kids = this.kids(doc, n.id, depth);
     if (n.clipsContent && kids) {
       const cid = this.id('clip');
       this.defs.push(`<clipPath id="${cid}">${shapeElement(n, '')}</clipPath>`);
@@ -386,7 +456,10 @@ class SvgWriter {
         body = this.container(doc, n, depth);
         break;
       case 'GROUP':
-        body = doc.children(n.id).map((id) => this.node(doc, doc.get(id)!, depth)).join('');
+        body = this.kids(doc, n.id, depth);
+        break;
+      case 'BOOLEAN':
+        body = this.boolean(doc, n);
         break;
       case 'INSTANCE': {
         const v = depth < 12 ? instanceDoc(this.root, n) : null;
@@ -395,6 +468,7 @@ class SvgWriter {
       }
       case 'RECTANGLE':
       case 'ELLIPSE':
+      case 'VECTOR':
         body = this.fills(n) + this.strokes(n);
         break;
       case 'LINE':
