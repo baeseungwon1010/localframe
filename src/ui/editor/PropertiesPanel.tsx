@@ -9,6 +9,10 @@ import {
   AlignStartVertical,
   AlignVerticalSpaceAround,
   ArrowDown,
+  Bold,
+  Italic,
+  Strikethrough,
+  Underline,
   ArrowLeft,
   ArrowRight,
   Component,
@@ -32,7 +36,8 @@ import { overridableTexts } from '../../engine/instances.ts';
 import { DEFAULT_LAYOUT } from '../../engine/layout.ts';
 import { solid, TYPE_LABEL } from '../../engine/nodes.ts';
 import { FONT_FAMILIES, FONT_WEIGHTS, fontStack } from '../../engine/text.ts';
-import { IconButton } from '../components.tsx';
+import { IconButton, MOD } from '../components.tsx';
+import { type RunProps, adjustRuns, rangeValue } from '../../engine/textRuns.ts';
 import { downloadBlob, safeFileName } from '../download.ts';
 import { useEditorRev } from '../hooks.ts';
 import { MIXED, NumberField, Section, Segmented, SelectField, common, normalizeHex } from './fields.tsx';
@@ -466,22 +471,43 @@ function ConstraintsSection({ nodes, update }: { nodes: SceneNode[]; update: (fn
 function TextSection({ editor, nodes, update }: { editor: Editor; nodes: SceneNode[]; update: (fn: (n: SceneNode) => SceneNode) => void }) {
   const t = (n: SceneNode) => n.text!;
   const setText = (patch: Partial<TextStyle>) => update((n) => ({ ...n, text: { ...n.text!, ...patch } }));
+  // while editing with text selected, font settings apply to the selection
+  const editing = editor.editingText ? editor.doc.get(editor.editingText) : undefined;
+  const sel = editing && editor.textSelection;
+  const draftText = editing?.text ? adjustRuns(editing.text, editor.textDraft ?? editing.text.characters) : null;
+  const value = <K extends keyof RunProps>(key: K, whole: (n: SceneNode) => RunProps[K]) => {
+    if (sel && draftText) {
+      const v = rangeValue(draftText, sel.start, sel.end, key);
+      return v === 'mixed' ? MIXED : (v as RunProps[K]);
+    }
+    return common(nodes, whole);
+  };
+  const weight = value('fontWeight', (n) => t(n).fontWeight);
+  const italic = value('italic', (n) => !!t(n).italic);
+  const deco = value('decoration', (n) => t(n).decoration ?? 'none');
   return (
-    <Section title="Text" action={<StylePicker editor={editor} nodes={nodes} field="text" />}>
+    <Section title={sel ? 'Text (selected)' : 'Text'} action={<StylePicker editor={editor} nodes={nodes} field="text" />}>
       <SelectField
         label="Font"
-        value={common(nodes, (n) => t(n).fontFamily)}
+        value={value('fontFamily', (n) => t(n).fontFamily) as typeof MIXED | string}
         options={FONT_FAMILIES.map((f) => ({ value: f, label: f, style: { fontFamily: fontStack(f) } }))}
-        onChange={(v) => setText({ fontFamily: v })}
+        onChange={(v) => editor.styleText({ fontFamily: v })}
       />
       <div className="grid2">
         <SelectField
           label="Font weight"
-          value={common(nodes, (n) => t(n).fontWeight)}
+          value={weight as typeof MIXED | number}
           options={FONT_WEIGHTS.map((w) => ({ value: w.value, label: w.label }))}
-          onChange={(v) => setText({ fontWeight: v })}
+          onChange={(v) => editor.styleText({ fontWeight: v })}
         />
-        <NumberField label="Size" ariaLabel="Font size" value={common(nodes, (n) => t(n).fontSize)} min={1} max={2000} onCommit={(v) => setText({ fontSize: v })} />
+        <NumberField
+          label="Size"
+          ariaLabel="Font size"
+          value={value('fontSize', (n) => t(n).fontSize) as typeof MIXED | number}
+          min={1}
+          max={2000}
+          onCommit={(v) => editor.styleText({ fontSize: v })}
+        />
         <NumberField
           label="Line"
           ariaLabel="Line height"
@@ -521,6 +547,34 @@ function TextSection({ editor, nodes, update }: { editor: Editor; nodes: SceneNo
           ]}
           onChange={(v) => setText({ autoResize: v })}
         />
+      </div>
+      <div className="text-toggles" role="toolbar" aria-label="Text decoration">
+        <IconButton label="Bold" shortcut={`${MOD}B`} pressed={weight === 700} onClick={() => editor.styleText({ fontWeight: weight === 700 ? 400 : 700 })}>
+          <Bold {...ICON} />
+        </IconButton>
+        <IconButton label="Italic" shortcut={`${MOD}I`} pressed={italic === true} onClick={() => editor.styleText({ italic: italic !== true })}>
+          <Italic {...ICON} />
+        </IconButton>
+        <IconButton label="Underline" shortcut={`${MOD}U`} pressed={deco === 'underline'} onClick={() => editor.styleText({ decoration: deco === 'underline' ? 'none' : 'underline' })}>
+          <Underline {...ICON} />
+        </IconButton>
+        <IconButton
+          label="Strikethrough"
+          pressed={deco === 'strikethrough'}
+          onClick={() => editor.styleText({ decoration: deco === 'strikethrough' ? 'none' : 'strikethrough' })}
+        >
+          <Strikethrough {...ICON} />
+        </IconButton>
+        {sel && (
+          <label className="swatch range-color" title="Color of the selected text">
+            <input
+              type="color"
+              aria-label="Selected text colour"
+              value={(typeof value('color', () => undefined) === 'string' ? (value('color', () => undefined) as string) : '#1b1d21').toLowerCase()}
+              onChange={(e) => editor.styleText({ color: e.target.value.toUpperCase() })}
+            />
+          </label>
+        )}
       </div>
     </Section>
   );

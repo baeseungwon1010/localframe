@@ -1408,3 +1408,13 @@ button:disabled {
   top: 0;
   background: var(--color-surface-raised);
 }
+
+.text-toggles {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.range-color {
+  margin-left: var(--space-3);
+}

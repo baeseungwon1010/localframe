@@ -6,6 +6,7 @@ import { multiply } from '../../engine/math.ts';
 import { type OverlayColors, renderEditor } from '../../engine/overlay.ts';
 import { paintCss } from '../../engine/render.ts';
 import { fontStack, layoutText, lineHeightPx } from '../../engine/text.ts';
+import { adjustRuns, rangeValue } from '../../engine/textRuns.ts';
 import { ALT, MOD, Menu, type MenuItem, SHIFT } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
 
@@ -317,6 +318,21 @@ function TextEditor({ editor, id }: { editor: Editor; id: string }) {
     done.current = true;
     editor.commitTextEdit(value);
   };
+  const track = () => {
+    const el = ref.current;
+    if (el) editor.setTextSelection(el.selectionStart, el.selectionEnd, el.value);
+  };
+  /** Ctrl/Cmd+B, I, U toggle bold, italic and underline on the selected text. */
+  const toggle = (kind: 'bold' | 'italic' | 'underline') => {
+    const el = ref.current;
+    if (!el || el.selectionEnd <= el.selectionStart) return;
+    const tt = adjustRuns(editor.doc.get(id)!.text!, el.value);
+    const a = el.selectionStart;
+    const b = el.selectionEnd;
+    if (kind === 'bold') editor.styleText({ fontWeight: (rangeValue(tt, a, b, 'fontWeight') ?? 400) === 700 ? 400 : 700 });
+    if (kind === 'italic') editor.styleText({ italic: rangeValue(tt, a, b, 'italic') !== true });
+    if (kind === 'underline') editor.styleText({ decoration: rangeValue(tt, a, b, 'decoration') === 'underline' ? 'none' : 'underline' });
+  };
 
   const fixed = t.autoResize !== 'width';
   const layout = layoutText({ ...t, characters: value || ' ' }, fixed ? node.width : null);
@@ -332,11 +348,26 @@ function TextEditor({ editor, id }: { editor: Editor; id: string }) {
       aria-label="Text"
       value={value}
       spellCheck={false}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={commit}
+      onChange={(e) => {
+        setValue(e.target.value);
+        editor.setTextSelection(e.target.selectionStart, e.target.selectionEnd, e.target.value);
+      }}
+      onSelect={track}
+      onBlur={(e) => {
+        // styling the selected text from the properties panel keeps the editor open
+        const to = e.relatedTarget as HTMLElement | null;
+        if (to && to.closest('.props')) return;
+        commit();
+      }}
       onKeyDown={(e) => {
         e.stopPropagation();
         if (e.nativeEvent.isComposing) return;
+        const mod = e.ctrlKey || e.metaKey;
+        if (mod && (e.code === 'KeyB' || e.code === 'KeyI' || e.code === 'KeyU')) {
+          e.preventDefault();
+          toggle(e.code === 'KeyB' ? 'bold' : e.code === 'KeyI' ? 'italic' : 'underline');
+          return;
+        }
         if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
           e.preventDefault();
           commit();
@@ -348,6 +379,8 @@ function TextEditor({ editor, id }: { editor: Editor; id: string }) {
         height: height + 2,
         fontFamily: fontStack(t.fontFamily),
         fontWeight: t.fontWeight,
+        fontStyle: t.italic ? 'italic' : 'normal',
+        textDecoration: t.decoration === 'underline' ? 'underline' : t.decoration === 'strikethrough' ? 'line-through' : 'none',
         fontSize: t.fontSize,
         lineHeight: `${lineHeightPx(t)}px`,
         letterSpacing: `${t.letterSpacing}px`,
