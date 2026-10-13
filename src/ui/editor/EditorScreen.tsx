@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import type { FileMeta } from '../../../shared/schema.ts';
 import { ApiError, api } from '../../api.ts';
 import { Editor } from '../../engine/editor.ts';
+import { onImageLoaded, readImageSize, useImagesOf } from '../../engine/images.ts';
 import { drawChildren } from '../../engine/render.ts';
 import { SyncQueue } from '../../engine/sync.ts';
 import { navigate } from '../App.tsx';
 import { type Theme, loadFonts } from '../hooks.ts';
+import { ExportFileDialog } from '../ExportFileDialog.tsx';
 import { CanvasView } from './CanvasView.tsx';
-import { LayersPanel } from './LayersPanel.tsx';
+import { LeftPanel } from './LeftPanel.tsx';
 import { PropertiesPanel } from './PropertiesPanel.tsx';
 import { TitleBar } from './TitleBar.tsx';
 import { ToolRail } from './ToolRail.tsx';
@@ -41,6 +43,8 @@ function isTypingTarget(t: EventTarget | null) {
 }
 
 const VIEW_KEY = (id: string) => `localframe.view.${id}`;
+const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif';
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; theme: Theme; setTheme: (t: Theme) => void }) {
   const editor = useMemo(() => new Editor(), []);
@@ -48,6 +52,33 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sync, setSync] = useState<SyncQueue | null>(null);
   const thumbTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const imageInput = useRef<HTMLInputElement>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  /** Uploads image files and places them on the canvas (at a point, or in the middle of the view). */
+  const placeImages = async (files: File[], at?: { x: number; y: number }) => {
+    const images = files.filter((f) => /^image\/(png|jpeg|webp|gif)$/.test(f.type));
+    if (images.length === 0) {
+      if (files.length) setNotice('Only PNG, JPEG, WebP and GIF images can be placed.');
+      return;
+    }
+    let offset = 0;
+    for (const f of images) {
+      if (f.size > MAX_IMAGE_BYTES) {
+        setNotice(`“${f.name}” is larger than 20 MB, which is the image limit.`);
+        continue;
+      }
+      try {
+        const [{ id }, size] = await Promise.all([api.uploadImage(fileId, f), readImageSize(f)]);
+        const p = at ? { x: at.x + offset, y: at.y + offset } : undefined;
+        editor.insertImage(id, size, f.name || 'Image', p);
+        offset += 24;
+      } catch (e) {
+        setNotice(`Couldn't place “${f.name}”: ${e instanceof Error ? e.message : 'unknown error'}`);
+      }
+    }
+  };
 
   // load the file
   useEffect(() => {
@@ -57,7 +88,8 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
       try {
         const [{ file: meta, nodes }] = await Promise.all([api.getFile(fileId), loadFonts()]);
         if (cancelled) return;
-        editor.load(nodes, meta.background);
+        useImagesOf(fileId);
+        editor.load(nodes, meta.pages);
         setFile(meta);
         document.title = `${meta.name} · localframe`;
         queue = new SyncQueue(fileId, meta.version, editor, () => {
@@ -77,8 +109,12 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         );
       }
     })();
+    const offImages = onImageLoaded(() => editor.emit('view'));
+    editor.onRequestImage = () => imageInput.current?.click();
     return () => {
       cancelled = true;
+      offImages();
+      editor.onRequestImage = null;
       queue?.flushOnExit();
       queue?.dispose();
       if (thumbTimer.current) clearTimeout(thumbTimer.current);
@@ -125,6 +161,11 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
       if (isTypingTarget(e.target) || e.isComposing) return;
       const mod = e.ctrlKey || e.metaKey;
       if (mod && (e.code === 'KeyC' || e.code === 'KeyX' || e.code === 'KeyV')) return; // handled by clipboard events
+      if (mod && e.shiftKey && e.code === 'KeyE') {
+        e.preventDefault();
+        setExporting(true);
+        return;
+      }
       if (editor.keyDown({ code: e.code, key: e.key, shift: e.shiftKey, alt: e.altKey, mod, repeat: e.repeat })) {
         e.preventDefault();
       }
@@ -148,6 +189,12 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
     };
     const onPaste = (e: ClipboardEvent) => {
       if (isTypingTarget(e.target) || editor.editingText) return;
+      const files = [...(e.clipboardData?.files ?? [])];
+      if (files.length) {
+        e.preventDefault();
+        void placeImages(files);
+        return;
+      }
       const text = e.clipboardData?.getData('text/plain');
       if (text) {
         editor.pasteText(text);
@@ -214,6 +261,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         saveError={saveError || null}
         theme={theme}
         setTheme={setTheme}
+        onExportFile={() => setExporting(true)}
         onRename={async (name) => {
           const meta = await api.updateFile(fileId, { name });
           setFile(meta);
@@ -221,18 +269,41 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         }}
       />
       <ToolRail editor={editor} />
-      <LayersPanel editor={editor} />
-      <CanvasView editor={editor} onReady={onCanvasReady} />
-      <PropertiesPanel
+      <LeftPanel editor={editor} />
+      <CanvasView
         editor={editor}
-        fileName={file.name}
-        onBackground={async (color) => {
-          editor.background = color;
-          editor.emit('view');
-          const meta = await api.updateFile(fileId, { background: color });
-          setFile(meta);
+        onReady={onCanvasReady}
+        onDropFiles={(files, at) => void placeImages(files, at)}
+        notice={notice}
+        onDismissNotice={() => setNotice(null)}
+      />
+      <PropertiesPanel editor={editor} fileName={file.name} />
+      <input
+        ref={imageInput}
+        type="file"
+        accept={IMAGE_ACCEPT}
+        multiple
+        hidden
+        aria-label="Place image"
+        onChange={(e) => {
+          void placeImages([...(e.target.files ?? [])]);
+          e.target.value = '';
         }}
       />
+      {exporting && (
+        <ExportFileDialog
+          fileId={fileId}
+          fileName={file.name}
+          onClose={() => setExporting(false)}
+          beforeExport={async () => {
+            // export what is on screen: wait for pending saves
+            for (let i = 0; i < 50 && sync?.pending; i++) {
+              await sync.flush();
+              await new Promise((r) => setTimeout(r, 100));
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

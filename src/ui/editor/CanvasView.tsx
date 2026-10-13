@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { SolidPaint } from '../../../shared/schema.ts';
 import type { Editor, PointerInput } from '../../engine/editor.ts';
 import { hitDeepest, pickTarget } from '../../engine/hit.ts';
 import { multiply } from '../../engine/math.ts';
 import { type OverlayColors, renderEditor } from '../../engine/overlay.ts';
 import { paintCss } from '../../engine/render.ts';
 import { fontStack, layoutText, lineHeightPx } from '../../engine/text.ts';
-import { MOD, Menu, type MenuItem, SHIFT } from '../components.tsx';
+import { ALT, MOD, Menu, type MenuItem, SHIFT } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
 
 function readColors(): OverlayColors {
@@ -16,6 +17,7 @@ function readColors(): OverlayColors {
     onAccent: v('--color-on-accent', '#FFFFFF'),
     handleFill: v('--color-handle-fill', '#FFFFFF'),
     guide: v('--color-guide', '#E2361F'),
+    component: v('--color-component', '#6B35C9'),
     textMuted: v('--color-text-muted', '#5B6068'),
     canvasOutside: v('--color-canvas-default', '#F3F3F1'),
     font: '"IBM Plex Sans", system-ui, sans-serif',
@@ -33,7 +35,15 @@ function toInput(e: { clientX: number; clientY: number; button: number; shiftKey
   };
 }
 
-export function CanvasView({ editor, onReady }: { editor: Editor; onReady: () => void }) {
+export function CanvasView(props: {
+  editor: Editor;
+  onReady: () => void;
+  onDropFiles: (files: File[], at: { x: number; y: number }) => void;
+  notice: string | null;
+  onDismissNotice: () => void;
+}) {
+  const { editor, onReady } = props;
+  const [dragOver, setDragOver] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const colors = useRef<OverlayColors | null>(null);
@@ -161,6 +171,8 @@ export function CanvasView({ editor, onReady }: { editor: Editor; onReady: () =>
 
   const sel = editor.selectedNodes();
   const hasSel = sel.length > 0;
+  const single = sel.length === 1 ? sel[0] : null;
+  const otherPages = editor.pages.filter((p) => p.id !== editor.currentPage.id);
   const menuItems: MenuItem[] = [
     {
       label: 'Copy',
@@ -192,12 +204,26 @@ export function CanvasView({ editor, onReady }: { editor: Editor; onReady: () =>
     { label: 'Send to back', shortcut: `${MOD}${SHIFT}[`, disabled: !hasSel, onSelect: () => editor.reorder('back') },
     'separator',
     { label: 'Wrap in frame', shortcut: `${MOD}G`, disabled: !hasSel, onSelect: () => editor.wrapInFrame() },
+    { label: 'Add auto layout', shortcut: `${SHIFT}A`, disabled: !hasSel, onSelect: () => editor.addAutoLayout() },
     {
       label: 'Remove frame',
       shortcut: `${MOD}${SHIFT}G`,
       disabled: !sel.some((n) => n.type === 'FRAME'),
       onSelect: () => editor.unwrapFrames(),
     },
+    'separator',
+    single?.type === 'COMPONENT'
+      ? { label: 'Create instance', onSelect: () => editor.createInstance(single.id) }
+      : { label: 'Create component', shortcut: `${MOD}${ALT}K`, disabled: !hasSel, onSelect: () => editor.createComponent() },
+    ...(single?.type === 'INSTANCE'
+      ? ([
+          { label: 'Go to main component', onSelect: () => editor.goToMainComponent(single.id) },
+          { label: 'Detach instance', shortcut: `${MOD}${ALT}B`, onSelect: () => editor.detachInstances() },
+        ] as MenuItem[])
+      : []),
+    ...(hasSel && otherPages.length
+      ? (['separator', ...otherPages.map((p) => ({ label: `Move to ${p.name}`, onSelect: () => editor.moveSelectionToPage(p.id) }))] as MenuItem[])
+      : []),
     'separator',
     {
       label: sel.some((n) => n.visible) ? 'Hide' : 'Show',
@@ -209,7 +235,28 @@ export function CanvasView({ editor, onReady }: { editor: Editor; onReady: () =>
   ];
 
   return (
-    <div className="canvas-wrap" ref={wrapRef}>
+    <div
+      className={`canvas-wrap ${dragOver ? 'drag-over' : ''}`}
+      ref={wrapRef}
+      onDragOver={(e) => {
+        if (![...e.dataTransfer.types].includes('Files')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        if (!dragOver) setDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setDragOver(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const files = [...e.dataTransfer.files];
+        if (!files.length) return;
+        const r = rect();
+        props.onDropFiles(files, editor.toWorld(e.clientX - r.left, e.clientY - r.top));
+      }}
+    >
       <canvas
         ref={canvasRef}
         className="canvas"
@@ -228,6 +275,14 @@ export function CanvasView({ editor, onReady }: { editor: Editor; onReady: () =>
         <p className="canvas-hint">Press F to draw a frame, R for a rectangle, L for a line or T for text.</p>
       )}
       {menu && <Menu label="Canvas actions" x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}
+      {props.notice && (
+        <div className="toast" role="alert">
+          <span>{props.notice}</span>
+          <button type="button" className="mini-btn" aria-label="Dismiss" onClick={props.onDismissNotice}>
+            ×
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -256,7 +311,7 @@ function TextEditor({ editor, id }: { editor: Editor; id: string }) {
   const fixed = t.autoResize !== 'width';
   const layout = layoutText({ ...t, characters: value || ' ' }, fixed ? node.width : null);
   const m = multiply(editor.viewMatrix, editor.doc.world(id));
-  const fill = node.fills.find((p) => p.visible);
+  const fill = node.fills.find((p): p is SolidPaint => p.visible && p.type !== 'IMAGE');
   const width = fixed ? node.width : Math.max(layout.width + t.fontSize, 4);
   const height = t.autoResize === 'none' ? Math.max(node.height, layout.height) : layout.height;
 

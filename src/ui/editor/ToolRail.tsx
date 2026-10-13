@@ -1,6 +1,6 @@
-import { Circle, Frame, Hand, Minus, MousePointer2, MoveUpRight, Square, Type } from 'lucide-react';
+import { Circle, Frame, Hand, ImagePlus, Minus, MousePointer2, MoveUpRight, Square, Type } from 'lucide-react';
 import type { Editor, Tool } from '../../engine/editor.ts';
-import { IconButton, SHIFT } from '../components.tsx';
+import { IconButton, MOD, SHIFT } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
 
 const TOOLS: { tool: Tool; label: string; key: string; Icon: typeof Square }[] = [
@@ -39,6 +39,9 @@ export function ToolRail({ editor }: { editor: Editor }) {
           <Icon size={16} strokeWidth={1.5} />
         </IconButton>
       ))}
+      <IconButton label="Place image" shortcut={`${MOD}${SHIFT}K`} tooltipSide="right" className="tool-btn" onClick={() => editor.onRequestImage?.()}>
+        <ImagePlus size={16} strokeWidth={1.5} />
+      </IconButton>
     </div>
   );
 }
