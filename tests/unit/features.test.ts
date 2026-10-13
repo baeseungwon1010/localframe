@@ -377,3 +377,78 @@ describe('booleans and masks', () => {
     valid(ed);
   });
 });
+
+describe('variants and component properties', () => {
+  function buttonComponent(ed: Editor, x: number) {
+    const f = draw(ed, 'frame', [x, 100], [x + 160, 150]);
+    ed.setTool('text');
+    ed.pointerDown(ptr(x + 20, 115));
+    ed.pointerUp(ptr(x + 20, 115));
+    const t = ed.editingText!;
+    ed.commitTextEdit('Label');
+    ed.rename(t, 'Label');
+    ed.setSelection([f]);
+    ed.createComponent();
+    return { comp: f, text: t };
+  }
+
+  it('combines components into a set, switches variants and keeps overrides by layer name', () => {
+    const ed = setup();
+    const a = buttonComponent(ed, 100);
+    const b = buttonComponent(ed, 300);
+    ed.setSelection([a.comp, b.comp]);
+    ed.combineAsVariants();
+    const set = ed.doc.get(ed.selection[0])!;
+    expect(set.type).toBe('COMPONENT_SET');
+    expect(ed.doc.get(a.comp)!.variant).toEqual({ 'Property 1': 'Default' });
+    expect(ed.doc.get(b.comp)!.name).toBe('Property 1=Variant2');
+    valid(ed);
+
+    const inst = ed.createInstance(a.comp, { x: 300, y: 500 })!;
+    ed.setOverride(inst, a.text, { characters: 'Buy' });
+    ed.setVariant(inst, 'Property 1', 'Variant2');
+    const i = ed.doc.get(inst)!;
+    expect(i.componentId).toBe(b.comp);
+    expect(i.overrides?.[b.text]?.characters).toBe('Buy');
+
+    ed.addVariant(set.id);
+    expect(ed.doc.children(set.id)).toHaveLength(3);
+    valid(ed);
+  });
+
+  it('text and boolean properties drive linked layers in instances', () => {
+    const ed = setup();
+    const { comp, text } = buttonComponent(ed, 100);
+    ed.addComponentProp(comp, 'TEXT');
+    ed.addComponentProp(comp, 'BOOLEAN');
+    const [tp, bp] = ed.doc.get(comp)!.componentProps!;
+    ed.linkProp(text, 'characters', tp.id);
+    ed.linkProp(text, 'visible', bp.id);
+    const inst = ed.createInstance(comp, { x: 400, y: 400 })!;
+    const vtext = () => instanceDoc(ed.doc, ed.doc.get(inst)!)!.get(`${inst}~${text}`)!;
+    expect(vtext().text!.characters).toBe('Text'); // the property's default
+    ed.setPropValue(inst, tp.id, 'Checkout');
+    expect(vtext().text!.characters).toBe('Checkout');
+    ed.setPropValue(inst, bp.id, false);
+    expect(vtext().visible).toBe(false);
+    valid(ed);
+
+    ed.removeComponentProp(comp, tp.id);
+    expect(ed.doc.get(text)!.propRefs?.characters).toBeUndefined();
+    expect(ed.doc.get(inst)!.propValues?.[tp.id]).toBeUndefined();
+    valid(ed);
+  });
+
+  it('Ctrl-click picks a layer inside an instance', () => {
+    const ed = setup();
+    const { comp, text } = buttonComponent(ed, 100);
+    const inst = ed.createInstance(comp, { x: 480, y: 425 })!; // box 400..560 x 400..450
+    ed.setSelection([]);
+    const textWorld = ed.doc.worldBounds(inst);
+    ed.pointerDown(ptr(textWorld.x + 25, textWorld.y + 12, { mod: true }));
+    ed.pointerUp(ptr(textWorld.x + 25, textWorld.y + 12, { mod: true }));
+    expect(ed.inner).toEqual({ instanceId: inst, sourceId: text });
+    ed.keyDown({ code: 'Escape', key: 'Escape', shift: false, alt: false, mod: false, repeat: false });
+    expect(ed.inner).toBeNull();
+  });
+});
