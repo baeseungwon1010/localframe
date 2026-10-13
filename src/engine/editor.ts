@@ -38,7 +38,7 @@ import { canvasMeasure, layoutText } from './text.ts';
 
 export type Tool = 'move' | 'hand' | 'frame' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'text';
 export type Viewport = { x: number; y: number; zoom: number };
-export type Channel = 'doc' | 'selection' | 'view' | 'tool';
+export type Channel = 'doc' | 'selection' | 'view' | 'tool' | 'hover';
 
 export type PointerInput = {
   sx: number;
@@ -116,7 +116,7 @@ export class Editor {
   private txSelBefore: string[] = [];
   private listeners = new Map<Channel, Set<() => void>>();
   private commitListeners = new Set<(patches: Patch[]) => void>();
-  readonly revs: Record<Channel, number> = { doc: 0, selection: 0, view: 0, tool: 0 };
+  readonly revs: Record<Channel, number> = { doc: 0, selection: 0, view: 0, tool: 0, hover: 0 };
 
   // ---------------------------------------------------------------- events
 
@@ -235,7 +235,7 @@ export class Editor {
   setHover(id: string | null) {
     if (this.hover === id) return;
     this.hover = id;
-    this.emit('view');
+    this.emit('view', 'hover');
   }
 
   setTool(tool: Tool) {

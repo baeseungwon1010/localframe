@@ -27,7 +27,7 @@ function TypeIcon({ n }: { n: SceneNode }) {
 }
 
 export function LayersPanel({ editor }: { editor: Editor }) {
-  useEditorRev(editor, 'doc', 'selection', 'view');
+  useEditorRev(editor, 'doc', 'selection', 'hover');
   const doc = editor.doc;
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [renaming, setRenaming] = useState<string | null>(null);
