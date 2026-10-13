@@ -7,6 +7,11 @@ import {
   type FileMeta,
   type Page,
   type SceneNode,
+  type Style,
+  type Variables,
+  EMPTY_VARIABLES,
+  StylesSchema,
+  VariablesSchema,
   EXPORT_FORMAT,
   EXPORT_VERSION,
   IMAGE_TYPES,
@@ -41,6 +46,8 @@ const MIGRATIONS = [
      data     blob not null,
      primary key (file_id, id)
    );`,
+  `alter table files add column styles text check (styles is null or json_valid(styles));
+   alter table files add column variables text check (variables is null or json_valid(variables));`,
 ];
 
 export class ConflictError extends Error {
@@ -58,6 +65,8 @@ type FileRow = {
   name: string;
   background: string;
   pages: string | null;
+  styles: string | null;
+  variables: string | null;
   version: number;
   created_at: string;
   updated_at: string;
@@ -72,11 +81,15 @@ function toMeta(r: FileRow): FileMeta {
     const parsed = PagesSchema.safeParse(JSON.parse(r.pages));
     if (parsed.success) pages = parsed.data;
   }
+  const styles = r.styles ? StylesSchema.safeParse(JSON.parse(r.styles)) : null;
+  const variables = r.variables ? VariablesSchema.safeParse(JSON.parse(r.variables)) : null;
   return {
     id: r.id,
     name: r.name,
     background: pages[0].background,
     pages,
+    styles: styles?.success ? styles.data : [],
+    variables: variables?.success ? variables.data : EMPTY_VARIABLES,
     version: r.version,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -85,7 +98,7 @@ function toMeta(r: FileRow): FileMeta {
 }
 
 const now = () => new Date().toISOString();
-const META_COLS = 'id, name, background, pages, version, created_at, updated_at, (thumbnail is not null) as has_thumbnail';
+const META_COLS = 'id, name, background, pages, styles, variables, version, created_at, updated_at, (thumbnail is not null) as has_thumbnail';
 
 export const MAX_IMAGE_BYTES_PER_FILE = 1024 * 1024 * 1024;
 
@@ -139,12 +152,14 @@ export class Store {
     return row ? toMeta(row) : null;
   }
 
-  createFile(name: string, pages: Page[] = defaultPages('#F3F3F1')): FileMeta {
+  createFile(name: string, pages: Page[] = defaultPages('#F3F3F1'), styles: Style[] = [], variables: Variables = EMPTY_VARIABLES): FileMeta {
     const id = randomUUID();
     const t = now();
     this.db
-      .prepare('insert into files (id, name, background, pages, version, created_at, updated_at) values (?, ?, ?, ?, 0, ?, ?)')
-      .run(id, name, pages[0].background, JSON.stringify(pages), t, t);
+      .prepare(
+        'insert into files (id, name, background, pages, styles, variables, version, created_at, updated_at) values (?, ?, ?, ?, ?, ?, 0, ?, ?)',
+      )
+      .run(id, name, pages[0].background, JSON.stringify(pages), JSON.stringify(styles), JSON.stringify(variables), t, t);
     return this.getMeta(id)!;
   }
 
@@ -164,7 +179,15 @@ export class Store {
     return rows.map((r) => JSON.parse(r.data) as SceneNode);
   }
 
-  applyChanges(fileId: string, baseVersion: number, upserts: SceneNode[], deletes: string[], pages?: Page[]): number {
+  applyChanges(
+    fileId: string,
+    baseVersion: number,
+    upserts: SceneNode[],
+    deletes: string[],
+    pages?: Page[],
+    styles?: Style[],
+    variables?: Variables,
+  ): number {
     return this.tx(() => {
       const meta = this.getMeta(fileId);
       if (!meta) throw new InvalidError('file not found');
@@ -180,8 +203,16 @@ export class Store {
       if (problem) throw new InvalidError(problem);
       const version = meta.version + 1;
       this.db
-        .prepare('update files set version = ?, pages = ?, background = ?, updated_at = ? where id = ?')
-        .run(version, JSON.stringify(finalPages), finalPages[0].background, now(), fileId);
+        .prepare('update files set version = ?, pages = ?, background = ?, styles = ?, variables = ?, updated_at = ? where id = ?')
+        .run(
+          version,
+          JSON.stringify(finalPages),
+          finalPages[0].background,
+          JSON.stringify(styles ?? meta.styles),
+          JSON.stringify(variables ?? meta.variables),
+          now(),
+          fileId,
+        );
       return version;
     });
   }
@@ -241,6 +272,8 @@ export class Store {
       name: meta.name,
       background: meta.background,
       pages: meta.pages,
+      styles: meta.styles,
+      variables: meta.variables,
       nodes,
       images,
     };
@@ -262,7 +295,7 @@ export class Store {
       return bytes;
     });
     return this.tx(() => {
-      const meta = this.createFile(data.name, pages);
+      const meta = this.createFile(data.name, pages, data.styles ?? [], data.variables ?? EMPTY_VARIABLES);
       const put = this.db.prepare('insert into nodes (file_id, id, data) values (?, ?, ?)');
       for (const n of data.nodes) put.run(meta.id, n.id, JSON.stringify(SceneNodeSchema.parse(n)));
       for (const bytes of images) this.putImage(meta.id, bytes);

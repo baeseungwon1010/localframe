@@ -200,6 +200,35 @@ describe('images and pages', () => {
   });
 });
 
+describe('styles and variables', () => {
+  it('are saved with changes and travel through export and import', async () => {
+    const f = await (await call('POST', '/api/files', {})).json();
+    expect(f.styles).toEqual([]);
+    const styles = [{ id: 's1', name: 'Brand', type: 'FILL', value: [{ color: '#C8106E', opacity: 1, visible: true }] }];
+    const variables = {
+      collections: [{ id: 'c1', name: 'Theme', modes: [{ id: 'm1', name: 'Light' }] }],
+      vars: [{ id: 'v1', collectionId: 'c1', name: 'brand', type: 'COLOR', values: { m1: '#C8106E' } }],
+    };
+    let r = await call('POST', `/api/files/${f.id}/changes`, { baseVersion: 0, upserts: [], deletes: [], styles, variables });
+    expect(r.status).toBe(200);
+    const meta = (await (await call('GET', `/api/files/${f.id}`)).json()).file;
+    expect(meta.styles).toEqual(styles);
+    expect(meta.variables).toEqual(variables);
+    // a variable in a missing collection is refused
+    r = await call('POST', `/api/files/${f.id}/changes`, {
+      baseVersion: 1,
+      upserts: [],
+      deletes: [],
+      variables: { collections: [], vars: variables.vars },
+    });
+    expect(r.status).toBe(400);
+    const exported = await (await call('GET', `/api/files/${f.id}/export`)).json();
+    const imported = await (await call('POST', '/api/files/import', exported)).json();
+    expect(imported.styles).toEqual(styles);
+    expect(imported.variables).toEqual(variables);
+  });
+});
+
 describe('import limits', () => {
   it('refuses a deeply nested file quickly instead of stalling the server', async () => {
     const nodes = Array.from({ length: 15_000 }, (_, i) => ({

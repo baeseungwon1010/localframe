@@ -203,7 +203,7 @@ export function createApp(opts: AppOptions) {
       const body = await readJson(req, ChangesSchema, limit);
       if (!store.getMeta(id)) throw new HttpError(404, 'File not found');
       try {
-        const version = store.applyChanges(id, body.baseVersion, body.upserts, body.deletes, body.pages);
+        const version = store.applyChanges(id, body.baseVersion, body.upserts, body.deletes, body.pages, body.styles, body.variables);
         return send(res, 200, { version });
       } catch (err) {
         if (err instanceof ConflictError) return send(res, 409, { error: 'conflict', version: err.version });
