@@ -1,0 +1,106 @@
+import { useState } from 'react';
+import { ChevronDown, ChevronLeft, Redo2, Undo2 } from 'lucide-react';
+import type { FileMeta } from '../../../shared/schema.ts';
+import type { Editor } from '../../engine/editor.ts';
+import type { SaveStatus } from '../../engine/sync.ts';
+import { navigate } from '../App.tsx';
+import { IconButton, MOD, Menu, SHIFT, ThemeToggle } from '../components.tsx';
+import { type Theme, useEditorRev } from '../hooks.ts';
+
+const STATUS_TEXT: Record<SaveStatus, string> = {
+  saved: 'Saved',
+  saving: 'Saving…',
+  offline: 'Not saved',
+  conflict: 'Not saved',
+  error: 'Not saved',
+};
+
+export function TitleBar(props: {
+  editor: Editor;
+  file: FileMeta;
+  saveStatus: SaveStatus;
+  saveError: string | null;
+  theme: Theme;
+  setTheme: (t: Theme) => void;
+  onRename: (name: string) => Promise<void>;
+}) {
+  const { editor, file, saveStatus, saveError } = props;
+  useEditorRev(editor, 'view', 'doc');
+  const [renaming, setRenaming] = useState(false);
+  const [zoomMenu, setZoomMenu] = useState<{ x: number; y: number } | null>(null);
+
+  const commit = async (value: string) => {
+    setRenaming(false);
+    const name = value.trim();
+    if (name && name !== file.name) await props.onRename(name);
+  };
+
+  return (
+    <header className="titlebar">
+      <div className="titlebar-left">
+        <IconButton label="Back to files" onClick={() => navigate('#/')}>
+          <ChevronLeft size={16} strokeWidth={1.5} />
+        </IconButton>
+        {renaming ? (
+          <input
+            className="inline-input title-input"
+            defaultValue={file.name}
+            aria-label="File name"
+            autoFocus
+            maxLength={200}
+            onBlur={(e) => commit(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+              if (e.key === 'Escape') setRenaming(false);
+            }}
+          />
+        ) : (
+          <button type="button" className="title-name" onDoubleClick={() => setRenaming(true)} onClick={() => setRenaming(true)} aria-label={`File name: ${file.name}. Click to rename`}>
+            {file.name}
+          </button>
+        )}
+        <span className={`save-status ${saveStatus === 'saved' || saveStatus === 'saving' ? '' : 'error'}`} role="status" title={saveError ?? undefined}>
+          {saveError && saveStatus !== 'saving' ? saveError : STATUS_TEXT[saveStatus]}
+        </span>
+      </div>
+      <div className="titlebar-right">
+        <IconButton label="Undo" shortcut={`${MOD}Z`} disabled={!editor.canUndo} onClick={() => editor.undo()}>
+          <Undo2 size={16} strokeWidth={1.5} />
+        </IconButton>
+        <IconButton label="Redo" shortcut={`${MOD}${SHIFT}Z`} disabled={!editor.canRedo} onClick={() => editor.redo()}>
+          <Redo2 size={16} strokeWidth={1.5} />
+        </IconButton>
+        <button
+          type="button"
+          className="zoom-btn"
+          aria-label="Zoom options"
+          aria-haspopup="menu"
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setZoomMenu({ x: r.right - 200, y: r.bottom + 4 });
+          }}
+        >
+          {Math.round(editor.viewport.zoom * 100)}%
+          <ChevronDown size={14} strokeWidth={1.5} />
+        </button>
+        <ThemeToggle theme={props.theme} setTheme={props.setTheme} />
+      </div>
+      {zoomMenu && (
+        <Menu
+          label="Zoom"
+          x={zoomMenu.x}
+          y={zoomMenu.y}
+          onClose={() => setZoomMenu(null)}
+          items={[
+            { label: 'Zoom in', shortcut: `${MOD}+`, onSelect: () => editor.zoomAt(2, editor.viewSize.width / 2, editor.viewSize.height / 2) },
+            { label: 'Zoom out', shortcut: `${MOD}−`, onSelect: () => editor.zoomAt(0.5, editor.viewSize.width / 2, editor.viewSize.height / 2) },
+            'separator',
+            { label: 'Zoom to fit', shortcut: `${SHIFT}1`, onSelect: () => editor.zoomToFit() },
+            { label: 'Zoom to selection', shortcut: `${SHIFT}2`, onSelect: () => editor.zoomToSelection(), disabled: editor.selection.length === 0 },
+            { label: 'Zoom to 100%', shortcut: `${SHIFT}0`, onSelect: () => editor.zoomTo(1) },
+          ]}
+        />
+      )}
+    </header>
+  );
+}
