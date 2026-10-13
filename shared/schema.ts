@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { generateKeyBetween } from 'fractional-indexing';
 
-export const NODE_TYPES = ['FRAME', 'COMPONENT', 'INSTANCE', 'RECTANGLE', 'ELLIPSE', 'LINE', 'TEXT'] as const;
+export const NODE_TYPES = ['FRAME', 'GROUP', 'COMPONENT', 'INSTANCE', 'RECTANGLE', 'ELLIPSE', 'LINE', 'TEXT'] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
 
 const hexColor = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
@@ -56,11 +56,53 @@ export const ImagePaintSchema = z
   })
   .strict();
 
-export const PaintSchema = z.union([ImagePaintSchema, SolidPaintSchema]);
+const unitPoint = z.object({ x: z.number().min(-10).max(10), y: z.number().min(-10).max(10) }).strict();
+
+export const GradientPaintSchema = z
+  .object({
+    type: z.enum(['GRADIENT_LINEAR', 'GRADIENT_RADIAL']),
+    stops: z
+      .array(z.object({ position: z.number().min(0).max(1), color: hexColor, opacity: z.number().min(0).max(1) }).strict())
+      .min(2)
+      .max(16),
+    /** In the layer's unit box (0..1). Linear: start and end. Radial: centre and a point on the edge. */
+    from: unitPoint,
+    to: unitPoint,
+    opacity: z.number().min(0).max(1),
+    visible: z.boolean(),
+  })
+  .strict();
+
+export const PaintSchema = z.union([ImagePaintSchema, GradientPaintSchema, SolidPaintSchema]);
+export const StrokePaintSchema = z.union([GradientPaintSchema, SolidPaintSchema]);
 export type SolidPaint = z.infer<typeof SolidPaintSchema>;
 export type ImagePaint = z.infer<typeof ImagePaintSchema>;
+export type GradientPaint = z.infer<typeof GradientPaintSchema>;
 export type Paint = z.infer<typeof PaintSchema>;
+export type StrokePaint = z.infer<typeof StrokePaintSchema>;
 export const isImagePaint = (p: Paint): p is ImagePaint => p.type === 'IMAGE';
+export const isGradientPaint = (p: Paint): p is GradientPaint => p.type === 'GRADIENT_LINEAR' || p.type === 'GRADIENT_RADIAL';
+
+const effectLen = z.number().min(-10_000).max(10_000);
+export const ShadowEffectSchema = z
+  .object({
+    type: z.enum(['DROP_SHADOW', 'INNER_SHADOW']),
+    color: hexColor,
+    opacity: z.number().min(0).max(1),
+    x: effectLen,
+    y: effectLen,
+    blur: z.number().min(0).max(1000),
+    spread: z.number().min(-1000).max(1000),
+    visible: z.boolean(),
+  })
+  .strict();
+export const BlurEffectSchema = z
+  .object({ type: z.enum(['LAYER_BLUR', 'BACKGROUND_BLUR']), radius: z.number().min(0).max(1000), visible: z.boolean() })
+  .strict();
+export const EffectSchema = z.union([ShadowEffectSchema, BlurEffectSchema]);
+export type ShadowEffect = z.infer<typeof ShadowEffectSchema>;
+export type BlurEffect = z.infer<typeof BlurEffectSchema>;
+export type Effect = z.infer<typeof EffectSchema>;
 
 export const TextStyleSchema = z
   .object({
@@ -143,7 +185,8 @@ export const SceneNodeSchema = z
     height: z.number().min(0).max(1e7),
     rotation: z.number().min(-360).max(360),
     fills: z.array(PaintSchema).max(16),
-    strokes: z.array(SolidPaintSchema).max(16),
+    strokes: z.array(StrokePaintSchema).max(16),
+    effects: z.array(EffectSchema).max(8).optional(),
     strokeWeight: z.number().min(0).max(1000),
     strokeAlign: z.enum(['inside', 'center', 'outside']),
     strokeDash: z.array(z.number().min(0).max(1000)).max(8),
@@ -167,6 +210,8 @@ export const SceneNodeSchema = z
   .superRefine((n, ctx) => {
     const issue = (message: string) => ctx.addIssue({ code: 'custom', message });
     const container = n.type === 'FRAME' || n.type === 'COMPONENT';
+    if (n.type === 'GROUP' && (n.fills.length || n.strokes.length || n.clipsContent || n.layout))
+      issue('groups have no fills, strokes, clipping or auto layout');
     if (n.type === 'TEXT' && !n.text) issue('TEXT needs text');
     if (n.type !== 'TEXT' && n.text) issue('only TEXT has text');
     if (!container && n.type !== 'INSTANCE' && n.clipsContent !== undefined) issue('only frames have clipsContent');
@@ -180,7 +225,10 @@ export const SceneNodeSchema = z
   });
 export type SceneNode = z.infer<typeof SceneNodeSchema>;
 
-export const isContainerType = (t: NodeType) => t === 'FRAME' || t === 'COMPONENT';
+/** Types whose children are stored layers. */
+export const isContainerType = (t: NodeType) => t === 'FRAME' || t === 'COMPONENT' || t === 'GROUP';
+/** Containers that are frames (own box, fills, clipping, auto layout, drop target). */
+export const isFrameLike = (t: NodeType) => t === 'FRAME' || t === 'COMPONENT';
 
 export const PageSchema = z
   .object({
