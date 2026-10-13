@@ -293,3 +293,87 @@ describe('gradients and effects', () => {
     void a;
   });
 });
+
+describe('pen and vectors', () => {
+  it('draws a closed curve, edits a point, and scales with its box', () => {
+    const ed = setup();
+    ed.setTool('pen');
+    ed.pointerDown(ptr(100, 100));
+    ed.pointerUp(ptr(100, 100));
+    ed.pointerDown(ptr(200, 100));
+    ed.pointerMove(ptr(230, 130)); // drag out handles
+    ed.pointerUp(ptr(230, 130));
+    ed.pointerDown(ptr(150, 200));
+    ed.pointerUp(ptr(150, 200));
+    ed.pointerDown(ptr(101, 101)); // back on the first point: close
+    ed.pointerUp(ptr(101, 101));
+    const v = ed.doc.get(ed.selection[0])!;
+    expect(v.type).toBe('VECTOR');
+    expect(v.vector!.closed).toBe(true);
+    expect(v.vector!.points).toHaveLength(3);
+    expect(v.vector!.points[1].out).toBeDefined();
+    expect(ed.tool).toBe('move');
+    expect(v.x).toBeLessThanOrEqual(100);
+    valid(ed);
+
+    // edit: drag the third point down by 50
+    ed.startVectorEdit(v.id);
+    const p3 = ed.vectorParts().find((p) => p.part === 'point' && p.index === 2)!;
+    drag(ed, [p3.at.x, p3.at.y], [p3.at.x, p3.at.y + 50]);
+    const after = ed.doc.get(v.id)!;
+    expect(ed.doc.worldBounds(v.id).y + ed.doc.worldBounds(v.id).height).toBeCloseTo(250, 0);
+    ed.exitVectorEdit();
+
+    // resizing scales the points
+    const w0 = after.width;
+    ed.setSize(v.id, w0 * 2, null, false);
+    const scaled = ed.doc.get(v.id)!;
+    expect(Math.max(...scaled.vector!.points.map((p) => p.x))).toBeCloseTo(Math.max(...after.vector!.points.map((p) => p.x)) * 2, 0);
+    valid(ed);
+  });
+
+  it('a single click is not a path', () => {
+    const ed = setup();
+    ed.setTool('pen');
+    ed.pointerDown(ptr(100, 100));
+    ed.pointerUp(ptr(100, 100));
+    ed.keyDown({ code: 'Enter', key: 'Enter', shift: false, alt: false, mod: false, repeat: false });
+    expect(ed.doc.size).toBe(0);
+  });
+});
+
+describe('booleans and masks', () => {
+  it('combines shapes and exports them as SVG masks', async () => {
+    const { svgMarkup } = await import('../../src/engine/export.ts');
+    const ed = setup();
+    const a = draw(ed, 'rect', [100, 100], [300, 300]);
+    const b = draw(ed, 'ellipse', [200, 200], [400, 400]);
+    ed.setSelection([a, b]);
+    ed.booleanSelection('subtract');
+    const bool = ed.doc.get(ed.selection[0])!;
+    expect(bool).toMatchObject({ type: 'BOOLEAN', booleanOp: 'subtract', x: 100, y: 100, width: 300, height: 300 });
+    expect(ed.doc.children(bool.id)).toEqual([a, b]);
+    valid(ed);
+    const { svg } = svgMarkup(ed.doc, { ids: [bool.id], background: null });
+    expect(svg).toContain('<mask');
+    expect(svg).toContain('fill="#000"');
+    ed.booleanSelection('intersect');
+    expect(ed.doc.get(bool.id)!.booleanOp).toBe('intersect');
+  });
+
+  it('use as mask groups the selection with the bottom layer clipping the rest', async () => {
+    const { svgMarkup } = await import('../../src/engine/export.ts');
+    const ed = setup();
+    const a = draw(ed, 'ellipse', [100, 100], [300, 300]);
+    const b = draw(ed, 'rect', [50, 50], [400, 400]);
+    ed.setSelection([a, b]);
+    ed.useAsMask();
+    const g = ed.doc.get(ed.selection[0])!;
+    expect(g).toMatchObject({ type: 'GROUP', name: 'Mask group' });
+    expect(ed.doc.get(a)!.isMask).toBe(true);
+    const { svg } = svgMarkup(ed.doc, { ids: [g.id], background: null });
+    expect(svg).toContain('<clipPath');
+    expect(svg).toContain('clip-path=');
+    valid(ed);
+  });
+});
