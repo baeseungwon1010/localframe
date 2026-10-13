@@ -19,16 +19,45 @@ function byOrder(a: SceneNode, b: SceneNode) {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-/** The node tree of one page. Mutations go through set/remove/applyPatches so caches stay valid. */
+const pageKey = (pageId: string) => `\u0000page:${pageId}`;
+
+/**
+ * All layers of a file. `children(null)` means the top level of the current page.
+ * Mutations go through set/remove/applyPatches so caches stay valid.
+ */
 export class SceneDoc {
   private nodes = new Map<string, SceneNode>();
-  private childIndex: Map<string | null, string[]> | null = null;
+  private childIndex: Map<string, string[]> | null = null;
   private worldCache = new Map<string, Mat>();
   version = 0;
+  /** First page: where top-level layers without a page live. */
+  defaultPage = 'page-1';
+  currentPage = 'page-1';
 
-  load(nodes: SceneNode[]) {
+  load(nodes: SceneNode[], defaultPage = this.defaultPage) {
     this.nodes = new Map(nodes.map((n) => [n.id, n]));
+    this.defaultPage = defaultPage;
+    this.currentPage = defaultPage;
     this.touch();
+  }
+
+  setCurrentPage(pageId: string) {
+    this.currentPage = pageId;
+    this.version++;
+  }
+
+  /** Page a layer is on (top-level layers carry it; children inherit). */
+  pageOf(id: string): string {
+    let cur = this.nodes.get(id);
+    let guard = 0;
+    while (cur && cur.parentId !== null && guard++ < 10_000) cur = this.nodes.get(cur.parentId);
+    return cur?.pageId ?? this.defaultPage;
+  }
+
+  /** Top-level layers of a page, bottom-most first. */
+  pageChildren(pageId: string): string[] {
+    this.children(null);
+    return this.childIndex!.get(pageKey(pageId)) ?? [];
   }
 
   private touch() {
@@ -72,19 +101,20 @@ export class SceneDoc {
     this.touch();
   }
 
-  /** Child ids of a parent (null = page), bottom-most first. */
+  /** Child ids of a parent (null = top level of the current page), bottom-most first. */
   children(parentId: string | null): string[] {
     if (!this.childIndex) {
-      const groups = new Map<string | null, SceneNode[]>();
+      const groups = new Map<string, SceneNode[]>();
       for (const n of this.nodes.values()) {
-        const list = groups.get(n.parentId);
+        const key = n.parentId ?? pageKey(n.pageId ?? this.defaultPage);
+        const list = groups.get(key);
         if (list) list.push(n);
-        else groups.set(n.parentId, [n]);
+        else groups.set(key, [n]);
       }
       this.childIndex = new Map();
       for (const [k, list] of groups) this.childIndex.set(k, list.sort(byOrder).map((n) => n.id));
     }
-    return this.childIndex.get(parentId) ?? [];
+    return this.childIndex.get(parentId ?? pageKey(this.currentPage)) ?? [];
   }
 
   /** Ancestors from the top-level node down to the direct parent. */

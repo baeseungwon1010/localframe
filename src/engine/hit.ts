@@ -1,4 +1,4 @@
-import type { SceneNode } from '../../shared/schema.ts';
+import { type SceneNode, isContainerType } from '../../shared/schema.ts';
 import type { SceneDoc } from './doc.ts';
 import { type Point, type Rect, apply, distToSegment, invert, rectsIntersect } from './math.ts';
 
@@ -35,7 +35,7 @@ export function hitDeepest(doc: SceneDoc, p: Point, tolerance: number, skip?: Se
     for (let i = kids.length - 1; i >= 0; i--) {
       const n = doc.get(kids[i])!;
       if (!n.visible || n.locked || skip?.has(n.id)) continue;
-      if (n.type === 'FRAME') {
+      if (isContainerType(n.type)) {
         if (n.clipsContent && !insideBox(doc, n, p)) continue;
         const inner = visit(n.id);
         if (inner) return inner;
@@ -55,7 +55,7 @@ export function hitDeepest(doc: SceneDoc, p: Point, tolerance: number, skip?: Se
 export function pickTarget(doc: SceneDoc, deepest: string, selection: Iterable<string>): string {
   const chain = [...doc.ancestors(deepest), deepest];
   const top = doc.get(chain[0])!;
-  let level = top.type === 'FRAME' && chain.length > 1 ? 1 : 0;
+  let level = isContainerType(top.type) && chain.length > 1 ? 1 : 0;
   for (const s of selection) {
     const node = doc.get(s);
     if (!node) continue;
@@ -75,7 +75,7 @@ export function frameAt(doc: SceneDoc, p: Point, exclude: Set<string> = new Set(
     const kids = doc.children(parentId);
     for (let i = kids.length - 1; i >= 0; i--) {
       const n = doc.get(kids[i])!;
-      if (n.type !== 'FRAME' || !n.visible || n.locked || exclude.has(n.id)) continue;
+      if (!isContainerType(n.type) || !n.visible || n.locked || exclude.has(n.id)) continue;
       if (!insideBox(doc, n, p)) continue;
       return visit(n.id) ?? n.id;
     }
@@ -91,7 +91,7 @@ export function marqueeHits(doc: SceneDoc, rect: Rect, parentId: string | null):
     const n = doc.get(id)!;
     if (!n.visible || n.locked) continue;
     const b = doc.worldBounds(id);
-    if (n.type === 'FRAME' && parentId === null) {
+    if ((isContainerType(n.type) || n.type === 'INSTANCE') && parentId === null) {
       if (b.x >= rect.x && b.y >= rect.y && b.x + b.width <= rect.x + rect.width && b.y + b.height <= rect.y + rect.height)
         out.push(id);
     } else if (rectsIntersect(b, rect)) out.push(id);

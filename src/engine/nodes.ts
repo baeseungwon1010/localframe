@@ -1,18 +1,22 @@
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing';
-import type { NodeType, Paint, SceneNode, TextStyle } from '../../shared/schema.ts';
+import { type NodeType, type SceneNode, type SolidPaint, type TextStyle, isContainerType } from '../../shared/schema.ts';
 import type { SceneDoc } from './doc.ts';
+import { clamp } from './math.ts';
+import { layoutText } from './text.ts';
 
 export const newId = () => crypto.randomUUID();
 
 export const TYPE_LABEL: Record<NodeType, string> = {
   FRAME: 'Frame',
+  COMPONENT: 'Component',
+  INSTANCE: 'Instance',
   RECTANGLE: 'Rectangle',
   ELLIPSE: 'Ellipse',
   LINE: 'Line',
   TEXT: 'Text',
 };
 
-export const solid = (color: string, opacity = 1): Paint => ({ color, opacity, visible: true });
+export const solid = (color: string, opacity = 1): SolidPaint => ({ color, opacity, visible: true });
 
 export const DEFAULT_TEXT: TextStyle = {
   characters: '',
@@ -95,7 +99,10 @@ export function createNode(
   };
   switch (type) {
     case 'FRAME':
+    case 'COMPONENT':
       return { ...base, fills: [solid('#FFFFFF')], radii: [0, 0, 0, 0], clipsContent: true };
+    case 'INSTANCE':
+      return { ...base, componentId: '', overrides: {} };
     case 'RECTANGLE':
       return { ...base, fills: [solid('#D9D9D9')], radii: [0, 0, 0, 0] };
     case 'ELLIPSE':
@@ -115,4 +122,21 @@ export function createNode(
   }
 }
 
-export const canHaveChildren = (n: SceneNode | undefined) => n?.type === 'FRAME';
+export const canHaveChildren = (n: SceneNode | undefined) => n !== undefined && isContainerType(n.type);
+
+const MAX_SIZE = 1e7;
+
+/** Recomputes a text layer's size from its content and auto-resize mode. */
+export function fitText(n: SceneNode): SceneNode {
+  if (n.type !== 'TEXT' || !n.text) return n;
+  const t = n.text;
+  if (t.autoResize === 'width') {
+    const l = layoutText(t, null);
+    return { ...n, width: clamp(l.width, 1, MAX_SIZE), height: clamp(l.height, 1, MAX_SIZE) };
+  }
+  if (t.autoResize === 'height') {
+    const l = layoutText(t, n.width);
+    return { ...n, height: clamp(l.height, 1, MAX_SIZE) };
+  }
+  return n;
+}
