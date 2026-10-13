@@ -14,6 +14,11 @@ export const ImageIdSchema = z.string().regex(/^[0-9a-f]{64}$/);
 export const MAX_DEPTH = 100;
 export const MAX_NODES_PER_FILE = 100_000;
 export const MAX_PAGES = 100;
+/** Limits on what instances may expand to (see validateTree). */
+export const MAX_EXPANDED_PER_COMPONENT = 200_000;
+export const MAX_EXPANDED_PER_FILE = 1_000_000;
+/** Coordinates beyond this are refused (and clamped by the editor). */
+export const MAX_COORD = 1e8;
 export const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const;
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 /** An exported file carries its images, so imports may be larger than other requests. */
@@ -79,12 +84,14 @@ export const ConstraintsSchema = z
   .strict();
 export type Constraints = z.infer<typeof ConstraintsSchema>;
 
+const pad = z.number().min(0).max(10_000);
+
 /** Auto layout on a frame or component. */
 export const LayoutSchema = z
   .object({
     mode: z.enum(['horizontal', 'vertical']),
     gap: z.number().min(-10_000).max(10_000),
-    padding: z.tuple([finite, finite, finite, finite]), // top, right, bottom, left
+    padding: z.tuple([pad, pad, pad, pad]), // top, right, bottom, left
     primaryAlign: z.enum(['start', 'center', 'end', 'space-between']),
     crossAlign: z.enum(['start', 'center', 'end', 'stretch']),
     widthMode: z.enum(['fixed', 'hug']),
@@ -130,8 +137,8 @@ export const SceneNodeSchema = z
     locked: z.boolean(),
     opacity: z.number().min(0).max(1),
     // Local transform: translate(x, y) then rotate(rotation) about that origin.
-    x: finite,
-    y: finite,
+    x: z.number().min(-MAX_COORD).max(MAX_COORD),
+    y: z.number().min(-MAX_COORD).max(MAX_COORD),
     width: z.number().min(0).max(1e7),
     height: z.number().min(0).max(1e7),
     rotation: z.number().min(-360).max(360),
@@ -310,38 +317,65 @@ export function validateTree(nodes: Iterable<SceneNode>, pages?: Page[]): string
       if (path[i].type === 'COMPONENT') baseOwner = path[i].id;
     }
   }
-  // component graph: component -> components it uses through instances
-  const uses = new Map<string, Set<string>>();
+  // Component graph. An edge A -> B means drawing A also draws B: B is nested inside A, or an
+  // instance of B is inside A. Instance edges repeat once per instance, for the size estimate below.
+  const edges = new Map<string, string[]>();
+  const direct = new Map<string, number>(); // layers whose nearest component is this one
+  const addEdge = (a: string, b: string) => {
+    const list = edges.get(a);
+    if (list) list.push(b);
+    else edges.set(a, [b]);
+  };
+  const instanceTargets: string[] = [];
   for (const n of byId.values()) {
-    if (n.type !== 'INSTANCE' || !n.componentId) continue;
-    const target = byId.get(n.componentId);
-    if (target && target.type !== 'COMPONENT') return `instance ${n.id} points at a ${target.type.toLowerCase()}`;
-    const from = owner.get(n.id);
-    if (from) {
-      if (!uses.has(from)) uses.set(from, new Set());
-      uses.get(from)!.add(n.componentId);
+    const own = owner.get(n.id) ?? null;
+    if (own) direct.set(own, (direct.get(own) ?? 0) + 1);
+    if (n.type === 'COMPONENT' && own) addEdge(own, n.id);
+    if (n.type === 'INSTANCE' && n.componentId) {
+      const target = byId.get(n.componentId);
+      if (target && target.type !== 'COMPONENT') return `instance ${n.id} points at a ${target.type.toLowerCase()}`;
+      if (own) addEdge(own, n.componentId);
+      instanceTargets.push(n.componentId);
     }
   }
+  // cycles (iterative DFS)
   const state = new Map<string, 1 | 2>(); // 1 = visiting, 2 = done
-  for (const startId of uses.keys()) {
+  const order: string[] = []; // post-order: every component after the ones it uses
+  for (const startId of edges.keys()) {
     if (state.get(startId) === 2) continue;
-    const stack: [string, Iterator<string>][] = [[startId, (uses.get(startId) ?? new Set<string>()).values()]];
+    const stack: [string, number][] = [[startId, 0]];
     state.set(startId, 1);
     while (stack.length) {
-      const [cid, it] = stack[stack.length - 1];
-      const next = it.next();
-      if (next.done) {
-        state.set(cid, 2);
+      const top = stack[stack.length - 1];
+      const list = edges.get(top[0]) ?? [];
+      if (top[1] >= list.length) {
+        state.set(top[0], 2);
+        order.push(top[0]);
         stack.pop();
         continue;
       }
-      const s = state.get(next.value);
-      if (s === 1) return `component ${next.value} contains an instance of itself`;
-      if (s === undefined) {
-        state.set(next.value, 1);
-        stack.push([next.value, (uses.get(next.value) ?? new Set<string>()).values()]);
+      const next = list[top[1]++];
+      const st = state.get(next);
+      if (st === 1) return `component ${next} contains an instance of itself`;
+      if (st === undefined) {
+        state.set(next, 1);
+        stack.push([next, 0]);
       }
     }
+  }
+  // How many layers drawing each component produces once instances are expanded. Nested instances
+  // multiply, so a small file could otherwise expand to billions of layers.
+  const expanded = new Map<string, number>();
+  for (const cid of order) {
+    let total = direct.get(cid) ?? 0;
+    for (const t of edges.get(cid) ?? []) total += expanded.get(t) ?? direct.get(t) ?? 0;
+    if (total > MAX_EXPANDED_PER_COMPONENT) return `component ${cid} expands to more than ${MAX_EXPANDED_PER_COMPONENT} layers`;
+    expanded.set(cid, total);
+  }
+  let all = 0;
+  for (const t of instanceTargets) {
+    all += expanded.get(t) ?? direct.get(t) ?? 0;
+    if (all > MAX_EXPANDED_PER_FILE) return `instances in this file expand to more than ${MAX_EXPANDED_PER_FILE} layers`;
   }
   return null;
 }
