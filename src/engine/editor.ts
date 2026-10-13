@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   type Binding,
   type BooleanOp,
+  type ComponentProp,
   type Vector,
   type VectorPoint,
   type Layout,
@@ -18,7 +19,7 @@ import {
   validateTree,
 } from '../../shared/schema.ts';
 import { bindingAt, settleLine } from './connectors.ts';
-import { instanceDoc } from './instances.ts';
+import { componentPropsOf, instanceDoc, namePath, variantName, variantOptions } from './instances.ts';
 import { DEFAULT_LAYOUT, applyAutoLayout, autoLayoutIndex } from './layout.ts';
 import { SceneDoc, type Patch } from './doc.ts';
 import {
@@ -190,6 +191,8 @@ export class Editor {
   /** Vector layer whose points are being edited, and the selected point. */
   editingVector: string | null = null;
   vectorPoint: number | null = null;
+  /** A layer inside an instance being edited (as overrides), shown with its own outline. */
+  inner: { instanceId: string; sourceId: string } | null = null;
   sizeBadge: { text: string; at: Point } | null = null;
   spaceDown = false;
   pages: Page[] = [{ id: 'page-1', name: 'Page 1', background: '#F3F3F1' }];
@@ -320,6 +323,7 @@ export class Editor {
   setSelection(ids: string[]) {
     const next = [...new Set(ids)].filter((id) => this.doc.has(id));
     if (next.length === this.selection.length && next.every((id, i) => id === this.selection[i])) return;
+    if (this.inner && !next.includes(this.inner.instanceId)) this.inner = null;
     this.selection = next;
     this.emit('selection', 'view');
   }
@@ -872,6 +876,233 @@ export class Editor {
       ids.filter((id) => this.doc.get(id)?.type === 'INSTANCE'),
       (n) => ({ ...n, overrides: {} }),
     );
+  }
+
+  // -------------------------------------------------------------- variants
+
+  /** Puts the selected components into one component set; each becomes a variant. */
+  combineAsVariants() {
+    const comps = this.selectionRoots().map((id) => this.doc.get(id)!).filter((n) => n.type === 'COMPONENT');
+    if (comps.length === 0 || comps.length !== this.selectionRoots().length) return;
+    const parentId = comps[0].parentId;
+    if (comps.some((c) => c.parentId !== parentId)) return;
+    this.transact(() => {
+      comps.forEach((c, i) => {
+        const variant = c.variant && Object.keys(c.variant).length ? c.variant : { 'Property 1': i === 0 ? 'Default' : `Variant${i + 1}` };
+        this.put({ ...this.doc.get(c.id)!, variant, name: variantName(variant) });
+      });
+      this.wrapInFrame('FRAME');
+      const f = this.doc.get(this.selection[0]);
+      if (!f) return;
+      const pad = 20;
+      // breathing room around the variants, like a set on the canvas
+      const set = createNode(this.doc, 'COMPONENT_SET', f.parentId, { x: f.x - pad, y: f.y - pad, width: f.width + pad * 2, height: f.height + pad * 2 });
+      this.put({ ...set, id: f.id, order: f.order, name: comps[0].name.split('=')[0] === comps[0].name ? comps[0].name : 'Component 1' });
+      for (const cid of this.doc.children(f.id)) {
+        const c = this.doc.get(cid)!;
+        this.put({ ...c, x: round2(c.x + pad), y: round2(c.y + pad) });
+      }
+      this.selection = [f.id];
+    });
+    this.emit('selection');
+  }
+
+  /** Adds a variant to a set by copying its last one, with new values. */
+  addVariant(setId: string) {
+    const set = this.doc.get(setId);
+    if (!set || set.type !== 'COMPONENT_SET') return;
+    const kids = this.doc.children(setId);
+    const last = kids.length ? this.doc.get(kids[kids.length - 1]) : undefined;
+    if (!last) return;
+    this.transact(() => {
+      const map = new Map<string, string>();
+      const clones = this.remapClones(this.cloneSubtree(last.id, setId, keyOnTop(this.doc, setId), map), map);
+      const props = variantOptions(this.doc, setId);
+      const variant: Record<string, string> = {};
+      for (const [k, values] of props) variant[k] = k === [...props.keys()][0] ? `Variant${values.length + 1}` : (last.variant?.[k] ?? values[0]);
+      const root = clones[0];
+      clones[0] = { ...root, variant, name: variantName(variant), y: round2(last.y + last.height + 20) };
+      for (const c of clones) this.put(c);
+      this.selection = [clones[0].id];
+    });
+    this.emit('selection');
+  }
+
+  /** Changes one variant value of a component (inside a set). */
+  setVariantValue(componentId: string, prop: string, value: string) {
+    const v = value.trim().slice(0, 100);
+    if (!v) return;
+    this.updateNodes([componentId], (n) => {
+      const variant = { ...(n.variant ?? {}), [prop]: v };
+      return { ...n, variant, name: variantName(variant) };
+    });
+  }
+
+  /** Renames or adds a variant property across a set. */
+  renameVariantProp(setId: string, from: string, to: string) {
+    const name = to.trim().slice(0, 100);
+    if (!name || name === from) return;
+    this.transact(() => {
+      for (const id of this.doc.children(setId)) {
+        const c = this.doc.get(id)!;
+        const entries = Object.entries(c.variant ?? {}).map(([k, v]) => [k === from ? name : k, v] as const);
+        const variant = Object.fromEntries(entries);
+        this.put({ ...c, variant, name: variantName(variant) });
+      }
+    });
+  }
+
+  addVariantProp(setId: string) {
+    const existing = variantOptions(this.doc, setId);
+    let i = existing.size + 1;
+    while (existing.has(`Property ${i}`)) i++;
+    const prop = `Property ${i}`;
+    this.transact(() => {
+      for (const id of this.doc.children(setId)) {
+        const c = this.doc.get(id)!;
+        const variant = { ...(c.variant ?? {}), [prop]: 'Default' };
+        this.put({ ...c, variant, name: variantName(variant) });
+      }
+    });
+  }
+
+  /** Switches an instance to the variant with one property changed, keeping its overrides where layers match. */
+  setVariant(instanceId: string, prop: string, value: string) {
+    const inst = this.doc.get(instanceId);
+    const comp = inst?.componentId ? this.doc.get(inst.componentId) : undefined;
+    const set = comp?.parentId ? this.doc.get(comp.parentId) : undefined;
+    if (!inst || !comp || set?.type !== 'COMPONENT_SET') return;
+    const want = { ...(comp.variant ?? {}), [prop]: value };
+    const variants = this.doc.children(set.id).map((id) => this.doc.get(id)!);
+    const same = (v: Record<string, string> | undefined) => Object.entries(want).every(([k, val]) => v?.[k] === val);
+    const target = variants.find((c) => same(c.variant)) ?? variants.find((c) => c.variant?.[prop] === value);
+    if (!target || target.id === comp.id) return;
+    // carry overrides over by layer path
+    const byPath = new Map<string, string>();
+    for (const d of this.doc.descendants(target.id)) byPath.set(namePath(this.doc, target.id, d), d);
+    const overrides: Record<string, Override> = {};
+    for (const [src, o] of Object.entries(inst.overrides ?? {})) {
+      const to = byPath.get(namePath(this.doc, comp.id, src));
+      if (to) overrides[to] = o;
+    }
+    const resized = inst.width !== comp.width || inst.height !== comp.height;
+    this.updateNodes([instanceId], (n) => ({
+      ...n,
+      componentId: target.id,
+      overrides,
+      ...(resized ? {} : { width: target.width, height: target.height }),
+    }));
+    this.inner = null;
+  }
+
+  // ----------------------------------------------------- component properties
+
+  addComponentProp(ownerId: string, type: ComponentProp['type']) {
+    const owner = this.doc.get(ownerId);
+    if (!owner || (owner.type !== 'COMPONENT' && owner.type !== 'COMPONENT_SET')) return;
+    const list = owner.componentProps ?? [];
+    if (list.length >= 50) return;
+    const prop: ComponentProp =
+      type === 'TEXT'
+        ? { id: newId(), name: `Text ${list.length + 1}`, type, defaultValue: 'Text' }
+        : { id: newId(), name: `Show ${list.length + 1}`, type, defaultValue: true };
+    this.updateNodes([ownerId], (n) => ({ ...n, componentProps: [...list, prop] }));
+  }
+
+  updateComponentProp(ownerId: string, propId: string, patch: { name?: string; defaultValue?: string | boolean }) {
+    this.updateNodes([ownerId], (n) => ({
+      ...n,
+      componentProps: (n.componentProps ?? []).map((p) => {
+        if (p.id !== propId) return p;
+        const name = patch.name !== undefined ? patch.name.trim().slice(0, 100) || p.name : p.name;
+        if (p.type === 'TEXT') return { ...p, name, defaultValue: typeof patch.defaultValue === 'string' ? patch.defaultValue : p.defaultValue };
+        return { ...p, name, defaultValue: typeof patch.defaultValue === 'boolean' ? patch.defaultValue : p.defaultValue };
+      }),
+    }));
+  }
+
+  removeComponentProp(ownerId: string, propId: string) {
+    this.transact(() => {
+      const owner = this.doc.get(ownerId);
+      if (!owner) return;
+      this.put({ ...owner, componentProps: (owner.componentProps ?? []).filter((p) => p.id !== propId) });
+      // unlink layers and drop instance values that used it
+      for (const n of [...this.doc.all()]) {
+        if (n.propRefs && (n.propRefs.characters === propId || n.propRefs.visible === propId)) {
+          const refs = { ...n.propRefs };
+          if (refs.characters === propId) delete refs.characters;
+          if (refs.visible === propId) delete refs.visible;
+          this.put({ ...n, propRefs: Object.keys(refs).length ? refs : undefined });
+        }
+        if (n.propValues && Object.hasOwn(n.propValues, propId)) {
+          const values = { ...n.propValues };
+          delete values[propId];
+          this.put({ ...n, propValues: values });
+        }
+      }
+    });
+  }
+
+  /** Links a layer's text or visibility to a property of the component it is in. */
+  linkProp(layerId: string, field: 'characters' | 'visible', propId: string | null) {
+    this.updateNodes([layerId], (n) => {
+      const refs = { ...(n.propRefs ?? {}) };
+      if (propId) refs[field] = propId;
+      else delete refs[field];
+      return { ...n, propRefs: Object.keys(refs).length ? refs : undefined };
+    });
+  }
+
+  setPropValue(instanceId: string, propId: string, value: string | boolean) {
+    this.updateNodes([instanceId], (n) => ({ ...n, propValues: { ...(n.propValues ?? {}), [propId]: value } }));
+  }
+
+  /** The component (or set) whose properties a layer inside it can link to. */
+  propOwnerOf(layerId: string): string | null {
+    let cur = this.doc.get(layerId);
+    while (cur && cur.parentId) {
+      cur = this.doc.get(cur.parentId);
+      if (cur?.type === 'COMPONENT') {
+        const parent = cur.parentId ? this.doc.get(cur.parentId) : undefined;
+        return parent?.type === 'COMPONENT_SET' ? parent.id : cur.id;
+      }
+    }
+    return null;
+  }
+
+  componentPropsFor(layerId: string): ComponentProp[] {
+    const owner = this.propOwnerOf(layerId);
+    if (!owner) return [];
+    const o = this.doc.get(owner)!;
+    if (o.type === 'COMPONENT_SET') return o.componentProps ?? [];
+    return componentPropsOf(this.doc, owner);
+  }
+
+  // ------------------------------------------------------- inside instances
+
+  /** Picks the layer inside an instance under a screen point (Ctrl/Cmd-click or double-click). */
+  selectInner(instanceId: string, sx: number, sy: number): boolean {
+    const inst = this.doc.get(instanceId);
+    if (!inst || inst.type !== 'INSTANCE') return false;
+    const v = instanceDoc(this.doc, inst);
+    if (!v) return false;
+    const local = apply(invert(this.doc.world(instanceId)), this.toWorld(sx, sy));
+    const hit = hitDeepest(v, local, this.hitTolerance());
+    if (!hit || hit === instanceId) {
+      this.inner = null;
+      this.emit('view', 'selection');
+      return false;
+    }
+    this.inner = { instanceId, sourceId: hit.slice(hit.indexOf('~') + 1) };
+    this.selection = [instanceId];
+    this.emit('view', 'selection');
+    return true;
+  }
+
+  clearInner() {
+    if (!this.inner) return;
+    this.inner = null;
+    this.emit('view', 'selection');
   }
 
   // ------------------------------------------------------------ auto layout
@@ -1594,6 +1825,12 @@ export class Editor {
     let target: string | null = null;
     if (label) target = label;
     else if (deepest) target = e.mod ? deepest : pickTarget(this.doc, deepest, this.selection);
+    // Ctrl/Cmd-click on an instance reaches into it
+    if (e.mod && target && this.doc.get(target)?.type === 'INSTANCE' && this.selectInner(target, e.sx, e.sy)) {
+      this.interaction = { kind: 'pending', start: p, startScreen: { x: e.sx, y: e.sy }, target, wasSelected: true, shift: false, scope: null };
+      return;
+    }
+    if (this.inner && target !== this.inner.instanceId) this.inner = null;
     // Clicking inside the current selection box keeps the selection (so it can be dragged).
     if (!e.shift && this.selection.length > 1) {
       const b = this.selectionBounds();
@@ -1840,6 +2077,10 @@ export class Editor {
       const node = this.doc.get(sel)!;
       if (node.type === 'TEXT' && deepest === sel) return this.startTextEdit(sel);
       if (node.type === 'VECTOR' && deepest === sel) return this.startVectorEdit(sel);
+      if (node.type === 'INSTANCE' && deepest === sel) {
+        this.selectInner(sel, e.sx, e.sy);
+        return;
+      }
       const chain = [...this.doc.ancestors(deepest), deepest];
       const idx = chain.indexOf(sel);
       if (idx >= 0 && idx < chain.length - 1) {
@@ -2362,6 +2603,10 @@ export class Editor {
     }
     if (code === 'Escape') {
       if (this.cancelInteraction()) return true;
+      if (this.inner) {
+        this.clearInner();
+        return true;
+      }
       if (this.tool !== 'move') {
         this.setTool('move');
         return true;
@@ -2395,6 +2640,10 @@ export class Editor {
           else this.groupSelection();
           return true;
         case 'KeyK':
+          if (alt && shift) {
+            this.combineAsVariants();
+            return true;
+          }
           if (alt) {
             this.createComponent();
             return true;
