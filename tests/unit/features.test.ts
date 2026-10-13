@@ -227,3 +227,69 @@ describe('file writers', () => {
     expect(sniffImage(new TextEncoder().encode('<svg onload="alert(1)">'))).toBeNull();
   });
 });
+
+describe('groups', () => {
+  it('fit their children, scale them when resized, and disappear when empty', () => {
+    const ed = setup();
+    const a = draw(ed, 'rect', [100, 100], [200, 200]);
+    const b = draw(ed, 'ellipse', [300, 150], [400, 250]);
+    ed.setSelection([a, b]);
+    ed.groupSelection();
+    const g = ed.selection[0];
+    expect(ed.doc.get(g)).toMatchObject({ type: 'GROUP', x: 100, y: 100, width: 300, height: 150 });
+
+    // clicking a child selects the group
+    ed.setSelection([]);
+    drag(ed, [150, 150], [150, 150]);
+    expect(ed.selection).toEqual([g]);
+
+    // moving a child refits the group without moving the other child on the page
+    ed.updateNodes([b], (n) => ({ ...n, x: n.x + 100 }));
+    expect(ed.doc.get(g)!.width).toBe(400);
+    expect(ed.doc.worldBounds(a)).toMatchObject({ x: 100, y: 100 });
+
+    // resizing the group scales the children
+    ed.setSelection([g]);
+    drag(ed, [500, 250], [300, 250]); // east handle at x=500
+    expect(ed.doc.get(g)!.width).toBeCloseTo(200, 0);
+    expect(ed.doc.get(a)!.width).toBeCloseTo(50, 0);
+
+    // deleting every child removes the group
+    ed.setSelection([a, b]);
+    ed.deleteSelection();
+    expect(ed.doc.has(g)).toBe(false);
+    valid(ed);
+  });
+});
+
+describe('gradients and effects', () => {
+  it('validate, and export to SVG gradients and filters', async () => {
+    const { svgMarkup } = await import('../../src/engine/export.ts');
+    const ed = setup();
+    const r = draw(ed, 'rect', [100, 100], [200, 200]);
+    ed.updateNodes([r], (n) => ({
+      ...n,
+      fills: [{ type: 'GRADIENT_LINEAR', stops: [{ position: 0, color: '#FF0000', opacity: 1 }, { position: 1, color: '#0000FF', opacity: 1 }], from: { x: 0, y: 0.5 }, to: { x: 1, y: 0.5 }, opacity: 1, visible: true }],
+      effects: [
+        { type: 'DROP_SHADOW', color: '#000000', opacity: 0.25, x: 0, y: 4, blur: 8, spread: 2, visible: true },
+        { type: 'INNER_SHADOW', color: '#FFFFFF', opacity: 0.5, x: 0, y: 1, blur: 0, spread: 0, visible: true },
+        { type: 'LAYER_BLUR', radius: 2, visible: true },
+      ],
+    }));
+    valid(ed);
+    const { svg } = svgMarkup(ed.doc, { ids: [r], background: null });
+    expect(svg).toContain('<linearGradient');
+    expect(svg).toContain('<feMorphology');
+    expect(svg).toContain('operator="arithmetic"');
+    expect(svg).toContain('<feGaussianBlur in="m"');
+  });
+
+  it('groups cannot carry fills', () => {
+    const ed = setup();
+    const a = draw(ed, 'rect', [100, 100], [200, 200]);
+    ed.groupSelection();
+    const g = ed.doc.get(ed.selection[0])!;
+    expect(SceneNodeSchema.safeParse({ ...g, fills: [{ color: '#000000', opacity: 1, visible: true }] }).success).toBe(false);
+    void a;
+  });
+});

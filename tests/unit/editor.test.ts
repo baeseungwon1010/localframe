@@ -178,8 +178,8 @@ describe('text and export', () => {
   });
 });
 
-describe('frames as groups', () => {
-  it('Ctrl+G wraps and Ctrl+Shift+G unwraps without moving anything', () => {
+describe('groups', () => {
+  it('Ctrl+G groups and Ctrl+Shift+G ungroups without moving anything', () => {
     const ed = setup();
     ed.setTool('rect');
     drag(ed, [100, 100], [150, 150]);
@@ -189,12 +189,12 @@ describe('frames as groups', () => {
     const before = ed.selection.map((id) => ed.doc.worldBounds(id));
     const key = (shift: boolean) => ({ code: 'KeyG', key: 'g', shift, alt: false, mod: true, repeat: false });
     ed.keyDown(key(false));
-    expect(ed.doc.get(ed.selection[0])!.type).toBe('FRAME');
+    expect(ed.doc.get(ed.selection[0])!.type).toBe('GROUP');
     ed.keyDown(key(true));
-    expect([...ed.doc.all()].every((n) => n.type !== 'FRAME')).toBe(true);
+    expect([...ed.doc.all()].every((n) => n.type !== 'GROUP')).toBe(true);
     expect(ed.selection.map((id) => ed.doc.worldBounds(id))).toEqual(before);
     ed.undo();
-    expect([...ed.doc.all()].some((n) => n.type === 'FRAME')).toBe(true);
+    expect([...ed.doc.all()].some((n) => n.type === 'GROUP')).toBe(true);
   });
 });
 
