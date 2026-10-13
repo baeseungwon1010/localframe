@@ -1,6 +1,7 @@
 import { generateNKeysBetween } from 'fractional-indexing';
 import { z } from 'zod';
 import {
+  type Bindable,
   type Binding,
   type BooleanOp,
   type ComponentProp,
@@ -11,6 +12,9 @@ import {
   type Override,
   type Page,
   type SceneNode,
+  type Style,
+  type Variables,
+  EMPTY_VARIABLES,
   MAX_COORD,
   MAX_DEPTH,
   MAX_NODES_PER_FILE,
@@ -18,6 +22,15 @@ import {
   SceneNodeSchema,
   validateTree,
 } from '../../shared/schema.ts';
+import {
+  type StyleField,
+  STYLE_KEY,
+  applyStyleValue,
+  boundField,
+  resolveBindings,
+  styleFrom,
+  styleMatches,
+} from './assets.ts';
 import { bindingAt, settleLine } from './connectors.ts';
 import { componentPropsOf, instanceDoc, namePath, variantName, variantOptions } from './instances.ts';
 import { DEFAULT_LAYOUT, applyAutoLayout, autoLayoutIndex } from './layout.ts';
@@ -85,13 +98,24 @@ type HistoryEntry = {
   patches: Patch[];
   selBefore: string[];
   selAfter: string[];
-  pagesBefore?: Page[];
-  pagesAfter?: Page[];
+  /** File-level state (pages, styles, variables) before and after, when it changed. */
+  fileBefore?: FileState;
+  fileAfter?: FileState;
   pageBefore?: string;
   pageAfter?: string;
 };
 
-export type CommitInfo = { patches: Patch[]; pagesChanged: boolean };
+export type FileState = { pages: Page[]; styles: Style[]; variables: Variables };
+export type CommitInfo = { patches: Patch[]; pagesChanged: boolean; stylesChanged: boolean; variablesChanged: boolean };
+
+const sameJson = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
+
+function styledValueOf(n: SceneNode, f: StyleField): unknown {
+  if (f === 'fill') return n.fills;
+  if (f === 'stroke') return n.strokes;
+  if (f === 'effect') return n.effects ?? [];
+  return n.text ? [n.text.fontFamily, n.text.fontWeight, n.text.fontSize, n.text.lineHeight, n.text.letterSpacing] : null;
+}
 
 type Interaction =
   | { kind: 'none' }
@@ -196,6 +220,8 @@ export class Editor {
   sizeBadge: { text: string; at: Point } | null = null;
   spaceDown = false;
   pages: Page[] = [{ id: 'page-1', name: 'Page 1', background: '#F3F3F1' }];
+  styles: Style[] = [];
+  variables: Variables = EMPTY_VARIABLES;
   /** Viewport per page, so switching pages comes back to the same place. */
   private pageViews = new Map<string, Viewport>();
   /** Asks the UI to pick an image file (Ctrl/Cmd+Shift+K). */
@@ -206,7 +232,7 @@ export class Editor {
   private redoStack: HistoryEntry[] = [];
   private tx: Map<string, SceneNode | null> | null = null;
   private txSelBefore: string[] = [];
-  private txPagesBefore: Page[] | null = null;
+  private txFileBefore: FileState | null = null;
   private txPageBefore = '';
   private listeners = new Map<Channel, Set<() => void>>();
   private commitListeners = new Set<(info: CommitInfo) => void>();
@@ -234,8 +260,10 @@ export class Editor {
     }
   }
 
-  load(nodes: SceneNode[], pages: Page[] | string) {
+  load(nodes: SceneNode[], pages: Page[] | string, styles: Style[] = [], variables: Variables = EMPTY_VARIABLES) {
     this.pages = typeof pages === 'string' ? [{ id: 'page-1', name: 'Page 1', background: pages }] : pages;
+    this.styles = styles;
+    this.variables = variables;
     this.doc.load(nodes, this.pages[0].id);
     this.selection = [];
     this.undoStack = [];
@@ -355,7 +383,7 @@ export class Editor {
     if (this.tx) return;
     this.tx = new Map();
     this.txSelBefore = [...this.selection];
-    this.txPagesBefore = null;
+    this.txFileBefore = null;
     this.txPageBefore = this.doc.currentPage;
   }
 
@@ -381,10 +409,21 @@ export class Editor {
   }
 
   /** Changes the page list inside the current transaction. */
-  private setPages(pages: Page[]) {
-    if (this.tx && !this.txPagesBefore) this.txPagesBefore = this.pages;
-    this.pages = pages;
+  private fileState(): FileState {
+    return { pages: this.pages, styles: this.styles, variables: this.variables };
+  }
+
+  /** Changes file-level state (pages, styles, variables) inside the current transaction. */
+  setFileState(patch: Partial<FileState>) {
+    if (this.tx && !this.txFileBefore) this.txFileBefore = this.fileState();
+    if (patch.pages) this.pages = patch.pages;
+    if (patch.styles) this.styles = patch.styles;
+    if (patch.variables) this.variables = patch.variables;
     this.emit('pages');
+  }
+
+  private setPages(pages: Page[]) {
+    this.setFileState({ pages });
   }
 
   private drop(id: string) {
@@ -397,9 +436,12 @@ export class Editor {
     const tx = this.tx;
     this.tx = null;
     if (!tx) return [];
-    const pagesBefore = this.txPagesBefore;
-    this.txPagesBefore = null;
-    const pagesChanged = pagesBefore !== null && JSON.stringify(pagesBefore) !== JSON.stringify(this.pages);
+    const fileBefore = this.txFileBefore;
+    this.txFileBefore = null;
+    const pagesChanged = !!fileBefore && !sameJson(fileBefore.pages, this.pages);
+    const stylesChanged = !!fileBefore && !sameJson(fileBefore.styles, this.styles);
+    const variablesChanged = !!fileBefore && !sameJson(fileBefore.variables, this.variables);
+    const fileChanged = pagesChanged || stylesChanged || variablesChanged;
     const patches: Patch[] = [];
     for (const [id, before] of tx) {
       const after = this.doc.get(id) ?? null;
@@ -408,18 +450,18 @@ export class Editor {
       patches.push({ id, before, after });
     }
     this.setSelection(this.selection.filter((id) => this.doc.has(id)));
-    if (patches.length > 0 || pagesChanged) {
+    if (patches.length > 0 || fileChanged) {
       this.undoStack.push({
         patches,
         selBefore: this.txSelBefore,
         selAfter: [...this.selection],
-        ...(pagesChanged ? { pagesBefore: pagesBefore!, pagesAfter: this.pages } : {}),
+        ...(fileChanged ? { fileBefore: fileBefore!, fileAfter: this.fileState() } : {}),
         pageBefore: this.txPageBefore,
         pageAfter: this.doc.currentPage,
       });
       if (this.undoStack.length > 500) this.undoStack.shift();
       this.redoStack = [];
-      this.commitListeners.forEach((fn) => fn({ patches, pagesChanged }));
+      this.commitListeners.forEach((fn) => fn({ patches, pagesChanged, stylesChanged, variablesChanged }));
     }
     this.emit('doc', 'view');
     return patches;
@@ -433,8 +475,12 @@ export class Editor {
       if (before) this.doc.set(before);
       else this.doc.remove(id);
     }
-    if (this.txPagesBefore) this.pages = this.txPagesBefore;
-    this.txPagesBefore = null;
+    if (this.txFileBefore) {
+      this.pages = this.txFileBefore.pages;
+      this.styles = this.txFileBefore.styles;
+      this.variables = this.txFileBefore.variables;
+    }
+    this.txFileBefore = null;
     if (this.doc.currentPage !== this.txPageBefore) this.doc.setCurrentPage(this.txPageBefore);
     this.selection = this.txSelBefore.filter((id) => this.doc.has(id));
     this.emit('doc', 'selection', 'view', 'pages');
@@ -461,16 +507,25 @@ export class Editor {
     return this.redoStack.length > 0;
   }
 
+  private commitOf(patches: Patch[], a?: FileState, b?: FileState): CommitInfo {
+    return {
+      patches,
+      pagesChanged: !!a && !!b && !sameJson(a.pages, b.pages),
+      stylesChanged: !!a && !!b && !sameJson(a.styles, b.styles),
+      variablesChanged: !!a && !!b && !sameJson(a.variables, b.variables),
+    };
+  }
+
   undo() {
     if (this.interaction.kind !== 'none') return;
     const entry = this.undoStack.pop();
     if (!entry) return;
     this.doc.applyPatches(entry.patches, true);
     this.redoStack.push(entry);
-    if (entry.pagesBefore) this.pages = entry.pagesBefore;
+    if (entry.fileBefore) Object.assign(this, entry.fileBefore);
     this.showPage(entry.pageBefore);
     this.selection = entry.selBefore.filter((id) => this.doc.has(id));
-    this.commitListeners.forEach((fn) => fn({ patches: entry.patches, pagesChanged: !!entry.pagesBefore }));
+    this.commitListeners.forEach((fn) => fn(this.commitOf(entry.patches, entry.fileAfter, entry.fileBefore)));
     this.emit('doc', 'selection', 'view', 'pages');
   }
 
@@ -480,10 +535,10 @@ export class Editor {
     if (!entry) return;
     this.doc.applyPatches(entry.patches);
     this.undoStack.push(entry);
-    if (entry.pagesAfter) this.pages = entry.pagesAfter;
+    if (entry.fileAfter) Object.assign(this, entry.fileAfter);
     this.showPage(entry.pageAfter);
     this.selection = entry.selAfter.filter((id) => this.doc.has(id));
-    this.commitListeners.forEach((fn) => fn({ patches: entry.patches, pagesChanged: !!entry.pagesAfter }));
+    this.commitListeners.forEach((fn) => fn(this.commitOf(entry.patches, entry.fileBefore, entry.fileAfter)));
     this.emit('doc', 'selection', 'view', 'pages');
   }
 
@@ -511,6 +566,8 @@ export class Editor {
     }
 
     this.fitGroups();
+
+    this.applyAssets();
 
     // auto layout, bottom-up
     const frames = new Set<string>();
@@ -561,6 +618,121 @@ export class Editor {
       line = settleLine(doc, line);
       if (line !== n) this.put(line);
     }
+  }
+
+  /**
+   * Styles and variables: layers keep a copy of their style's value and of their variables' values.
+   * A changed style or variable rewrites every layer that uses it; editing a styled or bound property
+   * directly detaches it (as in Figma).
+   */
+  private applyAssets() {
+    const tx = this.tx;
+    if (!tx) return;
+    const doc = this.doc;
+    const before = this.txFileBefore;
+    const stylesChanged = !!before && !sameJson(before.styles, this.styles);
+    const variablesChanged = !!before && !sameJson(before.variables, this.variables);
+    const styleById = new Map(this.styles.map((st) => [st.id, st]));
+    const fields: StyleField[] = ['fill', 'stroke', 'text', 'effect'];
+
+    // direct edits detach (only layers changed in this step, compared with how they were)
+    for (const [id, prev] of [...tx]) {
+      const n = doc.get(id);
+      if (!n || !prev) continue;
+      let next = n;
+      for (const f of fields) {
+        const key = STYLE_KEY[f];
+        const sid = n[key];
+        if (!sid || sid !== prev[key]) continue;
+        const st = styleById.get(sid);
+        if (st && !styleMatches(n, f, st) && !sameJson(styledValueOf(n, f), styledValueOf(prev, f))) next = { ...next, [key]: undefined };
+      }
+      if (n.bindings) {
+        const kept = { ...n.bindings };
+        for (const [prop, vid] of Object.entries(n.bindings) as [Bindable, string][]) {
+          if (vid && vid === prev.bindings?.[prop] && !sameJson(boundField(n, prop), boundField(prev, prop))) delete kept[prop];
+        }
+        if (Object.keys(kept).length !== Object.keys(n.bindings).length) next = { ...next, bindings: Object.keys(kept).length ? kept : undefined };
+      }
+      if (next !== n) this.put(next);
+    }
+
+    // write style values
+    const modesChanged = [...tx].some(([id, prev]) => !sameJson(doc.get(id)?.modes, prev?.modes) || doc.get(id)?.parentId !== prev?.parentId);
+    const targets = stylesChanged || variablesChanged || modesChanged ? [...doc.all()] : [...tx.keys()].map((id) => doc.get(id)).filter((n): n is SceneNode => !!n);
+    for (const n0 of targets) {
+      let n = n0;
+      for (const f of fields) {
+        const sid = n[STYLE_KEY[f]];
+        if (!sid) continue;
+        const st = styleById.get(sid);
+        if (!st) n = { ...n, [STYLE_KEY[f]]: undefined };
+        else if (!styleMatches(n, f, st)) n = applyStyleValue(n, f, st);
+      }
+      if (n.bindings) n = resolveBindings(doc, this.variables, n);
+      if (n !== n0 && !sameJson(n, n0)) this.put(n);
+    }
+  }
+
+  // ---------------------------------------------------------------- styles
+
+  createStyle(field: StyleField, fromId: string, name: string): string | null {
+    const n = this.doc.get(fromId);
+    if (!n) return null;
+    const style = styleFrom(n, field, newId(), name.trim().slice(0, 200) || 'Style');
+    if (!style) return null;
+    this.transact(() => {
+      this.setFileState({ styles: [...this.styles, style].slice(0, 500) });
+      this.put({ ...this.doc.get(fromId)!, [STYLE_KEY[field]]: style.id });
+    });
+    return style.id;
+  }
+
+  applyStyle(ids: string[], field: StyleField, styleId: string | null) {
+    const st = styleId ? this.styles.find((x) => x.id === styleId) : undefined;
+    this.updateNodes(ids, (n) => (st ? { ...applyStyleValue(n, field, st), [STYLE_KEY[field]]: st.id } : { ...n, [STYLE_KEY[field]]: undefined }));
+  }
+
+  updateStyle(id: string, patch: { name?: string; value?: Style['value'] }) {
+    this.transact(() =>
+      this.setFileState({
+        styles: this.styles.map((st) =>
+          st.id === id ? ({ ...st, ...(patch.name !== undefined ? { name: patch.name.trim().slice(0, 200) || st.name } : {}), ...(patch.value ? { value: patch.value } : {}) } as Style) : st,
+        ),
+      }),
+    );
+  }
+
+  /** Deleting a style leaves its layers looking the same, just no longer linked. */
+  deleteStyle(id: string) {
+    this.transact(() => this.setFileState({ styles: this.styles.filter((st) => st.id !== id) }));
+  }
+
+  // -------------------------------------------------------------- variables
+
+  setVariables(next: Variables) {
+    this.transact(() => this.setFileState({ variables: next }));
+  }
+
+  /** Binds a property of the given layers to a variable (or unbinds with null). */
+  bind(ids: string[], prop: Bindable, varId: string | null) {
+    this.updateNodes(ids, (n) => {
+      const b = { ...(n.bindings ?? {}) };
+      if (varId) b[prop] = varId;
+      else delete b[prop];
+      const next = { ...n, bindings: Object.keys(b).length ? b : undefined };
+      return varId ? resolveBindings(this.doc, this.variables, next) : next;
+    });
+  }
+
+  /** Chooses which mode of a collection a frame's content uses. */
+  setMode(ids: string[], collectionId: string, modeId: string | null) {
+    this.updateNodes(ids, (n) => {
+      const m = { ...(n.modes ?? {}) };
+      if (modeId) m[collectionId] = modeId;
+      else delete m[collectionId];
+      return { ...n, modes: Object.keys(m).length ? m : undefined };
+    });
   }
 
   /** Groups always fit their children: refit the touched ones (deepest first); empty groups go away. */
