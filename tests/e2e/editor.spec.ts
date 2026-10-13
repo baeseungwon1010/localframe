@@ -135,10 +135,68 @@ test('export PNG and SVG of a frame, and the whole file as JSON', async ({ page 
 
   await page.getByRole('button', { name: 'Back to files' }).click();
   await page.getByRole('button', { name: /More actions for Untitled/ }).first().click();
-  const [json] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: 'Export file' }).click()]);
+  await page.getByRole('menuitem', { name: 'Export file…' }).click();
+  await page.getByLabel(/localframe file/).check();
+  const [json] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export', exact: true }).click()]);
   const data = JSON.parse(readFileSync(await json.path(), 'utf8'));
   expect(data.format).toBe('localframe-file');
   expect(data.nodes.length).toBeGreaterThanOrEqual(2);
+});
+
+test('pages, images, components, connectors and PDF export', async ({ page }) => {
+  const errors = await newFile(page);
+  const { at, drag } = await canvasHelpers(page);
+
+  // a component with an instance
+  await page.keyboard.press('f');
+  await drag([60, 60], [220, 110]);
+  await page.keyboard.press('Control+Alt+k');
+  await expect(page.getByRole('region', { name: 'Component' })).toBeVisible();
+  await page.getByRole('button', { name: 'Create instance' }).click();
+  await expect(page.getByRole('region', { name: 'Instance' })).toBeVisible();
+
+  // a connector between two shapes
+  await page.mouse.click(...at(850, 650));
+  await page.keyboard.press('r');
+  await drag([300, 300], [400, 360]);
+  await page.keyboard.press('o');
+  await drag([600, 300], [700, 360]);
+  await page.keyboard.press('Shift+L');
+  await drag([350, 330], [650, 330]);
+  await expect(page.getByRole('region', { name: 'Connector' })).toContainText('Start on “Rectangle 1”');
+
+  // an image through the file picker
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Place image' }).click()]);
+  await chooser.setFiles({ name: 'dot.png', mimeType: 'image/png', buffer: png });
+  await expect(page.getByRole('treeitem', { name: 'dot' })).toBeVisible();
+
+  // a second page
+  await page.getByRole('button', { name: 'Add page' }).click();
+  await expect(page.getByRole('option', { name: 'Page 2' })).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('r');
+  await drag([200, 200], [300, 300]);
+  await page.getByRole('option', { name: 'Page 1' }).click();
+  await expect(page.getByRole('treeitem', { name: 'dot' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
+
+  // whole file as PDF: two frames on page 1, its loose layers, and page 2
+  await page.getByRole('button', { name: 'Export file' }).click();
+  await page.getByLabel(/PDF/).check();
+  const [pdf] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export', exact: true }).click()]);
+  const pdfText = readFileSync(await pdf.path()).toString('latin1');
+  expect(pdfText.startsWith('%PDF')).toBe(true);
+  expect(pdfText).toContain('/Count 4');
+  await page.getByRole('button', { name: 'Close' }).click();
+
+  // everything survives a reload
+  await page.reload();
+  await expect(page.getByRole('option', { name: 'Page 2' })).toBeVisible();
+  await expect(page.getByRole('treeitem', { name: 'dot' })).toBeVisible();
+  expect(errors).toEqual([]);
 });
 
 test('canvas text: double-click to edit, Korean input, empty text is removed', async ({ page }) => {
