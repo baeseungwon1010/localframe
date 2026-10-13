@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createReadStream } from 'node:fs';
+import { pipeline } from 'node:stream';
 import { stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import type { ZodType } from 'zod';
@@ -64,10 +65,13 @@ class HttpError extends Error {
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 
+const API_CSP = "default-src 'none'; frame-ancestors 'none'; sandbox";
+
 function send(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) {
   const json = body === undefined ? '' : JSON.stringify(body);
   res.writeHead(status, {
     ...SECURITY_HEADERS,
+    'Content-Security-Policy': API_CSP,
     'Cache-Control': 'no-store',
     ...(json ? { 'Content-Type': 'application/json; charset=utf-8' } : {}),
     ...headers,
@@ -184,7 +188,12 @@ export function createApp(opts: AppOptions) {
       if (method === 'GET') {
         const png = store.getThumbnail(id);
         if (!png) throw new HttpError(404, 'No thumbnail');
-        res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+        res.writeHead(200, {
+          ...SECURITY_HEADERS,
+          'Content-Security-Policy': API_CSP,
+          'Content-Type': 'image/png',
+          'Cache-Control': 'no-store',
+        });
         return res.end(Buffer.from(png));
       }
       if (method === 'PUT') {
@@ -201,9 +210,10 @@ export function createApp(opts: AppOptions) {
       if (method !== 'GET') throw new HttpError(405, 'Method not allowed');
       const data = store.exportFile(id);
       if (!data) throw new HttpError(404, 'File not found');
-      const safeName = data.name.replace(/[^A-Za-z0-9 _.-]/g, '_').slice(0, 80) || 'file';
+      const ascii = data.name.replace(/[^A-Za-z0-9 _.-]/g, '_').slice(0, 80) || 'file';
+      const utf8 = encodeURIComponent(`${data.name.slice(0, 80)}.localframe.json`);
       return send(res, 200, data, {
-        'Content-Disposition': `attachment; filename="${safeName}.localframe.json"`,
+        'Content-Disposition': `attachment; filename="${ascii}.localframe.json"; filename*=UTF-8''${utf8}`,
       });
     }
 
@@ -239,7 +249,10 @@ export function createApp(opts: AppOptions) {
       ...(type.startsWith('text/html') ? { 'Content-Security-Policy': CSP } : {}),
     });
     if (req.method === 'HEAD') return res.end();
-    createReadStream(file).pipe(res);
+    // pipeline handles a file that vanishes mid-read (e.g. a rebuild) without crashing the server
+    pipeline(createReadStream(file), res, (err) => {
+      if (err) res.destroy();
+    });
   }
 
   return async function handle(req: IncomingMessage, res: ServerResponse) {
