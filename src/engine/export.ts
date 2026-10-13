@@ -1,11 +1,11 @@
-import type { ImagePaint, Paint, SceneNode, SolidPaint } from '../../shared/schema.ts';
+import { type Effect, type GradientPaint, type ImagePaint, type Paint, type SceneNode, type SolidPaint, isGradientPaint } from '../../shared/schema.ts';
 import type { SceneDoc } from './doc.ts';
 import { embeddedFontCss, type TextRun } from './fonts.ts';
 import { ensureImages, imageDataUrl, imageSize } from './images.ts';
 import { instanceDoc } from './instances.ts';
 import { type Mat, type Rect, IDENTITY, localMatrix, unionRects } from './math.ts';
 import { buildPdf, type PdfPage } from './pdf.ts';
-import { arrowSize, clampRadii, drawNode, imageRect, imagesUsed } from './render.ts';
+import { arrowSize, clampRadii, drawNode, effectReach, imageRect, imagesUsed } from './render.ts';
 import { fontStack, layoutText, lineOffset } from './text.ts';
 
 export type ExportTarget = { ids: string[]; background: string | null };
@@ -13,6 +13,7 @@ export type RasterFormat = 'png' | 'jpg' | 'webp';
 export type ExportFormat = RasterFormat | 'svg' | 'pdf';
 
 const isContainer = (n: SceneNode) => n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'INSTANCE';
+const clips = (n: SceneNode) => isContainer(n) && !!n.clipsContent;
 
 /** Extra room for strokes and arrow heads that reach outside a node's box. */
 function overhang(doc: SceneDoc, id: string): number {
@@ -20,13 +21,14 @@ function overhang(doc: SceneDoc, id: string): number {
   const visit = (nid: string) => {
     const n = doc.get(nid)!;
     if (!n.visible) return;
+    max = Math.max(max, effectReach(n));
     const stroked = n.strokes.some((p) => p.visible) && n.strokeWeight > 0;
     if (stroked) {
       if (n.type === 'LINE') max = Math.max(max, n.strokeWeight / 2, n.arrowStart || n.arrowEnd ? arrowSize(n.strokeWeight).halfWidth : 0);
       else if (n.strokeAlign === 'center') max = Math.max(max, n.strokeWeight / 2);
       else if (n.strokeAlign === 'outside') max = Math.max(max, n.strokeWeight);
     }
-    if (!(isContainer(n) && n.clipsContent)) for (const c of doc.children(nid)) visit(c);
+    if (!clips(n)) for (const c of doc.children(nid)) visit(c);
   };
   visit(id);
   return max;
@@ -37,7 +39,7 @@ export function exportBounds(doc: SceneDoc, ids: string[]): Rect | null {
   const rects = ids.map((id) => {
     const n = doc.get(id)!;
     const b = doc.worldBounds(id);
-    if (isContainer(n) && n.clipsContent) return b;
+    if (clips(n) && !effectReach(n)) return b;
     const pad = overhang(doc, id);
     return { x: b.x - pad, y: b.y - pad, width: b.width + pad * 2, height: b.height + pad * 2 };
   });
@@ -162,7 +164,7 @@ function shapeElement(n: SceneNode, attrs: string): string {
   return `<path d="${roundedRectPath(n)}"${attrs}/>`;
 }
 
-const paintAttrs = (p: SolidPaint, kind: 'fill' | 'stroke') =>
+const solidAttrs = (p: SolidPaint, kind: 'fill' | 'stroke') =>
   ` ${kind}="${escapeXml(p.color)}"${p.opacity < 1 ? ` ${kind}-opacity="${num(p.opacity)}"` : ''}`;
 
 export type SvgAssets = { images: Map<string, { url: string; width: number; height: number }> };
@@ -194,10 +196,72 @@ class SvgWriter {
     return this.defs.length || extra ? `<defs>${extra}${this.defs.join('')}</defs>` : '';
   }
 
+  /** fill/stroke attributes for a solid or gradient paint (gradients go into defs). */
+  private paint(p: SolidPaint | GradientPaint, kind: 'fill' | 'stroke', w: number, h: number): string {
+    if (!isGradientPaint(p)) return solidAttrs(p, kind);
+    const gid = this.id('grad');
+    const stops = [...p.stops]
+      .sort((a, b) => a.position - b.position)
+      .map((st) => `<stop offset="${num(st.position)}" stop-color="${escapeXml(st.color)}"${st.opacity * p.opacity < 1 ? ` stop-opacity="${num(st.opacity * p.opacity)}"` : ''}/>`)
+      .join('');
+    const fx = p.from.x * w;
+    const fy = p.from.y * h;
+    const tx = p.to.x * w;
+    const ty = p.to.y * h;
+    this.defs.push(
+      p.type === 'GRADIENT_LINEAR'
+        ? `<linearGradient id="${gid}" gradientUnits="userSpaceOnUse" x1="${num(fx)}" y1="${num(fy)}" x2="${num(tx)}" y2="${num(ty)}">${stops}</linearGradient>`
+        : `<radialGradient id="${gid}" gradientUnits="userSpaceOnUse" cx="${num(fx)}" cy="${num(fy)}" r="${num(Math.max(0.01, Math.hypot(tx - fx, ty - fy)))}">${stops}</radialGradient>`,
+    );
+    return ` ${kind}="url(#${gid})"`;
+  }
+
+  /** An SVG filter for shadows and layer blur (background blur has no SVG equivalent and is left out). */
+  private filter(n: SceneNode, effects: Effect[]): string {
+    const prims: string[] = [];
+    const merge: string[] = [];
+    effects.forEach((e, i) => {
+      if (e.type !== 'DROP_SHADOW') return;
+      let src = 'SourceAlpha';
+      if (e.spread) {
+        prims.push(`<feMorphology in="SourceAlpha" operator="${e.spread > 0 ? 'dilate' : 'erode'}" radius="${num(Math.abs(e.spread))}" result="d${i}s"/>`);
+        src = `d${i}s`;
+      }
+      prims.push(
+        `<feOffset in="${src}" dx="${num(e.x)}" dy="${num(e.y)}" result="d${i}o"/>`,
+        `<feGaussianBlur in="d${i}o" stdDeviation="${num(e.blur / 2)}" result="d${i}b"/>`,
+        `<feFlood flood-color="${escapeXml(e.color)}" flood-opacity="${num(e.opacity)}" result="d${i}f"/>`,
+        `<feComposite in="d${i}f" in2="d${i}b" operator="in" result="d${i}"/>`,
+      );
+      merge.push(`d${i}`);
+    });
+    merge.push('SourceGraphic');
+    effects.forEach((e, i) => {
+      if (e.type !== 'INNER_SHADOW') return;
+      prims.push(
+        `<feFlood flood-color="${escapeXml(e.color)}" flood-opacity="${num(e.opacity)}" result="i${i}f"/>`,
+        `<feOffset in="SourceAlpha" dx="${num(e.x)}" dy="${num(e.y)}" result="i${i}o"/>`,
+        `<feGaussianBlur in="i${i}o" stdDeviation="${num(e.blur / 2)}" result="i${i}b"/>`,
+        `<feComposite in="SourceAlpha" in2="i${i}b" operator="arithmetic" k2="1" k3="-1" result="i${i}m"/>`,
+        `<feComposite in="i${i}f" in2="i${i}m" operator="in" result="i${i}"/>`,
+      );
+      merge.push(`i${i}`);
+    });
+    prims.push(`<feMerge result="m">${merge.map((m) => `<feMergeNode in="${m}"/>`).join('')}</feMerge>`);
+    const blur = effects.find((e) => e.type === 'LAYER_BLUR');
+    if (blur && blur.type === 'LAYER_BLUR' && blur.radius > 0) prims.push(`<feGaussianBlur in="m" stdDeviation="${num(blur.radius / 2)}"/>`);
+    const r = effectReach(n) + n.strokeWeight * 2 + 2;
+    const fid = this.id('fx');
+    this.defs.push(
+      `<filter id="${fid}" filterUnits="userSpaceOnUse" x="${num(-r)}" y="${num(-r)}" width="${num(n.width + r * 2)}" height="${num(Math.max(n.height, 1) + r * 2)}" color-interpolation-filters="sRGB">${prims.join('')}</filter>`,
+    );
+    return ` filter="url(#${fid})"`;
+  }
+
   private fills(n: SceneNode): string {
     return n.fills
       .filter((p) => p.visible)
-      .map((p: Paint) => (p.type === 'IMAGE' ? this.imageFill(n, p) : shapeElement(n, paintAttrs(p, 'fill'))))
+      .map((p: Paint) => (p.type === 'IMAGE' ? this.imageFill(n, p) : shapeElement(n, this.paint(p, 'fill', n.width, n.height))))
       .join('');
   }
 
@@ -248,7 +312,7 @@ class SvgWriter {
       wrapClose = '</g>';
       width *= 2;
     }
-    for (const p of paints) out.push(shapeElement(n, ` fill="none"${paintAttrs(p, 'stroke')} stroke-width="${num(width)}"${dash}`));
+    for (const p of paints) out.push(shapeElement(n, ` fill="none"${this.paint(p, 'stroke', n.width, n.height)} stroke-width="${num(width)}"${dash}`));
     return wrapOpen + out.join('') + wrapClose;
   }
 
@@ -262,9 +326,9 @@ class SvgWriter {
     const dash = n.strokeDash.length ? ` stroke-dasharray="${n.strokeDash.map(num).join(' ')}"` : '';
     const out: string[] = [];
     for (const p of paints) {
-      out.push(`<path d="M${num(ts)} 0H${num(len - te)}" fill="none"${paintAttrs(p, 'stroke')} stroke-width="${num(n.strokeWeight)}"${dash}/>`);
-      if (n.arrowEnd) out.push(`<path d="M${num(len)} 0L${num(len - al)} ${num(-aw)}L${num(len - al)} ${num(aw)}Z"${paintAttrs(p, 'fill')}/>`);
-      if (n.arrowStart) out.push(`<path d="M0 0L${num(al)} ${num(-aw)}L${num(al)} ${num(aw)}Z"${paintAttrs(p, 'fill')}/>`);
+      out.push(`<path d="M${num(ts)} 0H${num(len - te)}" fill="none"${this.paint(p, 'stroke', Math.max(1, len), Math.max(1, n.strokeWeight))} stroke-width="${num(n.strokeWeight)}"${dash}/>`);
+      if (n.arrowEnd) out.push(`<path d="M${num(len)} 0L${num(len - al)} ${num(-aw)}L${num(len - al)} ${num(aw)}Z"${this.paint(p, 'fill', Math.max(1, len), Math.max(1, n.strokeWeight))}/>`);
+      if (n.arrowStart) out.push(`<path d="M0 0L${num(al)} ${num(-aw)}L${num(al)} ${num(aw)}Z"${this.paint(p, 'fill', Math.max(1, len), Math.max(1, n.strokeWeight))}/>`);
     }
     return out.join('');
   }
@@ -272,7 +336,7 @@ class SvgWriter {
   private text(n: SceneNode): string {
     const t = n.text!;
     const layout = layoutText(t, t.autoResize === 'width' ? null : n.width);
-    const fills = n.fills.filter((p): p is SolidPaint => p.visible && p.type !== 'IMAGE');
+    const fills = n.fills.filter((p): p is SolidPaint | GradientPaint => p.visible && p.type !== 'IMAGE');
     if (fills.length === 0) return '';
     const stack = fontStack(t.fontFamily);
     this.runs.push({
@@ -294,7 +358,7 @@ class SvgWriter {
             return `<tspan x="${num(x)}" y="${num(y)}" dominant-baseline="central">${escapeXml(line.text)}</tspan>`;
           })
           .join('');
-        return `<text${common}${paintAttrs(p, 'fill')}>${spans}</text>`;
+        return `<text${common}${this.paint(p, 'fill', n.width, n.height)}>${spans}</text>`;
       })
       .join('');
   }
@@ -321,6 +385,9 @@ class SvgWriter {
       case 'COMPONENT':
         body = this.container(doc, n, depth);
         break;
+      case 'GROUP':
+        body = doc.children(n.id).map((id) => this.node(doc, doc.get(id)!, depth)).join('');
+        break;
       case 'INSTANCE': {
         const v = depth < 12 ? instanceDoc(this.root, n) : null;
         body = v ? this.container(v, v.get(n.id)!, depth + 1) : '';
@@ -337,6 +404,8 @@ class SvgWriter {
         body = this.text(n);
         break;
     }
+    const effects = (n.effects ?? []).filter((e) => e.visible && e.type !== 'BACKGROUND_BLUR');
+    if (effects.length) body = `<g${this.filter(n, effects)}>${body}</g>`;
     return `<g${name}${matrixAttr(m)}${opacity}>${body}</g>`;
   }
 }
