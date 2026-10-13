@@ -97,7 +97,9 @@ async function readJson<T>(req: IncomingMessage, schema: ZodType<T>, limit: numb
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    const text = Buffer.concat(chunks).toString('utf8');
+    chunks.length = 0; // let the raw chunks go before parsing
+    parsed = JSON.parse(text);
   } catch {
     throw new HttpError(400, 'Body is not valid JSON');
   }
@@ -134,6 +136,7 @@ export function createApp(opts: AppOptions) {
     }
   }
   const staticRoot = staticDir ? resolve(staticDir) : null;
+  let importing = false;
 
   function checkRequest(req: IncomingMessage) {
     // DNS rebinding guard: only answer requests addressed to a loopback name.
@@ -162,8 +165,15 @@ export function createApp(opts: AppOptions) {
 
     if (path.length === 2 && path[1] === 'import') {
       if (method !== 'POST') throw new HttpError(405, 'Method not allowed');
-      const body = await readJson(req, ExportedFileSchema, Math.max(limit, MAX_IMPORT_BYTES));
-      return send(res, 201, store.importFile(body));
+      // imports can be large: one at a time keeps memory use predictable
+      if (importing) throw new HttpError(429, 'Another import is still running. Try again when it finishes.');
+      importing = true;
+      try {
+        const body = await readJson(req, ExportedFileSchema, Math.max(limit, MAX_IMPORT_BYTES));
+        return send(res, 201, store.importFile(body));
+      } finally {
+        importing = false;
+      }
     }
 
     const id = path[1];

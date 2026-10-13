@@ -87,6 +87,8 @@ function toMeta(r: FileRow): FileMeta {
 const now = () => new Date().toISOString();
 const META_COLS = 'id, name, background, pages, version, created_at, updated_at, (thumbnail is not null) as has_thumbnail';
 
+export const MAX_IMAGE_BYTES_PER_FILE = 1024 * 1024 * 1024;
+
 export const imageHash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
 export class Store {
@@ -200,6 +202,9 @@ export class Store {
     const mime = sniffImage(bytes);
     if (!mime) return null;
     const id = imageHash(bytes);
+    const used = this.db.prepare('select coalesce(sum(length(data)), 0) as n from images where file_id = ?').get(fileId) as { n: number };
+    if (Number(used.n) + bytes.length > MAX_IMAGE_BYTES_PER_FILE && !this.getImage(fileId, id))
+      throw new InvalidError('this file already holds 1 GB of images');
     this.db
       .prepare('insert into images (file_id, id, mime, data) values (?, ?, ?, ?) on conflict (file_id, id) do nothing')
       .run(fileId, id, mime, bytes);
@@ -245,7 +250,13 @@ export class Store {
     const pages = data.pages ?? defaultPages(data.background);
     const problem = validateTree(data.nodes, pages);
     if (problem) throw new InvalidError(problem);
-    const images = (data.images ?? []).map((img) => {
+    // only keep images the layers actually use
+    const used = new Set<string>();
+    for (const n of data.nodes) {
+      for (const p of n.fills) if (p.type === 'IMAGE') used.add(p.imageId);
+      for (const o of Object.values(n.overrides ?? {})) for (const p of o.fills ?? []) if (p.type === 'IMAGE') used.add(p.imageId);
+    }
+    const images = (data.images ?? []).filter((img) => used.has(img.id)).map((img) => {
       const bytes = Buffer.from(img.data, 'base64');
       if (imageHash(bytes) !== img.id || sniffImage(bytes) !== img.mime) throw new InvalidError(`image ${img.id.slice(0, 8)} is damaged`);
       return bytes;
