@@ -452,3 +452,77 @@ describe('variants and component properties', () => {
     expect(ed.inner).toBeNull();
   });
 });
+
+describe('styles', () => {
+  it('apply, update everywhere, detach on direct edits, and survive deletion as plain values', () => {
+    const ed = setup();
+    const a = draw(ed, 'rect', [100, 100], [200, 200]);
+    const b = draw(ed, 'rect', [300, 100], [400, 200]);
+    ed.updateNodes([a], (n) => ({ ...n, fills: [{ color: '#C8106E', opacity: 1, visible: true }] }));
+    const sid = ed.createStyle('fill', a, 'Brand/Primary')!;
+    ed.applyStyle([b], 'fill', sid);
+    expect(ed.doc.get(b)!.fills).toEqual(ed.doc.get(a)!.fills);
+
+    ed.updateStyle(sid, { value: [{ color: '#6B35C9', opacity: 1, visible: true }] });
+    expect((ed.doc.get(a)!.fills[0] as { color: string }).color).toBe('#6B35C9');
+    expect((ed.doc.get(b)!.fills[0] as { color: string }).color).toBe('#6B35C9');
+
+    // editing b's fill directly detaches it
+    ed.updateNodes([b], (n) => ({ ...n, fills: [{ color: '#000000', opacity: 1, visible: true }] }));
+    expect(ed.doc.get(b)!.fillStyleId).toBeUndefined();
+    expect(ed.doc.get(a)!.fillStyleId).toBe(sid);
+
+    ed.deleteStyle(sid);
+    expect(ed.doc.get(a)!.fillStyleId).toBeUndefined();
+    expect((ed.doc.get(a)!.fills[0] as { color: string }).color).toBe('#6B35C9');
+    ed.undo();
+    expect(ed.styles).toHaveLength(1);
+    valid(ed);
+  });
+
+  it('text styles carry font settings', () => {
+    const ed = setup();
+    ed.pasteText('Heading');
+    const t = ed.selection[0];
+    ed.updateNodes([t], (n) => ({ ...n, text: { ...n.text!, fontSize: 32, fontWeight: 700 } }));
+    const sid = ed.createStyle('text', t, 'H1')!;
+    ed.pasteText('Other');
+    const u = ed.selection[0];
+    ed.applyStyle([u], 'text', sid);
+    expect(ed.doc.get(u)!.text).toMatchObject({ fontSize: 32, fontWeight: 700, characters: 'Other' });
+  });
+});
+
+describe('variables', () => {
+  it('bind colours and numbers, follow modes chosen on frames, and update when values change', () => {
+    const ed = setup();
+    const frame = draw(ed, 'frame', [0, 0], [400, 400]);
+    const r = draw(ed, 'rect', [50, 50], [150, 150]);
+    const col = { id: 'theme', name: 'Theme', modes: [{ id: 'light', name: 'Light' }, { id: 'dark', name: 'Dark' }] };
+    ed.setVariables({
+      collections: [col],
+      vars: [
+        { id: 'bg', collectionId: 'theme', name: 'surface', type: 'COLOR', values: { light: '#FFFFFF', dark: '#111111' } },
+        { id: 'rad', collectionId: 'theme', name: 'radius', type: 'NUMBER', values: { light: 4, dark: 12 } },
+      ],
+    });
+    ed.bind([r], 'fill', 'bg');
+    ed.bind([r], 'radius', 'rad');
+    const color = () => (ed.doc.get(r)!.fills[0] as { color: string }).color;
+    expect(color()).toBe('#FFFFFF');
+    expect(ed.doc.get(r)!.radii).toEqual([4, 4, 4, 4]);
+
+    ed.setMode([frame], 'theme', 'dark');
+    expect(color()).toBe('#111111');
+    expect(ed.doc.get(r)!.radii).toEqual([12, 12, 12, 12]);
+
+    ed.setVariables({ ...ed.variables, vars: ed.variables.vars.map((v) => (v.id === 'bg' ? { ...v, values: { light: '#FFFFFF', dark: '#222222' } } : v)) });
+    expect(color()).toBe('#222222');
+
+    // a direct edit lets go of the binding
+    ed.updateNodes([r], (n) => ({ ...n, radii: [0, 0, 0, 0] }));
+    expect(ed.doc.get(r)!.bindings?.radius).toBeUndefined();
+    expect(ed.doc.get(r)!.bindings?.fill).toBe('bg');
+    valid(ed);
+  });
+});
