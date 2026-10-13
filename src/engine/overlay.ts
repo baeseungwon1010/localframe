@@ -2,6 +2,7 @@ import type { SceneNode } from '../../shared/schema.ts';
 import type { Editor } from './editor.ts';
 import { type Mat, apply, multiply } from './math.ts';
 import { drawChildren } from './render.ts';
+import { tracePath } from './vector.ts';
 
 export type OverlayColors = {
   accent: string;
@@ -18,6 +19,13 @@ const LABEL_FONT_SIZE = 11;
 
 function outlinePath(ctx: CanvasRenderingContext2D, n: SceneNode, m: Mat) {
   ctx.beginPath();
+  if (n.type === 'VECTOR' && n.vector) {
+    ctx.save();
+    ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+    tracePath(ctx, n.vector);
+    ctx.restore();
+    return;
+  }
   if (n.type === 'LINE') {
     const a = apply(m, { x: 0, y: 0 });
     const b = apply(m, { x: n.width, y: 0 });
@@ -182,6 +190,67 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
         ctx.fill();
         ctx.lineWidth = 1;
         ctx.strokeStyle = bound ? c.handleFill : c.accent;
+        ctx.stroke();
+      }
+    }
+  }
+
+  // pen: the path so far, its points, and the segment to the pointer
+  if (editor.pen) {
+    const pts = editor.pen.points.map((p) => editor.toScreen(p));
+    if (editor.penCursor && pts.length) {
+      const last = pts[pts.length - 1];
+      const cur = editor.toScreen(editor.penCursor);
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(last.x, last.y);
+      ctx.lineTo(cur.x, cur.y);
+      ctx.strokeStyle = c.accent;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
+    }
+    pts.forEach((p, i) => {
+      ctx.beginPath();
+      ctx.rect(Math.round(p.x) - 3.5, Math.round(p.y) - 3.5, 7, 7);
+      ctx.fillStyle = i === 0 ? c.accent : c.handleFill;
+      ctx.fill();
+      ctx.strokeStyle = c.accent;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+  }
+
+  // vector editing: outline, handles and points
+  if (editor.editingVector) {
+    const n = doc.get(editor.editingVector);
+    if (n) {
+      outlinePath(ctx, n, multiply(view, doc.world(n.id)));
+      haloStroke(ctx, c);
+      const parts = editor.vectorParts();
+      ctx.lineWidth = 1;
+      for (const part of parts) {
+        if (part.part === 'point') continue;
+        ctx.beginPath();
+        ctx.moveTo(part.anchor.x, part.anchor.y);
+        ctx.lineTo(part.at.x, part.at.y);
+        ctx.strokeStyle = c.accent;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(part.at.x, part.at.y, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = c.handleFill;
+        ctx.fill();
+        ctx.stroke();
+      }
+      for (const part of parts) {
+        if (part.part !== 'point') continue;
+        const selected = part.index === editor.vectorPoint;
+        ctx.beginPath();
+        ctx.rect(Math.round(part.at.x) - 3.5, Math.round(part.at.y) - 3.5, 7, 7);
+        ctx.fillStyle = selected ? c.accent : c.handleFill;
+        ctx.fill();
+        ctx.strokeStyle = c.accent;
         ctx.stroke();
       }
     }

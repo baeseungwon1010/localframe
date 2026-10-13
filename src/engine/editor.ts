@@ -2,6 +2,9 @@ import { generateNKeysBetween } from 'fractional-indexing';
 import { z } from 'zod';
 import {
   type Binding,
+  type BooleanOp,
+  type Vector,
+  type VectorPoint,
   type Layout,
   type NodeType,
   type Override,
@@ -53,10 +56,11 @@ import {
 } from './math.ts';
 import { canHaveChildren, createNode, fitText, keyAt, keyOnTop, keysAbove, keysOnTop, newId, nextName } from './nodes.ts';
 import { canvasMeasure } from './text.ts';
+import { fitVector, scaleVector } from './vector.ts';
 
 export { fitText };
 
-export type Tool = 'move' | 'hand' | 'frame' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'text';
+export type Tool = 'move' | 'hand' | 'frame' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'text' | 'pen';
 export type Viewport = { x: number; y: number; zoom: number };
 export type Channel = 'doc' | 'selection' | 'view' | 'tool' | 'hover' | 'pages';
 
@@ -105,7 +109,12 @@ type Interaction =
   | { kind: 'resize'; start: Point; handle: Handle; originals: Map<string, SceneNode>; ids: string[]; bounds: Rect }
   | { kind: 'rotate'; start: Point; id: string; original: SceneNode; center: Point }
   | { kind: 'line-end'; id: string; end: 0 | 1; original: SceneNode }
-  | { kind: 'create'; tool: Tool; start: Point; startScreen: Point; nodeId: string | null; parentId: string | null };
+  | { kind: 'create'; tool: Tool; start: Point; startScreen: Point; nodeId: string | null; parentId: string | null }
+  | { kind: 'pen-handle' }
+  | { kind: 'vec-point'; id: string; index: number; part: 'point' | 'in' | 'out'; start: Point; original: Vector };
+
+/** A path being drawn with the pen tool (world coordinates until it is placed). */
+type PenState = { nodeId: string; parentId: string | null; points: VectorPoint[] };
 
 const DRAG_THRESHOLD = 3; // screen px
 const HANDLE_HIT = 6; // screen px
@@ -174,6 +183,13 @@ export class Editor {
   marquee: Rect | null = null;
   /** Layer a line end will attach to if released now. */
   bindTarget: string | null = null;
+  /** Path being drawn with the pen tool. */
+  pen: PenState | null = null;
+  /** Pointer position for the pen's preview segment. */
+  penCursor: Point | null = null;
+  /** Vector layer whose points are being edited, and the selected point. */
+  editingVector: string | null = null;
+  vectorPoint: number | null = null;
   sizeBadge: { text: string; at: Point } | null = null;
   spaceDown = false;
   pages: Page[] = [{ id: 'page-1', name: 'Page 1', background: '#F3F3F1' }];
@@ -323,6 +339,8 @@ export class Editor {
   }
 
   setTool(tool: Tool) {
+    if (this.pen && tool !== 'pen') this.finishPen();
+    if (this.editingVector) this.exitVectorEdit();
     this.tool = tool;
     this.emit('tool', 'view');
   }
@@ -343,7 +361,12 @@ export class Editor {
 
   /** Writes a node inside the current transaction. Top-level layers get the current page. */
   put(node: SceneNode) {
-    let n = sanitize(node, this.doc.get(node.id));
+    const prev = this.doc.get(node.id);
+    let n = sanitize(node, prev);
+    // a vector's points follow its box when it is resized (not when its points were edited)
+    if (n.type === 'VECTOR' && prev?.vector && n.vector === prev.vector && (n.width !== prev.width || n.height !== prev.height)) {
+      n = { ...n, vector: scaleVector(prev.vector, prev.width > 0 ? n.width / prev.width : 1, prev.height > 0 ? n.height / prev.height : 1) };
+    }
     if (n.parentId === null && n.pageId === undefined) n = { ...n, pageId: this.doc.currentPage };
     else if (n.parentId !== null && n.pageId !== undefined) {
       const { pageId: _drop, ...rest } = n;
@@ -545,7 +568,7 @@ export class Editor {
     const addChain = (id: string | null | undefined) => {
       let cur = id ? doc.get(id) : undefined;
       for (let guard = 0; cur && guard < 200; guard++) {
-        if (cur.type === 'GROUP') groups.add(cur.id);
+        if (cur.type === 'GROUP' || cur.type === 'BOOLEAN') groups.add(cur.id);
         cur = cur.parentId ? doc.get(cur.parentId) : undefined;
       }
     };
@@ -1241,7 +1264,43 @@ export class Editor {
     this.wrapInFrame('GROUP');
   }
 
-  wrapInFrame(type: 'FRAME' | 'GROUP' = 'FRAME') {
+  /** Combines the selection into a boolean layer (union, subtract, intersect, exclude). */
+  booleanSelection(op: BooleanOp) {
+    const sel = this.selectedNodes();
+    if (sel.length === 1 && sel[0].type === 'BOOLEAN') {
+      this.updateNodes([sel[0].id], (n) => ({ ...n, booleanOp: op }));
+      return;
+    }
+    if (this.selectionRoots().length < 2) return;
+    const bottom = this.selectionRoots().map((id) => this.doc.get(id)!).sort((a, b) => (a.order < b.order ? -1 : 1))[0];
+    this.transact(() => {
+      this.wrapInFrame('BOOLEAN');
+      const b = this.doc.get(this.selection[0]);
+      if (!b) return;
+      const fills = bottom.fills.length ? bottom.fills : b.fills;
+      this.put({ ...b, booleanOp: op, fills, name: { union: 'Union', subtract: 'Subtract', intersect: 'Intersect', exclude: 'Exclude' }[op] });
+    });
+  }
+
+  /** Ctrl/Cmd+Alt+M: one layer becomes (or stops being) a mask; several are grouped with the bottom one as the mask. */
+  useAsMask() {
+    const roots = this.selectionRoots();
+    if (roots.length === 0) return;
+    if (roots.length === 1) {
+      this.updateNodes(roots, (n) => ({ ...n, isMask: n.isMask ? undefined : true }));
+      return;
+    }
+    this.transact(() => {
+      this.wrapInFrame('GROUP');
+      const g = this.doc.get(this.selection[0]);
+      if (!g) return;
+      this.put({ ...g, name: 'Mask group' });
+      const bottom = this.doc.children(g.id)[0];
+      if (bottom) this.put({ ...this.doc.get(bottom)!, isMask: true });
+    });
+  }
+
+  wrapInFrame(type: 'FRAME' | 'GROUP' | 'BOOLEAN' = 'FRAME') {
     const roots = this.selectionRoots();
     if (roots.length === 0) return;
     const parentId = this.doc.get(roots[0])!.parentId;
@@ -1259,9 +1318,9 @@ export class Editor {
         height: Math.max(1, round2(b.height)),
       });
       const frame: SceneNode =
-        type === 'GROUP'
-          ? { ...base, order: keyAt(this.doc, sibs, topIndex) }
-          : { ...base, order: keyAt(this.doc, sibs, topIndex), fills: [], clipsContent: false };
+        type === 'FRAME'
+          ? { ...base, order: keyAt(this.doc, sibs, topIndex), fills: [], clipsContent: false }
+          : { ...base, order: keyAt(this.doc, sibs, topIndex) };
       this.put(frame);
       const frameWorld = multiply(parentWorld, localMatrix(frame.x, frame.y, 0));
       const keys = keysOnTop(this.doc, frame.id, roots.length);
@@ -1427,7 +1486,7 @@ export class Editor {
   /** Screen positions of the selection handles. */
   handlePositions(): { handle: SelectionHandle; at: Point }[] {
     const sel = this.selectedNodes();
-    if (sel.length === 0 || this.editingText) return [];
+    if (sel.length === 0 || this.editingText || this.editingVector) return [];
     if (sel.length === 1 && sel[0].type === 'LINE') {
       const m = multiply(this.viewMatrix, this.doc.world(sel[0].id));
       return [
@@ -1497,6 +1556,21 @@ export class Editor {
       return;
     }
     if (e.button !== 0) return;
+    if (this.tool === 'pen') return this.penDown(p, e);
+    if (this.editingVector) {
+      const hit = this.vectorPartAt(e.sx, e.sy);
+      if (hit) {
+        const n = this.doc.get(this.editingVector)!;
+        this.begin();
+        this.vectorPoint = hit.index;
+        this.interaction = { kind: 'vec-point', id: n.id, index: hit.index, part: hit.part, start: p, original: n.vector! };
+        this.emit('view');
+        return;
+      }
+      const n = this.doc.get(this.editingVector);
+      if (n && hitDeepest(this.doc, p, this.hitTolerance()) === n.id) return;
+      this.exitVectorEdit();
+    }
 
     if (TOOL_TYPE[this.tool]) {
       const parentId = frameAt(this.doc, p);
@@ -1592,7 +1666,16 @@ export class Editor {
     const p = this.toWorld(e.sx, e.sy);
     const it = this.interaction;
     switch (it.kind) {
+      case 'pen-handle':
+        return this.penDrag(p, e);
+      case 'vec-point':
+        return this.dragVectorPart(it, p, e);
       case 'none': {
+        if (this.tool === 'pen') {
+          this.penCursor = this.snapPoint(p, new Set(this.pen ? [this.pen.nodeId] : []));
+          this.emit('view');
+          return;
+        }
         if (this.tool === 'move' && !this.editingText && !this.spaceDown) {
           const label = this.frameLabelAt(e.sx, e.sy);
           if (label) return this.setHover(label);
@@ -1677,6 +1760,17 @@ export class Editor {
   pointerUp(e: PointerInput) {
     const it = this.interaction;
     this.interaction = { kind: 'none' };
+    if (it.kind === 'pen-handle') {
+      this.emit('view');
+      return;
+    }
+    if (it.kind === 'vec-point') {
+      const n = this.doc.get(it.id);
+      if (n) this.put(fitVector(n));
+      this.end();
+      this.emit('view');
+      return;
+    }
     this.guides = [];
     this.marquee = null;
     this.sizeBadge = null;
@@ -1745,6 +1839,7 @@ export class Editor {
     if (sel) {
       const node = this.doc.get(sel)!;
       if (node.type === 'TEXT' && deepest === sel) return this.startTextEdit(sel);
+      if (node.type === 'VECTOR' && deepest === sel) return this.startVectorEdit(sel);
       const chain = [...this.doc.ancestors(deepest), deepest];
       const idx = chain.indexOf(sel);
       if (idx >= 0 && idx < chain.length - 1) {
@@ -1766,6 +1861,157 @@ export class Editor {
       const v = this.viewport;
       this.setViewport({ ...v, x: v.x - dx, y: v.y - dy });
     }
+  }
+
+  // ----------------------------------------------------------------- pen
+
+  private penDown(world: Point, e: PointerInput) {
+    const p = this.snapPoint(world, new Set(this.pen ? [this.pen.nodeId] : []));
+    if (!this.pen) {
+      this.begin();
+      const parentId = frameAt(this.doc, p);
+      const node = createNode(this.doc, 'VECTOR', parentId, { x: 0, y: 0, width: 1, height: 1 });
+      this.put(node);
+      this.pen = { nodeId: node.id, parentId, points: [{ x: p.x, y: p.y }] };
+      this.selection = [node.id];
+      this.emit('selection');
+    } else {
+      const first = this.pen.points[0];
+      const fs = this.toScreen(first);
+      if (this.pen.points.length >= 2 && Math.hypot(fs.x - e.sx, fs.y - e.sy) <= 8) {
+        this.placePen(true);
+        this.finishPen();
+        return;
+      }
+      this.pen.points.push({ x: p.x, y: p.y });
+    }
+    this.placePen(false);
+    this.interaction = { kind: 'pen-handle' };
+  }
+
+  /** Dragging right after a click pulls out symmetric curve handles. */
+  private penDrag(world: Point, e: PointerInput) {
+    if (!this.pen) return;
+    const last = this.pen.points[this.pen.points.length - 1];
+    const dx = world.x - last.x;
+    const dy = world.y - last.y;
+    if (Math.hypot(dx, dy) * this.viewport.zoom < 2) return;
+    this.pen.points[this.pen.points.length - 1] = {
+      x: last.x,
+      y: last.y,
+      out: { x: world.x, y: world.y },
+      in: e.alt ? last.in : { x: last.x - dx, y: last.y - dy },
+    };
+    this.placePen(false);
+  }
+
+  /** Writes the pen's world points into the vector layer. */
+  private placePen(closed: boolean) {
+    if (!this.pen) return;
+    const n = this.doc.get(this.pen.nodeId);
+    if (!n) return;
+    const toParent = invert(this.pen.parentId === null ? IDENTITY : this.doc.world(this.pen.parentId));
+    const local = (q: Point) => apply(toParent, q);
+    const points = this.pen.points.map((pt) => ({
+      ...local(pt),
+      ...(pt.in ? { in: local(pt.in) } : {}),
+      ...(pt.out ? { out: local(pt.out) } : {}),
+    }));
+    this.put(fitVector({ ...n, x: 0, y: 0, rotation: 0, vector: { closed, points } }));
+    this.emit('doc', 'view');
+  }
+
+  /** Ends the pen path: one point is not a path, so it is removed. */
+  finishPen() {
+    const pen = this.pen;
+    this.pen = null;
+    this.penCursor = null;
+    if (!pen) return;
+    const n = this.doc.get(pen.nodeId);
+    if (!n || pen.points.length < 2) {
+      if (n) this.drop(pen.nodeId);
+      this.selection = [];
+    }
+    this.end();
+    this.tool = 'move';
+    this.emit('tool', 'view', 'selection');
+  }
+
+  // ------------------------------------------------------- vector editing
+
+  startVectorEdit(id: string) {
+    const n = this.doc.get(id);
+    if (!n || n.type !== 'VECTOR' || this.doc.isEffectivelyLocked(id)) return;
+    this.editingVector = id;
+    this.vectorPoint = null;
+    this.setSelection([id]);
+    this.emit('view', 'tool');
+  }
+
+  exitVectorEdit() {
+    if (!this.editingVector) return;
+    this.editingVector = null;
+    this.vectorPoint = null;
+    this.emit('view', 'tool');
+  }
+
+  /** Screen positions of the points and handles of the vector being edited. */
+  vectorParts(): { index: number; part: 'point' | 'in' | 'out'; at: Point; anchor: Point }[] {
+    const n = this.editingVector ? this.doc.get(this.editingVector) : undefined;
+    if (!n?.vector) return [];
+    const m = multiply(this.viewMatrix, this.doc.world(n.id));
+    const out: { index: number; part: 'point' | 'in' | 'out'; at: Point; anchor: Point }[] = [];
+    n.vector.points.forEach((pt, index) => {
+      const anchor = apply(m, pt);
+      if (pt.in) out.push({ index, part: 'in', at: apply(m, pt.in), anchor });
+      if (pt.out) out.push({ index, part: 'out', at: apply(m, pt.out), anchor });
+      out.push({ index, part: 'point', at: anchor, anchor });
+    });
+    return out;
+  }
+
+  private vectorPartAt(sx: number, sy: number) {
+    const parts = this.vectorParts();
+    for (let i = parts.length - 1; i >= 0; i--) {
+      if (Math.hypot(parts[i].at.x - sx, parts[i].at.y - sy) <= 6) return parts[i];
+    }
+    return null;
+  }
+
+  private dragVectorPart(it: Extract<Interaction, { kind: 'vec-point' }>, p: Point, e: PointerInput) {
+    const n = this.doc.get(it.id);
+    if (!n) return;
+    const d = applyVector(invert(this.doc.world(n.id)), { x: p.x - it.start.x, y: p.y - it.start.y });
+    const points = it.original.points.map((pt) => ({ ...pt }));
+    const pt = it.original.points[it.index];
+    const mv = (q: Point) => ({ x: round2(q.x + d.x), y: round2(q.y + d.y) });
+    if (it.part === 'point') {
+      points[it.index] = { ...mv(pt), ...(pt.in ? { in: mv(pt.in) } : {}), ...(pt.out ? { out: mv(pt.out) } : {}) };
+    } else {
+      const moved = mv(pt[it.part]!);
+      const other = it.part === 'in' ? 'out' : 'in';
+      const next: VectorPoint = { ...pt, [it.part]: moved };
+      // handles stay mirrored unless Alt is held
+      if (!e.alt && pt[other]) next[other] = { x: round2(2 * pt.x - moved.x), y: round2(2 * pt.y - moved.y) };
+      points[it.index] = next;
+    }
+    this.put({ ...n, vector: { ...it.original, points } });
+    this.emit('doc', 'view');
+  }
+
+  private deleteVectorPoint() {
+    const n = this.editingVector ? this.doc.get(this.editingVector) : undefined;
+    if (!n?.vector || this.vectorPoint === null) return;
+    if (n.vector.points.length <= 2) {
+      this.exitVectorEdit();
+      this.setSelection([n.id]);
+      this.deleteSelection();
+      return;
+    }
+    const points = n.vector.points.filter((_, i) => i !== this.vectorPoint);
+    this.transact(() => this.put(fitVector({ ...n, vector: { ...n.vector!, points } })));
+    this.vectorPoint = null;
+    this.emit('view');
   }
 
   // ---------------------------------------------------------------- move
@@ -2092,6 +2338,20 @@ export class Editor {
   keyDown(k: KeyInput): boolean {
     if (this.editingText) return false;
     const { code, shift, alt, mod } = k;
+    if (this.pen && (code === 'Enter' || code === 'Escape' || code === 'NumpadEnter')) {
+      this.finishPen();
+      return true;
+    }
+    if (this.editingVector) {
+      if (code === 'Enter' || code === 'Escape') {
+        this.exitVectorEdit();
+        return true;
+      }
+      if ((code === 'Delete' || code === 'Backspace') && this.vectorPoint !== null) {
+        this.deleteVectorPoint();
+        return true;
+      }
+    }
     if (code === 'Space') {
       if (!this.spaceDown) {
         this.spaceDown = true;
@@ -2141,6 +2401,12 @@ export class Editor {
           }
           if (shift) {
             this.onRequestImage?.();
+            return true;
+          }
+          return false;
+        case 'KeyM':
+          if (alt) {
+            this.useAsMask();
             return true;
           }
           return false;
@@ -2212,6 +2478,9 @@ export class Editor {
       case 'KeyL':
         this.setTool('line');
         return true;
+      case 'KeyP':
+        this.setTool('pen');
+        return true;
       case 'KeyT':
         this.setTool('text');
         return true;
@@ -2224,6 +2493,10 @@ export class Editor {
         return true;
       case 'Enter': {
         const sel = this.selectedNodes();
+        if (sel.length === 1 && sel[0].type === 'VECTOR' && !shift) {
+          this.startVectorEdit(sel[0].id);
+          return true;
+        }
         if (sel.length === 1 && sel[0].type === 'TEXT' && !shift) {
           this.startTextEdit(sel[0].id);
           return true;
@@ -2272,6 +2545,8 @@ export class Editor {
   /** Cursor for the current state at a screen point. */
   cursorAt(sx: number, sy: number): string {
     const it = this.interaction.kind;
+    if (this.tool === 'pen') return 'crosshair';
+    if (this.editingVector) return this.vectorPartAt(sx, sy) ? 'move' : 'default';
     if (it === 'pan') return 'grabbing';
     if (this.spaceDown || this.tool === 'hand') return 'grab';
     if (this.tool === 'text') return 'text';
