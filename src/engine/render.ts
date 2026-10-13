@@ -1,4 +1,4 @@
-import type { ImagePaint, Paint, SceneNode, SolidPaint } from '../../shared/schema.ts';
+import { type Effect, type GradientPaint, type ImagePaint, type Paint, type SceneNode, type ShadowEffect, type SolidPaint, isGradientPaint } from '../../shared/schema.ts';
 import type { SceneDoc } from './doc.ts';
 import { getImage } from './images.ts';
 import { instanceDoc } from './instances.ts';
@@ -24,21 +24,60 @@ export type DrawOptions = {
 export const INSTANCE_DRAW_BUDGET = 200_000;
 
 const MAX_INSTANCE_DEPTH = 12;
+/** Largest offscreen layer for effects, in device pixels per side. */
+const MAX_LAYER = 4096;
+
+const isBox = (n: SceneNode) => n.type === 'FRAME' || n.type === 'COMPONENT';
+
+/** How far effects reach outside a layer's box, in its own units. */
+export function effectReach(n: SceneNode): number {
+  let r = 0;
+  for (const e of n.effects ?? []) {
+    if (!e.visible) continue;
+    if (e.type === 'DROP_SHADOW') r = Math.max(r, Math.abs(e.x) + Math.abs(e.y) + e.blur * 1.5 + Math.max(0, e.spread));
+    if (e.type === 'LAYER_BLUR') r = Math.max(r, e.radius * 1.5);
+  }
+  return r;
+}
 
 function culled(doc: SceneDoc, n: SceneNode, cull: Rect | undefined): boolean {
   if (!cull) return false;
-  // Frames that don't clip can have children anywhere, so only their own box is skipped.
-  if ((n.type === 'FRAME' || n.type === 'COMPONENT') && !n.clipsContent) return false;
+  // Frames that don't clip, and groups, can have children anywhere: only skip what can't reach the view.
+  if ((isBox(n) && !n.clipsContent) || n.type === 'GROUP') return false;
   const b = doc.worldBounds(n.id);
-  const pad = n.strokeWeight * 2 + (n.type === 'LINE' ? 20 + n.strokeWeight * 4 : 0);
+  const pad = n.strokeWeight * 2 + (n.type === 'LINE' ? 20 + n.strokeWeight * 4 : 0) + effectReach(n);
   return !rectsIntersect({ x: b.x - pad, y: b.y - pad, width: b.width + pad * 2, height: b.height + pad * 2 }, cull);
 }
 
+export function rgba(color: string, alpha: number): string {
+  const r = parseInt(color.slice(1, 3), 16);
+  const g = parseInt(color.slice(3, 5), 16);
+  const b = parseInt(color.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${Math.round(alpha * 1000) / 1000})`;
+}
+
 export function paintCss(p: SolidPaint, extraAlpha = 1): string {
-  const r = parseInt(p.color.slice(1, 3), 16);
-  const g = parseInt(p.color.slice(3, 5), 16);
-  const b = parseInt(p.color.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, ${Math.round(p.opacity * extraAlpha * 1000) / 1000})`;
+  return rgba(p.color, p.opacity * extraAlpha);
+}
+
+/** A canvas gradient in the layer's own coordinates (unit box scaled to w x h). */
+function gradientStyle(ctx: Ctx, p: GradientPaint, w: number, h: number): CanvasGradient {
+  const fx = p.from.x * w;
+  const fy = p.from.y * h;
+  const tx = p.to.x * w;
+  const ty = p.to.y * h;
+  const g =
+    p.type === 'GRADIENT_LINEAR'
+      ? ctx.createLinearGradient(fx, fy, tx, ty)
+      : ctx.createRadialGradient(fx, fy, 0, fx, fy, Math.max(0.01, Math.hypot(tx - fx, ty - fy)));
+  const stops = [...p.stops].sort((a, b) => a.position - b.position);
+  for (const s of stops) g.addColorStop(s.position, rgba(s.color, s.opacity * p.opacity));
+  return g;
+}
+
+/** Fill or stroke style for a solid or gradient paint. */
+export function paintStyle(ctx: Ctx, p: SolidPaint | GradientPaint, w: number, h: number): string | CanvasGradient {
+  return isGradientPaint(p) ? gradientStyle(ctx, p, w, h) : paintCss(p);
 }
 
 export function clampRadii(n: SceneNode): [number, number, number, number] {
@@ -47,14 +86,17 @@ export function clampRadii(n: SceneNode): [number, number, number, number] {
   return r.map((v) => Math.max(0, Math.min(v, max))) as [number, number, number, number];
 }
 
-function shapePath(ctx: Ctx, n: SceneNode) {
+/** Outline of a layer's own shape, grown by `grow` (for shadow spread). */
+function shapePath(ctx: Ctx, n: SceneNode, grow = 0) {
   ctx.beginPath();
+  const w = Math.max(0, n.width + grow * 2);
+  const h = Math.max(0, n.height + grow * 2);
   if (n.type === 'ELLIPSE') {
-    ctx.ellipse(n.width / 2, n.height / 2, n.width / 2, n.height / 2, 0, 0, Math.PI * 2);
+    ctx.ellipse(n.width / 2, n.height / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
   } else {
-    const [tl, tr, br, bl] = clampRadii(n);
-    if (tl || tr || br || bl) ctx.roundRect(0, 0, n.width, n.height, [tl, tr, br, bl]);
-    else ctx.rect(0, 0, n.width, n.height);
+    const [tl, tr, br, bl] = clampRadii(n).map((r) => (r > 0 ? Math.max(0, r + grow) : 0));
+    if (tl || tr || br || bl) ctx.roundRect(-grow, -grow, w, h, [tl, tr, br, bl]);
+    else ctx.rect(-grow, -grow, w, h);
   }
 }
 
@@ -89,7 +131,7 @@ function fillShape(ctx: Ctx, n: SceneNode) {
       fillImage(ctx, n, p);
       continue;
     }
-    ctx.fillStyle = paintCss(p);
+    ctx.fillStyle = paintStyle(ctx, p, n.width, n.height);
     ctx.fill();
   }
 }
@@ -121,7 +163,7 @@ function strokeShape(ctx: Ctx, n: SceneNode) {
     shapePath(ctx, n);
     ctx.lineWidth = n.strokeWeight * 2;
     for (const p of paints) {
-      ctx.strokeStyle = paintCss(p);
+      ctx.strokeStyle = paintStyle(ctx, p, n.width, n.height);
       ctx.stroke();
     }
     ctx.restore();
@@ -129,7 +171,7 @@ function strokeShape(ctx: Ctx, n: SceneNode) {
     return;
   }
   for (const p of paints) {
-    ctx.strokeStyle = paintCss(p);
+    ctx.strokeStyle = paintStyle(ctx, p, n.width, n.height);
     ctx.stroke();
   }
   ctx.restore();
@@ -151,8 +193,9 @@ function drawLine(ctx: Ctx, n: SceneNode) {
   ctx.lineCap = 'butt';
   ctx.setLineDash(n.strokeDash);
   for (const p of paints) {
-    ctx.strokeStyle = paintCss(p);
-    ctx.fillStyle = paintCss(p);
+    const style = paintStyle(ctx, p, Math.max(1, len), Math.max(1, n.strokeWeight));
+    ctx.strokeStyle = style;
+    ctx.fillStyle = style;
     ctx.beginPath();
     ctx.moveTo(trimStart, 0);
     ctx.lineTo(len - trimEnd, 0);
@@ -185,7 +228,7 @@ function drawText(ctx: Ctx, n: SceneNode) {
   ctx.textBaseline = 'middle';
   for (const p of n.fills) {
     if (!p.visible || p.type === 'IMAGE') continue;
-    ctx.fillStyle = paintCss(p);
+    ctx.fillStyle = paintStyle(ctx, p, n.width, n.height);
     layout.lines.forEach((line, i) => {
       ctx.fillText(line.text, lineOffset(t.align, n.width, line.width), i * layout.lineHeight + layout.lineHeight / 2);
     });
@@ -216,18 +259,15 @@ function drawMissingComponent(ctx: Ctx, n: SceneNode) {
   ctx.restore();
 }
 
-export function drawNode(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions = {}) {
-  if (!n.visible || opts.skip?.has(n.id) || culled(doc, n, opts.cull)) return;
-  if (opts.depth && opts.budget && opts.budget.left-- <= 0) return;
-  const root = opts.root ?? doc;
-  ctx.save();
-  const m = localMatrix(n.x, n.y, n.rotation);
-  ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
-  ctx.globalAlpha *= n.opacity;
+/** The layer itself, without effects, in its own coordinates. */
+function drawBody(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions, root: SceneDoc) {
   switch (n.type) {
     case 'FRAME':
     case 'COMPONENT':
       drawContainer(ctx, doc, n, { ...opts, root });
+      break;
+    case 'GROUP':
+      drawChildren(ctx, doc, n.id, { ...opts, root });
       break;
     case 'INSTANCE': {
       const depth = opts.depth ?? 0;
@@ -250,6 +290,183 @@ export function drawNode(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOption
       drawText(ctx, n);
       break;
   }
+}
+
+// ------------------------------------------------------------------ effects
+
+/** Layers whose shadows follow their own outline (with spread); others cast the shadow of what they draw. */
+const hasShapeOutline = (n: SceneNode) => n.type === 'RECTANGLE' || n.type === 'ELLIPSE' || isBox(n);
+
+function deviceScale(ctx: Ctx): number {
+  const m = ctx.getTransform();
+  return Math.sqrt(Math.abs(m.a * m.d - m.b * m.c));
+}
+
+function deviceVector(ctx: Ctx, x: number, y: number) {
+  const m = ctx.getTransform();
+  return { x: m.a * x + m.c * y, y: m.b * x + m.d * y };
+}
+
+/** Canvas shadows are offset in device pixels; this draws only the shadow of `draw` by moving the shape far away. */
+const FAR = 1_000_000;
+
+function shapeShadow(ctx: Ctx, n: SceneNode, e: ShadowEffect) {
+  const s = deviceScale(ctx);
+  const off = deviceVector(ctx, e.x, e.y);
+  ctx.save();
+  const m = ctx.getTransform();
+  ctx.shadowColor = rgba(e.color, e.opacity);
+  ctx.shadowBlur = e.blur * s;
+  ctx.shadowOffsetX = off.x + FAR;
+  ctx.shadowOffsetY = off.y;
+  ctx.setTransform(m.a, m.b, m.c, m.d, m.e - FAR, m.f);
+  shapePath(ctx, n, e.spread);
+  ctx.fillStyle = '#000';
+  ctx.fill();
+  ctx.restore();
+}
+
+function innerShadow(ctx: Ctx, n: SceneNode, e: ShadowEffect) {
+  const s = deviceScale(ctx);
+  const off = deviceVector(ctx, e.x, e.y);
+  ctx.save();
+  shapePath(ctx, n);
+  ctx.clip();
+  const m = ctx.getTransform();
+  ctx.shadowColor = rgba(e.color, e.opacity);
+  ctx.shadowBlur = e.blur * s;
+  ctx.shadowOffsetX = off.x + FAR;
+  ctx.shadowOffsetY = off.y;
+  ctx.setTransform(m.a, m.b, m.c, m.d, m.e - FAR, m.f);
+  // a big ring around the shape (shrunk by spread) casts its shadow inward
+  const pad = Math.max(n.width, n.height) + e.blur * 3 + Math.abs(e.x) + Math.abs(e.y) + 10;
+  ctx.beginPath();
+  ctx.rect(-pad, -pad, n.width + pad * 2, n.height + pad * 2);
+  shapePath(ctx, n, -e.spread);
+  ctx.fillStyle = '#000';
+  ctx.fill('evenodd');
+  ctx.restore();
+}
+
+type Layer = { canvas: HTMLCanvasElement | OffscreenCanvas; x: number; y: number };
+
+function newCanvas(w: number, h: number): HTMLCanvasElement | OffscreenCanvas | null {
+  if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
+  if (typeof document !== 'undefined') {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    return c;
+  }
+  return null;
+}
+
+/** Renders `draw` (in the current local coordinates) into an offscreen layer covering the given local box. */
+function renderLayer(ctx: Ctx, box: Rect, draw: (c: Ctx) => void): Layer | null {
+  const m = ctx.getTransform();
+  const pts = [
+    [box.x, box.y],
+    [box.x + box.width, box.y],
+    [box.x, box.y + box.height],
+    [box.x + box.width, box.y + box.height],
+  ].map(([x, y]) => ({ x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f }));
+  let x0 = Math.floor(Math.min(...pts.map((p) => p.x)));
+  let y0 = Math.floor(Math.min(...pts.map((p) => p.y)));
+  let x1 = Math.ceil(Math.max(...pts.map((p) => p.x)));
+  let y1 = Math.ceil(Math.max(...pts.map((p) => p.y)));
+  // only what can be seen on the target canvas (plus a margin for blur)
+  const cw = ctx.canvas.width;
+  const ch = ctx.canvas.height;
+  const margin = 256;
+  x0 = Math.max(x0, -margin);
+  y0 = Math.max(y0, -margin);
+  x1 = Math.min(x1, cw + margin);
+  y1 = Math.min(y1, ch + margin);
+  const w = x1 - x0;
+  const h = y1 - y0;
+  if (w <= 0 || h <= 0 || w > MAX_LAYER || h > MAX_LAYER) return null;
+  const canvas = newCanvas(w, h);
+  const lc = canvas?.getContext('2d') as Ctx | null;
+  if (!canvas || !lc) return null;
+  lc.setTransform(m.a, m.b, m.c, m.d, m.e - x0, m.f - y0);
+  draw(lc);
+  return { canvas, x: x0, y: y0 };
+}
+
+function drawWithEffects(ctx: Ctx, doc: SceneDoc, n: SceneNode, effects: Effect[], opts: DrawOptions, root: SceneDoc) {
+  const shadows = effects.filter((e): e is ShadowEffect => e.type === 'DROP_SHADOW');
+  const inner = effects.filter((e): e is ShadowEffect => e.type === 'INNER_SHADOW');
+  const layerBlur = effects.find((e) => e.type === 'LAYER_BLUR');
+  const backgroundBlur = effects.find((e) => e.type === 'BACKGROUND_BLUR');
+  const reach = effectReach(n) + n.strokeWeight * 2 + 2;
+  const s = deviceScale(ctx);
+
+  // background blur: blur what is already drawn under the shape
+  if (backgroundBlur && backgroundBlur.type === 'BACKGROUND_BLUR' && backgroundBlur.radius > 0 && hasShapeOutline(n)) {
+    const snap = renderLayer(ctx, { x: 0, y: 0, width: n.width, height: n.height }, () => {});
+    if (snap) {
+      const sc = snap.canvas.getContext('2d') as Ctx;
+      sc.setTransform(1, 0, 0, 1, 0, 0);
+      sc.filter = `blur(${backgroundBlur.radius * s * 0.5}px)`;
+      sc.drawImage(ctx.canvas, -snap.x, -snap.y);
+      ctx.save();
+      shapePath(ctx, n);
+      ctx.clip();
+      const m = ctx.getTransform();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(snap.canvas, snap.x, snap.y);
+      ctx.setTransform(m);
+      ctx.restore();
+    }
+  }
+
+  const useLayer = !!layerBlur || (shadows.length > 0 && !hasShapeOutline(n));
+  if (!useLayer) {
+    for (const e of shadows) shapeShadow(ctx, n, e);
+    drawBody(ctx, doc, n, opts, root);
+    for (const e of inner) if (hasShapeOutline(n)) innerShadow(ctx, n, e);
+    return;
+  }
+
+  // content as an image, so shadows follow what is drawn and blur applies to all of it
+  const box = n.type === 'LINE' ? { x: 0, y: -n.strokeWeight * 4 - 10, width: n.width, height: n.strokeWeight * 8 + 20 } : { x: 0, y: 0, width: n.width, height: n.height };
+  const layer = renderLayer(ctx, { x: box.x - reach, y: box.y - reach, width: box.width + reach * 2, height: box.height + reach * 2 }, (lc) => {
+    drawBody(lc, doc, n, opts, root);
+    if (hasShapeOutline(n)) for (const e of inner) innerShadow(lc, n, e);
+  });
+  if (!layer) {
+    drawBody(ctx, doc, n, opts, root);
+    return;
+  }
+  const m = ctx.getTransform();
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  for (const e of shadows) {
+    const off = { x: m.a * e.x + m.c * e.y, y: m.b * e.x + m.d * e.y };
+    ctx.save();
+    ctx.shadowColor = rgba(e.color, e.opacity);
+    ctx.shadowBlur = e.blur * s;
+    ctx.shadowOffsetX = off.x + FAR;
+    ctx.shadowOffsetY = off.y;
+    ctx.drawImage(layer.canvas, layer.x - FAR, layer.y);
+    ctx.restore();
+  }
+  if (layerBlur && layerBlur.type === 'LAYER_BLUR' && layerBlur.radius > 0) ctx.filter = `blur(${layerBlur.radius * s * 0.5}px)`;
+  ctx.drawImage(layer.canvas, layer.x, layer.y);
+  ctx.restore();
+}
+
+export function drawNode(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions = {}) {
+  if (!n.visible || opts.skip?.has(n.id) || culled(doc, n, opts.cull)) return;
+  if (opts.depth && opts.budget && opts.budget.left-- <= 0) return;
+  const root = opts.root ?? doc;
+  ctx.save();
+  const m = localMatrix(n.x, n.y, n.rotation);
+  ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+  ctx.globalAlpha *= n.opacity;
+  const effects = (n.effects ?? []).filter((e) => e.visible);
+  if (effects.length && typeof ctx.getTransform === 'function') drawWithEffects(ctx, doc, n, effects, opts, root);
+  else drawBody(ctx, doc, n, opts, root);
   ctx.restore();
 }
 
