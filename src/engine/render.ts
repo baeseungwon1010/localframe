@@ -16,7 +16,12 @@ export type DrawOptions = {
   root?: SceneDoc;
   /** How many instances deep we are, to stop runaway nesting. */
   depth?: number;
+  /** Layers inside instances that may still be drawn in this pass (shared by the whole pass). */
+  budget?: { left: number };
 };
+
+/** Upper bound on instance content drawn per frame, whatever the file says. */
+export const INSTANCE_DRAW_BUDGET = 200_000;
 
 const MAX_INSTANCE_DEPTH = 12;
 
@@ -213,6 +218,7 @@ function drawMissingComponent(ctx: Ctx, n: SceneNode) {
 
 export function drawNode(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions = {}) {
   if (!n.visible || opts.skip?.has(n.id) || culled(doc, n, opts.cull)) return;
+  if (opts.depth && opts.budget && opts.budget.left-- <= 0) return;
   const root = opts.root ?? doc;
   ctx.save();
   const m = localMatrix(n.x, n.y, n.rotation);
@@ -225,9 +231,10 @@ export function drawNode(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOption
       break;
     case 'INSTANCE': {
       const depth = opts.depth ?? 0;
-      const v = depth < MAX_INSTANCE_DEPTH ? instanceDoc(root, n) : null;
+      const budget = opts.budget ?? { left: INSTANCE_DRAW_BUDGET };
+      const v = depth < MAX_INSTANCE_DEPTH && budget.left > 0 ? instanceDoc(root, n) : null;
       if (!v) drawMissingComponent(ctx, n);
-      else drawContainer(ctx, v, v.get(n.id)!, { root, depth: depth + 1 });
+      else drawContainer(ctx, v, v.get(n.id)!, { root, depth: depth + 1, budget });
       break;
     }
     case 'RECTANGLE':
@@ -247,20 +254,20 @@ export function drawNode(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOption
 }
 
 export function drawChildren(ctx: Ctx, doc: SceneDoc, parentId: string | null, opts: DrawOptions = {}) {
-  const o = opts.root ? opts : { ...opts, root: doc };
+  const o = opts.root && opts.budget ? opts : { ...opts, root: opts.root ?? doc, budget: opts.budget ?? { left: INSTANCE_DRAW_BUDGET } };
   for (const id of doc.children(parentId)) drawNode(ctx, doc, doc.get(id)!, o);
 }
 
 /** Image ids a subtree needs (including through instances), for preloading before an export. */
-export function imagesUsed(doc: SceneDoc, ids: string[], root: SceneDoc = doc, depth = 0): string[] {
+export function imagesUsed(doc: SceneDoc, ids: string[], root: SceneDoc = doc, depth = 0, budget = { left: INSTANCE_DRAW_BUDGET }): string[] {
   const out = new Set<string>();
   const visit = (d: SceneDoc, id: string) => {
     const n = d.get(id);
-    if (!n) return;
+    if (!n || budget.left-- <= 0) return;
     for (const p of n.fills) if (p.type === 'IMAGE') out.add(p.imageId);
     if (n.type === 'INSTANCE' && depth < MAX_INSTANCE_DEPTH) {
       const v = instanceDoc(root, n);
-      if (v) for (const x of imagesUsed(v, v.children(n.id), root, depth + 1)) out.add(x);
+      if (v) for (const x of imagesUsed(v, v.children(n.id), root, depth + 1, budget)) out.add(x);
       const vr = v?.get(n.id);
       if (vr) for (const p of vr.fills) if (p.type === 'IMAGE') out.add(p.imageId);
     }

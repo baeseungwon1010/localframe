@@ -167,9 +167,16 @@ const paintAttrs = (p: SolidPaint, kind: 'fill' | 'stroke') =>
 
 export type SvgAssets = { images: Map<string, { url: string; width: number; height: number }> };
 
+/** Refuse to build SVG exports beyond these (a file full of nested instances could be enormous). */
+const SVG_MAX_ELEMENTS = 500_000;
+const SVG_MAX_CHARS = 200_000_000;
+
 class SvgWriter {
   private defs: string[] = [];
   private seq = 0;
+  private elements = 0;
+  /** Each image is embedded once and referenced wherever it is used. */
+  private imageDefs = new Map<string, string>();
   readonly runs: TextRun[] = [];
   private readonly root: SceneDoc;
   private readonly assets: SvgAssets;
@@ -197,14 +204,21 @@ class SvgWriter {
   private imageFill(n: SceneNode, p: ImagePaint): string {
     const img = this.assets.images.get(p.imageId);
     if (!img) return shapeElement(n, ' fill="#808080" fill-opacity="0.18"');
+    let ref = this.imageDefs.get(p.imageId);
+    if (!ref) {
+      ref = this.id('img');
+      this.imageDefs.set(p.imageId, ref);
+      this.defs.push(
+        `<image id="${ref}" href="${escapeXml(img.url)}" width="${num(img.width)}" height="${num(img.height)}" preserveAspectRatio="none"/>`,
+      );
+    }
     const cid = this.id('clip');
     this.defs.push(`<clipPath id="${cid}">${shapeElement(n, '')}</clipPath>`);
     const r = imageRect(p, img.width, img.height, n.width, n.height);
+    const sx = r.width / Math.max(1, img.width);
+    const sy = r.height / Math.max(1, img.height);
     const opacity = p.opacity < 1 ? ` opacity="${num(p.opacity)}"` : '';
-    return (
-      `<g clip-path="url(#${cid})"${opacity}><image href="${escapeXml(img.url)}" x="${num(r.x)}" y="${num(r.y)}" ` +
-      `width="${num(r.width)}" height="${num(r.height)}" preserveAspectRatio="none"/></g>`
-    );
+    return `<g clip-path="url(#${cid})"${opacity}><use href="#${ref}" transform="matrix(${num(sx)} 0 0 ${num(sy)} ${num(r.x)} ${num(r.y)})"/></g>`;
   }
 
   private strokes(n: SceneNode): string {
@@ -297,6 +311,7 @@ class SvgWriter {
 
   node(doc: SceneDoc, n: SceneNode, depth = 0): string {
     if (!n.visible) return '';
+    if (++this.elements > SVG_MAX_ELEMENTS) throw new Error('This selection is too large to export as SVG. Try PNG or PDF.');
     const m = localMatrix(n.x, n.y, n.rotation);
     const opacity = n.opacity < 1 ? ` opacity="${num(n.opacity)}"` : '';
     const name = ` data-name="${escapeXml(n.name)}"`;
@@ -341,6 +356,8 @@ export function svgMarkup(doc: SceneDoc, target: ExportTarget, assets: SvgAssets
     parts.push(pw === IDENTITY ? inner : `<g${matrixAttr(pw)}>${inner}</g>`);
   }
   const style = fontCss ? `<style>${fontCss}</style>` : '';
+  const size = parts.reduce((s, p) => s + p.length, 0) + style.length;
+  if (size > SVG_MAX_CHARS) throw new Error('This selection is too large to export as SVG. Try PNG or PDF.');
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${num(b.width)}" height="${num(b.height)}" viewBox="${num(b.x)} ${num(b.y)} ${num(b.width)} ${num(b.height)}" fill="none">` +
     w.defsMarkup(style) +
