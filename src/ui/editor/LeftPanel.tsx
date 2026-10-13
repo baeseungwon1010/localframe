@@ -6,6 +6,7 @@ import { drawNode } from '../../engine/render.ts';
 import { IconButton, Menu, type MenuItem } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
 import { LayersPanel } from './LayersPanel.tsx';
+import { StylesList, VariablesDialog } from './assetsPanels.tsx';
 
 export function LeftPanel({ editor }: { editor: Editor }) {
   const [tab, setTab] = useState<'layers' | 'assets'>('layers');
@@ -138,6 +139,23 @@ function ComponentPreview({ editor, node }: { editor: Editor; node: SceneNode })
 }
 
 function AssetsPanel({ editor }: { editor: Editor }) {
+  const [varsOpen, setVarsOpen] = useState(false);
+  return (
+    <div className="assets-body">
+      <div className="assets-actions">
+        <button type="button" className="btn secondary small" onClick={() => setVarsOpen(true)}>
+          Variables ({editor.variables.vars.length})
+        </button>
+      </div>
+      <h4 className="asset-heading">Components</h4>
+      <ComponentList editor={editor} />
+      <StylesList editor={editor} />
+      {varsOpen && <VariablesDialog editor={editor} onClose={() => setVarsOpen(false)} />}
+    </div>
+  );
+}
+
+function ComponentList({ editor }: { editor: Editor }) {
   useEditorRev(editor, 'doc', 'pages');
   // a component set shows once; inserting it places its first variant
   const comps = editor.components().filter((c) => editor.doc.get(c.parentId ?? '')?.type !== 'COMPONENT_SET');

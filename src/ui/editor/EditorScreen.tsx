@@ -89,7 +89,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         const [{ file: meta, nodes }] = await Promise.all([api.getFile(fileId), loadFonts()]);
         if (cancelled) return;
         useImagesOf(fileId);
-        editor.load(nodes, meta.pages);
+        editor.load(nodes, meta.pages, meta.styles, meta.variables);
         setFile(meta);
         document.title = `${meta.name} · localframe`;
         queue = new SyncQueue(fileId, meta.version, editor, () => {

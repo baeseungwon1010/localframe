@@ -38,6 +38,7 @@ import { useEditorRev } from '../hooks.ts';
 import { MIXED, NumberField, Section, Segmented, SelectField, common, normalizeHex } from './fields.tsx';
 import { DEFAULT_SHADOW, EffectEditor, PaintEditor } from './paints.tsx';
 import { ComponentSetSection, InnerLayerSection, InstanceProps, LinkProps, PropDefinitions, VariantValues } from './componentPanels.tsx';
+import { StylePicker, VariablesSection } from './assetsPanels.tsx';
 
 const ICON = { size: 14, strokeWidth: 1.5 };
 
@@ -337,7 +338,9 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
         </div>
       </Section>
 
-      {allText && <TextSection nodes={nodes} update={update} />}
+      <VariablesSection editor={editor} nodes={nodes} />
+
+      {allText && <TextSection editor={editor} nodes={nodes} update={update} />}
 
       <PaintsSection
         title="Fill"
@@ -347,6 +350,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
         defaultPaint={allText ? solid('#1B1D21') : solid('#D9D9D9')}
         update={update}
         hidden={allLines || anyInstance || anyGroup}
+        style={<StylePicker editor={editor} nodes={nodes} field="fill" />}
       />
       <PaintsSection
         title="Stroke"
@@ -356,6 +360,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
         defaultPaint={solid('#1B1D21')}
         update={update}
         hidden={allText || anyInstance || anyGroup}
+        style={<StylePicker editor={editor} nodes={nodes} field="stroke" />}
       >
         <div className="grid2">
           <NumberField
@@ -417,7 +422,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
         )}
       </PaintsSection>
 
-      <EffectsSection nodes={nodes} update={update} />
+      <EffectsSection editor={editor} nodes={nodes} update={update} />
 
       <ExportSection key={ids.join(',')} editor={editor} ids={ids} name={single ? single.name : 'Selection'} pageBackground={false} />
     </>
@@ -458,11 +463,11 @@ function ConstraintsSection({ nodes, update }: { nodes: SceneNode[]; update: (fn
   );
 }
 
-function TextSection({ nodes, update }: { nodes: SceneNode[]; update: (fn: (n: SceneNode) => SceneNode) => void }) {
+function TextSection({ editor, nodes, update }: { editor: Editor; nodes: SceneNode[]; update: (fn: (n: SceneNode) => SceneNode) => void }) {
   const t = (n: SceneNode) => n.text!;
   const setText = (patch: Partial<TextStyle>) => update((n) => ({ ...n, text: { ...n.text!, ...patch } }));
   return (
-    <Section title="Text">
+    <Section title="Text" action={<StylePicker editor={editor} nodes={nodes} field="text" />}>
       <SelectField
         label="Font"
         value={common(nodes, (n) => t(n).fontFamily)}
@@ -530,6 +535,7 @@ function PaintsSection(props: {
   update: (fn: (n: SceneNode) => SceneNode) => void;
   hidden?: boolean;
   children?: React.ReactNode;
+  style?: React.ReactNode;
 }) {
   if (props.hidden) return null;
   const { nodes, get, set, update } = props;
@@ -540,9 +546,12 @@ function PaintsSection(props: {
     <Section
       title={props.title}
       action={
-        <IconButton label={`Add ${label}`} onClick={paints === MIXED ? () => update((n) => set(n, [props.defaultPaint])) : add}>
-          <Plus {...ICON} />
-        </IconButton>
+        <div className="inline-actions">
+          {props.style}
+          <IconButton label={`Add ${label}`} onClick={paints === MIXED ? () => update((n) => set(n, [props.defaultPaint])) : add}>
+            <Plus {...ICON} />
+          </IconButton>
+        </div>
       }
     >
       {paints === MIXED ? (
@@ -560,18 +569,21 @@ function PaintsSection(props: {
   );
 }
 
-function EffectsSection({ nodes, update }: { nodes: SceneNode[]; update: (fn: (n: SceneNode) => SceneNode) => void }) {
+function EffectsSection({ editor, nodes, update }: { editor: Editor; nodes: SceneNode[]; update: (fn: (n: SceneNode) => SceneNode) => void }) {
   const effects = common(nodes, (n) => n.effects ?? []);
   return (
     <Section
       title="Effects"
       action={
+        <div className="inline-actions">
+          <StylePicker editor={editor} nodes={nodes} field="effect" />
         <IconButton
           label="Add effect"
           onClick={() => update((n) => ({ ...n, effects: effects === MIXED ? [DEFAULT_SHADOW] : [...(n.effects ?? []), DEFAULT_SHADOW].slice(0, 8) }))}
         >
           <Plus {...ICON} />
         </IconButton>
+        </div>
       }
     >
       {effects === MIXED ? (
