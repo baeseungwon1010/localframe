@@ -31,6 +31,7 @@ function TypeIcon({ n }: { n: SceneNode }) {
     case 'GROUP':
       return <Group {...props} />;
     case 'COMPONENT':
+    case 'COMPONENT_SET':
       return <Component {...props} />;
     case 'INSTANCE':
       return <Diamond {...props} />;
@@ -255,7 +256,7 @@ export function LayersPanel({ editor }: { editor: Editor }) {
                 >
                   {open ? <ChevronDown size={12} strokeWidth={1.5} /> : <ChevronRight size={12} strokeWidth={1.5} />}
                 </button>
-                <span className={`row-icon ${n.type === 'COMPONENT' || n.type === 'INSTANCE' ? 'component' : ''}`}>
+                <span className={`row-icon ${n.type === 'COMPONENT' || n.type === 'COMPONENT_SET' || n.type === 'INSTANCE' ? 'component' : ''}`}>
                   <TypeIcon n={n} />
                 </span>
                 {renaming === id ? (

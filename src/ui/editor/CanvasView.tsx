@@ -222,6 +222,9 @@ export function CanvasView(props: {
     single?.type === 'COMPONENT'
       ? { label: 'Create instance', onSelect: () => editor.createInstance(single.id) }
       : { label: 'Create component', shortcut: `${MOD}${ALT}K`, disabled: !hasSel, onSelect: () => editor.createComponent() },
+    ...(hasSel && sel.every((n) => n.type === 'COMPONENT') && editor.doc.get(sel[0].parentId ?? '')?.type !== 'COMPONENT_SET'
+      ? ([{ label: 'Combine as variants', shortcut: `${MOD}${ALT}${SHIFT}K`, onSelect: () => editor.combineAsVariants() }] as MenuItem[])
+      : []),
     ...(single?.type === 'INSTANCE'
       ? ([
           { label: 'Go to main component', onSelect: () => editor.goToMainComponent(single.id) },

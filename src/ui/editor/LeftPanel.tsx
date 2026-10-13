@@ -139,7 +139,13 @@ function ComponentPreview({ editor, node }: { editor: Editor; node: SceneNode })
 
 function AssetsPanel({ editor }: { editor: Editor }) {
   useEditorRev(editor, 'doc', 'pages');
-  const comps = editor.components();
+  // a component set shows once; inserting it places its first variant
+  const comps = editor.components().filter((c) => editor.doc.get(c.parentId ?? '')?.type !== 'COMPONENT_SET');
+  for (const n of editor.doc.all()) if (n.type === 'COMPONENT_SET') {
+    const first = editor.doc.children(n.id)[0];
+    if (first) comps.push({ ...editor.doc.get(first)!, name: n.name });
+  }
+  comps.sort((a, b) => a.name.localeCompare(b.name));
   const pageName = (id: string) => editor.pages.find((p) => p.id === editor.doc.pageOf(id))?.name ?? '';
   if (comps.length === 0) {
     return (

@@ -37,6 +37,7 @@ import { downloadBlob, safeFileName } from '../download.ts';
 import { useEditorRev } from '../hooks.ts';
 import { MIXED, NumberField, Section, Segmented, SelectField, common, normalizeHex } from './fields.tsx';
 import { DEFAULT_SHADOW, EffectEditor, PaintEditor } from './paints.tsx';
+import { ComponentSetSection, InnerLayerSection, InstanceProps, LinkProps, PropDefinitions, VariantValues } from './componentPanels.tsx';
 
 const ICON = { size: 14, strokeWidth: 1.5 };
 
@@ -48,7 +49,7 @@ function uniformRadius(nodes: SceneNode[]) {
 
 export function PropertiesPanel(props: { editor: Editor; fileName: string }) {
   const { editor } = props;
-  useEditorRev(editor, 'doc', 'selection', 'pages');
+  useEditorRev(editor, 'doc', 'selection', 'pages', 'view');
   const sel = editor.selectedNodes();
 
   return (
@@ -165,7 +166,15 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
         </div>
       )}
 
+      {single && editor.inner?.instanceId === single.id && <InnerLayerSection editor={editor} />}
       {single && (single.type === 'COMPONENT' || single.type === 'INSTANCE') && <ComponentSection editor={editor} node={single} />}
+      {single?.type === 'INSTANCE' && <InstanceProps editor={editor} inst={single} />}
+      {single?.type === 'COMPONENT_SET' && <ComponentSetSection editor={editor} set={single} />}
+      {single?.type === 'COMPONENT' && single.variant && <VariantValues editor={editor} comp={single} />}
+      {single?.type === 'COMPONENT' && editor.doc.get(single.parentId ?? '')?.type !== 'COMPONENT_SET' && (
+        <PropDefinitions editor={editor} owner={single} />
+      )}
+      {single && single.type !== 'COMPONENT' && single.type !== 'COMPONENT_SET' && <LinkProps editor={editor} layer={single} />}
       {(nodes.length > 1 || single?.type === 'BOOLEAN') && (
         <div className="align-bar boolean-bar" role="toolbar" aria-label="Boolean operations">
           {(
