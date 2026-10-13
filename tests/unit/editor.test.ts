@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Editor, type PointerInput } from '../../src/engine/editor.ts';
 import { pickTarget } from '../../src/engine/hit.ts';
-import { exportSvg, escapeXml } from '../../src/engine/export.ts';
+import { svgMarkup, escapeXml } from '../../src/engine/export.ts';
 import { layoutText } from '../../src/engine/text.ts';
 import { DEFAULT_TEXT } from '../../src/engine/nodes.ts';
 import { validateTree, SceneNodeSchema } from '../../shared/schema.ts';
@@ -170,7 +170,7 @@ describe('text and export', () => {
     ed.pasteText('<script>alert("x")</script> & co');
     const id = ed.selection[0];
     ed.rename(id, '"><img src=x onerror=alert(1)>');
-    const svg = exportSvg(ed.doc, { ids: [id], background: null });
+    const { svg } = svgMarkup(ed.doc, { ids: [id], background: null });
     expect(svg).not.toContain('<script>');
     expect(svg).not.toContain('<img');
     expect(svg).toContain('&lt;script&gt;');

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Editor } from '../../src/engine/editor.ts';
-import { exportSvg } from '../../src/engine/export.ts';
+import { svgMarkup } from '../../src/engine/export.ts';
 import { SceneDoc } from '../../src/engine/doc.ts';
 import { MAX_DEPTH, SceneNodeSchema, isValidOrderKey, validateTree, type SceneNode } from '../../shared/schema.ts';
 import { safeFileName } from '../../src/ui/download.ts';
@@ -130,7 +130,7 @@ describe('limits and escaping', () => {
   it('escapes colours in SVG even if a bad value got in', () => {
     const doc = new SceneDoc();
     doc.load([{ ...frame('a', null), fills: [{ color: '"/><script>x</script>', opacity: 1, visible: true }] }]);
-    expect(exportSvg(doc, { ids: ['a'], background: null })).not.toContain('<script>');
+    expect(svgMarkup(doc, { ids: ['a'], background: null }).svg).not.toContain('<script>');
   });
 
   it('download names drop bidi controls', () => {

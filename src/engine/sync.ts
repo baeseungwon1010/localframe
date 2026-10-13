@@ -1,7 +1,6 @@
 import { SceneNodeSchema } from '../../shared/schema.ts';
 import { ApiError, api } from '../api.ts';
-import type { Patch } from './doc.ts';
-import type { Editor } from './editor.ts';
+import type { CommitInfo, Editor } from './editor.ts';
 
 export type SaveStatus = 'saved' | 'saving' | 'offline' | 'conflict' | 'error';
 
@@ -13,6 +12,7 @@ export class SyncQueue {
   status: SaveStatus = 'saved';
   error: string | null = null;
   private dirty = new Set<string>();
+  private pagesDirty = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private inflight = false;
   private retryMs = 1000;
@@ -28,7 +28,7 @@ export class SyncQueue {
     this.version = version;
     this.editor = editor;
     this.onSaved = onSaved;
-    this.unsubscribe = editor.onCommit((patches) => this.add(patches));
+    this.unsubscribe = editor.onCommit((info) => this.add(info));
   }
 
   subscribe(fn: () => void) {
@@ -43,12 +43,13 @@ export class SyncQueue {
   }
 
   get pending() {
-    return this.dirty.size > 0 || this.inflight;
+    return this.dirty.size > 0 || this.pagesDirty || this.inflight;
   }
 
-  private add(patches: Patch[]) {
+  private add({ patches, pagesChanged }: CommitInfo) {
     if (this.status === 'conflict') return;
     for (const p of patches) this.dirty.add(p.id);
+    if (pagesChanged) this.pagesDirty = true;
     this.setStatus('saving');
     this.schedule(DEBOUNCE_MS);
   }
@@ -63,24 +64,31 @@ export class SyncQueue {
 
   private takeBatch() {
     const ids = [...this.dirty];
+    const pages = this.pagesDirty ? this.editor.pages : undefined;
     this.dirty.clear();
+    this.pagesDirty = false;
     const upserts = ids.map((id) => this.editor.doc.get(id)).filter((n) => n !== undefined);
     const deletes = ids.filter((id) => !this.editor.doc.has(id));
-    return { ids, changes: { baseVersion: this.version, upserts, deletes } };
+    return { ids, pagesWereDirty: pages !== undefined, changes: { baseVersion: this.version, upserts, deletes, ...(pages ? { pages } : {}) } };
+  }
+
+  private restore(ids: string[], pagesWereDirty: boolean) {
+    for (const id of ids) this.dirty.add(id);
+    if (pagesWereDirty) this.pagesDirty = true;
   }
 
   async flush(): Promise<void> {
     if (this.inflight || this.status === 'conflict') return;
-    if (this.dirty.size === 0) {
+    if (this.dirty.size === 0 && !this.pagesDirty) {
       if (this.status === 'saving') this.setStatus('saved');
       return;
     }
     this.inflight = true;
-    const { ids, changes } = this.takeBatch();
+    const { ids, pagesWereDirty, changes } = this.takeBatch();
     const bad = changes.upserts.find((n) => !SceneNodeSchema.safeParse(n).success);
     if (bad) {
       // Don't send what the server will refuse; say which layer needs fixing.
-      for (const id of ids) this.dirty.add(id);
+      this.restore(ids, pagesWereDirty);
       this.inflight = false;
       this.setStatus('error', `Couldn't save: “${bad.name.slice(0, 60)}” has a value out of range. Undo the last change or fix that layer.`);
       return;
@@ -90,7 +98,7 @@ export class SyncQueue {
       this.version = res.version;
       this.retryMs = 1000;
       this.inflight = false;
-      if (this.dirty.size > 0) this.schedule(0);
+      if (this.dirty.size > 0 || this.pagesDirty) this.schedule(0);
       else {
         this.setStatus('saved');
         this.onSaved();
@@ -101,7 +109,7 @@ export class SyncQueue {
         this.setStatus('conflict', 'This file was changed in another tab. Reload to see the latest version.');
         return;
       }
-      for (const id of ids) this.dirty.add(id);
+      this.restore(ids, pagesWereDirty);
       if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
         this.setStatus('error', `Couldn't save: ${err.message}`);
         return;
@@ -114,7 +122,7 @@ export class SyncQueue {
 
   /** Best effort save when the page is closing. */
   flushOnExit() {
-    if (this.dirty.size === 0 || this.inflight || this.status === 'conflict') return;
+    if ((this.dirty.size === 0 && !this.pagesDirty) || this.inflight || this.status === 'conflict') return;
     const { changes } = this.takeBatch();
     if (JSON.stringify(changes).length < KEEPALIVE_LIMIT) void api.saveChanges(this.fileId, changes, true).catch(() => {});
   }

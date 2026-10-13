@@ -1,12 +1,21 @@
+import { generateNKeysBetween } from 'fractional-indexing';
 import { z } from 'zod';
 import {
+  type Binding,
+  type Layout,
   type NodeType,
+  type Override,
+  type Page,
   type SceneNode,
   MAX_DEPTH,
   MAX_NODES_PER_FILE,
+  MAX_PAGES,
   SceneNodeSchema,
   validateTree,
 } from '../../shared/schema.ts';
+import { bindingAt, settleLine } from './connectors.ts';
+import { instanceDoc } from './instances.ts';
+import { DEFAULT_LAYOUT, applyAutoLayout, autoLayoutIndex } from './layout.ts';
 import { SceneDoc, type Patch } from './doc.ts';
 import {
   type Handle,
@@ -41,12 +50,14 @@ import {
   round2,
   unionRects,
 } from './math.ts';
-import { canHaveChildren, createNode, keyAt, keyOnTop, keysAbove, keysOnTop, newId, nextName } from './nodes.ts';
-import { canvasMeasure, layoutText } from './text.ts';
+import { canHaveChildren, createNode, fitText, keyAt, keyOnTop, keysAbove, keysOnTop, newId, nextName } from './nodes.ts';
+import { canvasMeasure } from './text.ts';
+
+export { fitText };
 
 export type Tool = 'move' | 'hand' | 'frame' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'text';
 export type Viewport = { x: number; y: number; zoom: number };
-export type Channel = 'doc' | 'selection' | 'view' | 'tool' | 'hover';
+export type Channel = 'doc' | 'selection' | 'view' | 'tool' | 'hover' | 'pages';
 
 export type PointerInput = {
   sx: number;
@@ -64,7 +75,17 @@ export type SelectionHandle =
   | { kind: 'rotate'; handle: Handle }
   | { kind: 'line-end'; end: 0 | 1 };
 
-type HistoryEntry = { patches: Patch[]; selBefore: string[]; selAfter: string[] };
+type HistoryEntry = {
+  patches: Patch[];
+  selBefore: string[];
+  selAfter: string[];
+  pagesBefore?: Page[];
+  pagesAfter?: Page[];
+  pageBefore?: string;
+  pageAfter?: string;
+};
+
+export type CommitInfo = { patches: Patch[]; pagesChanged: boolean };
 
 type Interaction =
   | { kind: 'none' }
@@ -121,6 +142,7 @@ function treeDepth(roots: string[], nodes: SceneNode[]): number {
 
 const MAX_SIZE = 1e7;
 
+
 export class Editor {
   readonly doc = new SceneDoc();
   tool: Tool = 'move';
@@ -132,18 +154,26 @@ export class Editor {
   guides: Guide[] = [];
   dropTarget: string | null | undefined = undefined; // undefined = no drop in progress
   marquee: Rect | null = null;
+  /** Layer a line end will attach to if released now. */
+  bindTarget: string | null = null;
   sizeBadge: { text: string; at: Point } | null = null;
   spaceDown = false;
-  background = '#F3F3F1';
+  pages: Page[] = [{ id: 'page-1', name: 'Page 1', background: '#F3F3F1' }];
+  /** Viewport per page, so switching pages comes back to the same place. */
+  private pageViews = new Map<string, Viewport>();
+  /** Asks the UI to pick an image file (Ctrl/Cmd+Shift+K). */
+  onRequestImage: (() => void) | null = null;
 
   private interaction: Interaction = { kind: 'none' };
   private undoStack: HistoryEntry[] = [];
   private redoStack: HistoryEntry[] = [];
   private tx: Map<string, SceneNode | null> | null = null;
   private txSelBefore: string[] = [];
+  private txPagesBefore: Page[] | null = null;
+  private txPageBefore = '';
   private listeners = new Map<Channel, Set<() => void>>();
-  private commitListeners = new Set<(patches: Patch[]) => void>();
-  readonly revs: Record<Channel, number> = { doc: 0, selection: 0, view: 0, tool: 0, hover: 0 };
+  private commitListeners = new Set<(info: CommitInfo) => void>();
+  readonly revs: Record<Channel, number> = { doc: 0, selection: 0, view: 0, tool: 0, hover: 0, pages: 0 };
 
   // ---------------------------------------------------------------- events
 
@@ -154,8 +184,8 @@ export class Editor {
     return () => set!.delete(fn);
   }
 
-  /** Called with the patches of every committed change, undo and redo included. */
-  onCommit(fn: (patches: Patch[]) => void): () => void {
+  /** Called with every committed change, undo and redo included. */
+  onCommit(fn: (info: CommitInfo) => void): () => void {
     this.commitListeners.add(fn);
     return () => this.commitListeners.delete(fn);
   }
@@ -167,13 +197,22 @@ export class Editor {
     }
   }
 
-  load(nodes: SceneNode[], background: string) {
-    this.doc.load(nodes);
-    this.background = background;
+  load(nodes: SceneNode[], pages: Page[] | string) {
+    this.pages = typeof pages === 'string' ? [{ id: 'page-1', name: 'Page 1', background: pages }] : pages;
+    this.doc.load(nodes, this.pages[0].id);
     this.selection = [];
     this.undoStack = [];
     this.redoStack = [];
-    this.emit('doc', 'selection', 'view');
+    this.emit('doc', 'selection', 'view', 'pages');
+  }
+
+  get currentPage(): Page {
+    return this.pages.find((p) => p.id === this.doc.currentPage) ?? this.pages[0];
+  }
+
+  /** Background of the current page. */
+  get background(): string {
+    return this.currentPage.background;
   }
 
   // ------------------------------------------------------------ coordinates
@@ -276,16 +315,31 @@ export class Editor {
     if (this.tx) return;
     this.tx = new Map();
     this.txSelBefore = [...this.selection];
+    this.txPagesBefore = null;
+    this.txPageBefore = this.doc.currentPage;
   }
 
   private record(id: string) {
     if (this.tx && !this.tx.has(id)) this.tx.set(id, this.doc.get(id) ?? null);
   }
 
-  /** Writes a node inside the current transaction. */
+  /** Writes a node inside the current transaction. Top-level layers get the current page. */
   put(node: SceneNode) {
-    this.record(node.id);
-    this.doc.set(node);
+    let n = node;
+    if (n.parentId === null && n.pageId === undefined) n = { ...n, pageId: this.doc.currentPage };
+    else if (n.parentId !== null && n.pageId !== undefined) {
+      const { pageId: _drop, ...rest } = n;
+      n = rest;
+    }
+    this.record(n.id);
+    this.doc.set(n);
+  }
+
+  /** Changes the page list inside the current transaction. */
+  private setPages(pages: Page[]) {
+    if (this.tx && !this.txPagesBefore) this.txPagesBefore = this.pages;
+    this.pages = pages;
+    this.emit('pages');
   }
 
   private drop(id: string) {
@@ -294,9 +348,13 @@ export class Editor {
   }
 
   private end(): Patch[] {
+    if (this.tx) this.settle();
     const tx = this.tx;
     this.tx = null;
     if (!tx) return [];
+    const pagesBefore = this.txPagesBefore;
+    this.txPagesBefore = null;
+    const pagesChanged = pagesBefore !== null && JSON.stringify(pagesBefore) !== JSON.stringify(this.pages);
     const patches: Patch[] = [];
     for (const [id, before] of tx) {
       const after = this.doc.get(id) ?? null;
@@ -305,11 +363,18 @@ export class Editor {
       patches.push({ id, before, after });
     }
     this.setSelection(this.selection.filter((id) => this.doc.has(id)));
-    if (patches.length > 0) {
-      this.undoStack.push({ patches, selBefore: this.txSelBefore, selAfter: [...this.selection] });
+    if (patches.length > 0 || pagesChanged) {
+      this.undoStack.push({
+        patches,
+        selBefore: this.txSelBefore,
+        selAfter: [...this.selection],
+        ...(pagesChanged ? { pagesBefore: pagesBefore!, pagesAfter: this.pages } : {}),
+        pageBefore: this.txPageBefore,
+        pageAfter: this.doc.currentPage,
+      });
       if (this.undoStack.length > 500) this.undoStack.shift();
       this.redoStack = [];
-      this.commitListeners.forEach((fn) => fn(patches));
+      this.commitListeners.forEach((fn) => fn({ patches, pagesChanged }));
     }
     this.emit('doc', 'view');
     return patches;
@@ -323,8 +388,11 @@ export class Editor {
       if (before) this.doc.set(before);
       else this.doc.remove(id);
     }
+    if (this.txPagesBefore) this.pages = this.txPagesBefore;
+    this.txPagesBefore = null;
+    if (this.doc.currentPage !== this.txPageBefore) this.doc.setCurrentPage(this.txPageBefore);
     this.selection = this.txSelBefore.filter((id) => this.doc.has(id));
-    this.emit('doc', 'selection', 'view');
+    this.emit('doc', 'selection', 'view', 'pages');
   }
 
   /** Runs `fn` as one undoable step. */
@@ -354,9 +422,11 @@ export class Editor {
     if (!entry) return;
     this.doc.applyPatches(entry.patches, true);
     this.redoStack.push(entry);
+    if (entry.pagesBefore) this.pages = entry.pagesBefore;
+    this.showPage(entry.pageBefore);
     this.selection = entry.selBefore.filter((id) => this.doc.has(id));
-    this.commitListeners.forEach((fn) => fn(entry.patches));
-    this.emit('doc', 'selection', 'view');
+    this.commitListeners.forEach((fn) => fn({ patches: entry.patches, pagesChanged: !!entry.pagesBefore }));
+    this.emit('doc', 'selection', 'view', 'pages');
   }
 
   redo() {
@@ -365,9 +435,391 @@ export class Editor {
     if (!entry) return;
     this.doc.applyPatches(entry.patches);
     this.undoStack.push(entry);
+    if (entry.pagesAfter) this.pages = entry.pagesAfter;
+    this.showPage(entry.pageAfter);
     this.selection = entry.selAfter.filter((id) => this.doc.has(id));
-    this.commitListeners.forEach((fn) => fn(entry.patches));
-    this.emit('doc', 'selection', 'view');
+    this.commitListeners.forEach((fn) => fn({ patches: entry.patches, pagesChanged: !!entry.pagesAfter }));
+    this.emit('doc', 'selection', 'view', 'pages');
+  }
+
+  // ------------------------------------------------------------ settling
+
+  /**
+   * Keeps derived geometry right after changes: auto layout frames re-place their children (deepest
+   * first), instances follow their component's size, and connector lines follow the layers they are
+   * attached to. Runs inside the open transaction, so the results are part of the same undo step.
+   */
+  private settle(freeze: Set<string> = new Set()) {
+    const tx = this.tx;
+    if (!tx) return;
+    const doc = this.doc;
+
+    // instances keep following a component whose box changed size, unless they were resized themselves
+    for (const [id, before] of tx) {
+      const now = doc.get(id);
+      if (!before || !now || now.type !== 'COMPONENT') continue;
+      if (before.width === now.width && before.height === now.height) continue;
+      for (const n of doc.all()) {
+        if (n.type === 'INSTANCE' && n.componentId === id && n.width === before.width && n.height === before.height)
+          this.put({ ...n, width: now.width, height: now.height });
+      }
+    }
+
+    // auto layout, bottom-up
+    const frames = new Set<string>();
+    const addChain = (pid: string | null | undefined) => {
+      let cur = pid ? doc.get(pid) : undefined;
+      while (cur && cur.layout) {
+        frames.add(cur.id);
+        cur = cur.parentId ? doc.get(cur.parentId) : undefined;
+      }
+    };
+    for (const [id, before] of tx) {
+      const now = doc.get(id);
+      if (now?.layout) addChain(now.id);
+      addChain(now?.parentId);
+      addChain(before?.parentId);
+    }
+    const ordered = [...frames].filter((id) => doc.has(id)).sort((a, b) => doc.depth(b) - doc.depth(a));
+    for (const fid of ordered) {
+      const kids = doc.children(fid).map((k) => doc.get(k)!);
+      if (kids.some((k) => freeze.has(k.id))) continue;
+      const out = applyAutoLayout(doc.get(fid)!, kids);
+      out.kids.forEach((k, i) => k !== kids[i] && this.put(k));
+      if (out.frame !== doc.get(fid)) this.put(out.frame);
+    }
+
+    // connectors
+    for (const n of doc.all()) {
+      if (n.type !== 'LINE' || (!n.startBind && !n.endBind)) continue;
+      let line = n;
+      const page = doc.pageOf(n.id);
+      const valid = (b: Binding | undefined) => b && doc.has(b.nodeId) && b.nodeId !== n.id && doc.pageOf(b.nodeId) === page;
+      if (line.startBind && !valid(line.startBind)) line = { ...line, startBind: undefined };
+      if (line.endBind && !valid(line.endBind)) line = { ...line, endBind: undefined };
+      line = settleLine(doc, line);
+      if (line !== n) this.put(line);
+    }
+  }
+
+  // ---------------------------------------------------------------- pages
+
+  private showPage(pageId: string | undefined) {
+    if (!this.pages.some((p) => p.id === this.doc.currentPage)) this.doc.setCurrentPage(this.pages[0].id);
+    if (!pageId || pageId === this.doc.currentPage || !this.pages.some((p) => p.id === pageId)) return;
+    this.pageViews.set(this.doc.currentPage, { ...this.viewport });
+    this.doc.setCurrentPage(pageId);
+    const v = this.pageViews.get(pageId);
+    if (v) this.viewport = v;
+    else {
+      const b = this.contentBounds();
+      if (b) this.zoomToRect(b, 1);
+    }
+  }
+
+  switchPage(pageId: string) {
+    if (pageId === this.doc.currentPage || this.isInteracting) return;
+    if (this.editingText) return;
+    this.showPage(pageId);
+    this.selection = [];
+    this.hover = null;
+    this.emit('doc', 'selection', 'view', 'pages');
+  }
+
+  addPage(): string | null {
+    if (this.pages.length >= MAX_PAGES) return null;
+    const used = new Set(this.pages.map((p) => p.name));
+    let i = this.pages.length + 1;
+    while (used.has(`Page ${i}`)) i++;
+    const page: Page = { id: newId(), name: `Page ${i}`, background: this.background };
+    this.transact(() => this.setPages([...this.pages, page]));
+    this.switchPage(page.id);
+    return page.id;
+  }
+
+  renamePage(id: string, name: string) {
+    const trimmed = name.trim().slice(0, 200);
+    if (!trimmed) return;
+    this.transact(() => this.setPages(this.pages.map((p) => (p.id === id ? { ...p, name: trimmed } : p))));
+  }
+
+  setPageBackground(id: string, background: string) {
+    this.transact(() => this.setPages(this.pages.map((p) => (p.id === id ? { ...p, background } : p))));
+    this.emit('view');
+  }
+
+  /** Gives every top-level layer an explicit page, so page order never moves layers around. */
+  private pinPages() {
+    for (const n of this.doc.all()) if (n.parentId === null && n.pageId === undefined) this.put({ ...n, pageId: this.doc.defaultPage });
+  }
+
+  duplicatePage(id: string) {
+    if (this.pages.length >= MAX_PAGES) return;
+    const src = this.pages.find((p) => p.id === id);
+    if (!src) return;
+    const page: Page = { id: newId(), name: `${src.name} copy`.slice(0, 200), background: src.background };
+    this.transact(() => {
+      this.pinPages();
+      const idx = this.pages.findIndex((p) => p.id === id);
+      this.setPages([...this.pages.slice(0, idx + 1), page, ...this.pages.slice(idx + 1)]);
+      const roots = this.doc.pageChildren(id);
+      const map = new Map<string, string>();
+      const clones: SceneNode[] = [];
+      for (const r of roots) clones.push(...this.cloneSubtree(r, null, this.doc.get(r)!.order, map));
+      for (const c of this.remapClones(clones, map)) this.put(c.parentId === null ? { ...c, pageId: page.id } : c);
+    });
+    this.switchPage(page.id);
+  }
+
+  deletePage(id: string) {
+    if (this.pages.length <= 1) return;
+    this.transact(() => {
+      this.pinPages();
+      const roots = this.doc.pageChildren(id);
+      const doomed = new Set<string>();
+      for (const r of roots) {
+        doomed.add(r);
+        for (const d of this.doc.descendants(r)) doomed.add(d);
+      }
+      this.detachInstancesOfDeleted(doomed);
+      for (const d of doomed) this.drop(d);
+      const rest = this.pages.filter((p) => p.id !== id);
+      this.setPages(rest);
+      if (this.doc.defaultPage === id) this.doc.defaultPage = rest[0].id;
+      if (this.doc.currentPage === id) this.showPage(rest[0].id);
+      this.selection = [];
+    });
+    this.emit('selection', 'pages');
+  }
+
+  movePage(id: string, index: number) {
+    const from = this.pages.findIndex((p) => p.id === id);
+    if (from < 0) return;
+    const list = this.pages.filter((p) => p.id !== id);
+    list.splice(Math.max(0, Math.min(index, list.length)), 0, this.pages[from]);
+    this.transact(() => {
+      this.pinPages();
+      this.setPages(list);
+    });
+  }
+
+  /** Moves the selected layers to the top level of another page, keeping their positions. */
+  moveSelectionToPage(pageId: string) {
+    if (pageId === this.doc.currentPage || !this.pages.some((p) => p.id === pageId)) return;
+    const roots = this.selectionRoots();
+    if (roots.length === 0) return;
+    this.transact(() => {
+      const top = this.doc.pageChildren(pageId);
+      const last = top.length ? this.doc.get(top[top.length - 1])!.order : null;
+      const keys = generateNKeysBetween(last, null, roots.length);
+      roots.forEach((id, i) => {
+        const n = this.doc.get(id)!;
+        const placed = reparentKeepWorld(n, this.doc.parentWorld(n), IDENTITY);
+        this.put({ ...placed, parentId: null, pageId, order: keys[i] });
+      });
+      this.selection = [];
+    });
+    this.emit('selection');
+  }
+
+  // ------------------------------------------------------------ components
+
+  /** Turns the selected frame into a component, or wraps the selection in a new component. */
+  createComponent() {
+    const sel = this.selectedNodes();
+    if (sel.length === 0) return;
+    this.transact(() => {
+      if (sel.length === 1 && sel[0].type === 'FRAME') {
+        this.put({ ...sel[0], type: 'COMPONENT' });
+        return;
+      }
+      if (sel.length === 1 && sel[0].type === 'COMPONENT') return;
+      this.wrapInFrame();
+      const f = this.doc.get(this.selection[0]);
+      if (f) this.put({ ...f, type: 'COMPONENT', name: nextName(this.doc, 'Component'), fills: [] });
+    });
+  }
+
+  /** Places a new instance of a component. Returns its id, or null if it would contain itself. */
+  createInstance(componentId: string, at?: Point, parentId: string | null = null): string | null {
+    const comp = this.doc.get(componentId);
+    if (!comp || comp.type !== 'COMPONENT') return null;
+    const sameParentId = parentId;
+    const parentWorld = sameParentId === null ? IDENTITY : this.doc.world(sameParentId);
+    let world: Point;
+    if (at) world = { x: at.x - comp.width / 2, y: at.y - comp.height / 2 };
+    else if (this.doc.pageOf(componentId) === this.doc.currentPage) {
+      const b = this.doc.worldBounds(componentId);
+      world = { x: b.x + b.width + 40, y: b.y };
+    } else {
+      const c = this.toWorld(this.viewSize.width / 2, this.viewSize.height / 2);
+      world = { x: c.x - comp.width / 2, y: c.y - comp.height / 2 };
+    }
+    const local = apply(invert(parentWorld), world);
+    const node: SceneNode = {
+      ...createNode(this.doc, 'INSTANCE', sameParentId, {
+        x: round2(local.x),
+        y: round2(local.y),
+        width: comp.width,
+        height: comp.height,
+      }),
+      componentId,
+      name: comp.name,
+    };
+    if (validateTree([...this.doc.all(), { ...node, pageId: sameParentId === null ? this.doc.currentPage : undefined }])) return null;
+    this.transact(() => {
+      this.put(node);
+      this.selection = [node.id];
+    });
+    this.emit('selection');
+    return node.id;
+  }
+
+  /** Every component in the file, on any page. */
+  components(): SceneNode[] {
+    return [...this.doc.all()].filter((n) => n.type === 'COMPONENT').sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** Replaces instances with ordinary frames holding a copy of their content. */
+  detachInstances(ids = this.selection) {
+    const targets = ids.map((id) => this.doc.get(id)).filter((n): n is SceneNode => n?.type === 'INSTANCE');
+    if (targets.length === 0) return;
+    this.transact(() => {
+      for (const inst of targets) this.materialize(inst);
+    });
+    this.emit('selection');
+  }
+
+  private materialize(inst: SceneNode) {
+    const v = instanceDoc(this.doc, inst);
+    const { componentId: _c, overrides: _o, ...base } = inst;
+    if (!v) {
+      this.put({ ...base, type: 'FRAME', radii: [0, 0, 0, 0], clipsContent: false });
+      return;
+    }
+    const vroot = v.get(inst.id)!;
+    this.put({
+      ...base,
+      type: 'FRAME',
+      fills: vroot.fills,
+      strokes: vroot.strokes,
+      strokeWeight: vroot.strokeWeight,
+      strokeAlign: vroot.strokeAlign,
+      strokeDash: vroot.strokeDash,
+      radii: vroot.radii ?? [0, 0, 0, 0],
+      clipsContent: vroot.clipsContent ?? false,
+      ...(vroot.layout ? { layout: vroot.layout } : {}),
+    });
+    const map = new Map<string, string>([[inst.id, inst.id]]);
+    const vids = v.descendants(inst.id);
+    for (const vidId of vids) map.set(vidId, newId());
+    for (const vidId of vids) {
+      const n = v.get(vidId)!;
+      let copy: SceneNode = { ...n, id: map.get(vidId)!, parentId: map.get(n.parentId!)! };
+      if (copy.startBind) copy = { ...copy, startBind: map.has(copy.startBind.nodeId) ? { ...copy.startBind, nodeId: map.get(copy.startBind.nodeId)! } : undefined };
+      if (copy.endBind) copy = { ...copy, endBind: map.has(copy.endBind.nodeId) ? { ...copy.endBind, nodeId: map.get(copy.endBind.nodeId)! } : undefined };
+      this.put(copy);
+    }
+  }
+
+  /** Before deleting layers: instances elsewhere whose component is going away become frames. */
+  private detachInstancesOfDeleted(doomed: Set<string>) {
+    const comps = new Set([...doomed].filter((id) => this.doc.get(id)?.type === 'COMPONENT'));
+    if (comps.size === 0) return;
+    for (const n of [...this.doc.all()]) {
+      if (n.type === 'INSTANCE' && n.componentId && comps.has(n.componentId) && !doomed.has(n.id)) this.materialize(n);
+    }
+  }
+
+  goToMainComponent(instanceId: string) {
+    const inst = this.doc.get(instanceId);
+    const comp = inst?.componentId ? this.doc.get(inst.componentId) : undefined;
+    if (!comp) return;
+    this.switchPage(this.doc.pageOf(comp.id));
+    this.setSelection([comp.id]);
+    this.zoomToSelection();
+  }
+
+  setOverride(instanceId: string, sourceId: string, patch: Override | null) {
+    this.updateNodes([instanceId], (n) => {
+      const overrides = { ...(n.overrides ?? {}) };
+      if (patch === null) delete overrides[sourceId];
+      else overrides[sourceId] = { ...(overrides[sourceId] ?? {}), ...patch };
+      return { ...n, overrides };
+    });
+  }
+
+  resetOverrides(ids = this.selection) {
+    this.updateNodes(
+      ids.filter((id) => this.doc.get(id)?.type === 'INSTANCE'),
+      (n) => ({ ...n, overrides: {} }),
+    );
+  }
+
+  // ------------------------------------------------------------ auto layout
+
+  /** Shift+A: adds auto layout to the selected frame, or wraps the selection in an auto layout frame. */
+  addAutoLayout() {
+    const sel = this.selectedNodes();
+    if (sel.length === 0) return;
+    this.transact(() => {
+      let frame = sel.length === 1 && canHaveChildren(sel[0]) ? sel[0] : null;
+      if (!frame) {
+        this.wrapInFrame();
+        frame = this.doc.get(this.selection[0]) ?? null;
+        if (!frame) return;
+      }
+      if (frame.layout) return;
+      const kids = this.doc.children(frame.id).map((id) => this.doc.get(id)!);
+      // guess the direction from how the content is spread, and keep its visual order
+      const spreadX = kids.length ? Math.max(...kids.map((k) => k.x)) - Math.min(...kids.map((k) => k.x)) : 0;
+      const spreadY = kids.length ? Math.max(...kids.map((k) => k.y)) - Math.min(...kids.map((k) => k.y)) : 0;
+      const mode: Layout['mode'] = spreadX > spreadY ? 'horizontal' : 'vertical';
+      const sorted = [...kids].sort((a, b) => (mode === 'horizontal' ? a.x - b.x : a.y - b.y));
+      const keys = generateNKeysBetween(null, null, sorted.length);
+      sorted.forEach((k, i) => this.put({ ...k, order: keys[i] }));
+      this.put({ ...this.doc.get(frame.id)!, layout: { ...DEFAULT_LAYOUT, mode } });
+    });
+  }
+
+  removeAutoLayout(ids = this.selection) {
+    this.updateNodes(
+      ids.filter((id) => this.doc.get(id)?.layout),
+      (n) => ({ ...n, layout: undefined }),
+    );
+    this.transact(() => {
+      for (const id of ids)
+        for (const c of this.doc.children(id)) {
+          const k = this.doc.get(c)!;
+          if (k.layoutChild) this.put({ ...k, layoutChild: undefined });
+        }
+    });
+  }
+
+  // ---------------------------------------------------------------- images
+
+  /** Places an uploaded image as a rectangle with an image fill, at its natural size (scaled to fit the view). */
+  insertImage(imageId: string, size: { width: number; height: number }, name: string, at?: Point): string {
+    const center = at ?? this.toWorld(this.viewSize.width / 2, this.viewSize.height / 2);
+    const maxW = (this.viewSize.width * 0.6) / this.viewport.zoom;
+    const maxH = (this.viewSize.height * 0.6) / this.viewport.zoom;
+    const s = Math.min(1, maxW / Math.max(1, size.width), maxH / Math.max(1, size.height));
+    const w = Math.max(1, round2(size.width * s));
+    const h = Math.max(1, round2(size.height * s));
+    const parentId = at ? frameAt(this.doc, at) : null;
+    const toParent = invert(parentId === null ? IDENTITY : this.doc.world(parentId));
+    const tl = apply(toParent, { x: center.x - w / 2, y: center.y - h / 2 });
+    const node: SceneNode = {
+      ...createNode(this.doc, 'RECTANGLE', parentId, { x: round2(tl.x), y: round2(tl.y), width: w, height: h }),
+      name: name.replace(/\.[A-Za-z0-9]+$/, '').trim().slice(0, 100) || 'Image',
+      fills: [{ type: 'IMAGE', imageId, scaleMode: 'fill', opacity: 1, visible: true }],
+    };
+    this.transact(() => {
+      this.put(node);
+      this.selection = [node.id];
+    });
+    this.emit('selection');
+    return node.id;
   }
 
   // ---------------------------------------------------------- node updates
@@ -402,12 +854,23 @@ export class Editor {
       w = clamp(round2(w), 0.01, MAX_SIZE);
       h = n.type === 'LINE' ? 0 : clamp(round2(h), 0.01, MAX_SIZE);
       let next: SceneNode = { ...n, width: w, height: h };
+      if (n.layout) {
+        // typing a size means the frame no longer hugs its content on that axis
+        next = {
+          ...next,
+          layout: {
+            ...n.layout,
+            widthMode: width !== null ? 'fixed' : n.layout.widthMode,
+            heightMode: height !== null ? 'fixed' : n.layout.heightMode,
+          },
+        };
+      }
       if (n.type === 'TEXT' && width !== null && n.text!.autoResize === 'width') {
         next = { ...next, text: { ...n.text!, autoResize: 'height' } };
       }
       if (n.type === 'TEXT' && height !== null) next = { ...next, text: { ...next.text!, autoResize: 'none' } };
       this.put(fitText(next));
-      if (n.type === 'FRAME') this.applyFrameConstraints(n, n.width, n.height, w, h);
+      if (canHaveChildren(n) && !n.layout) this.applyFrameConstraints(n, n.width, n.height, w, h);
     });
   }
 
@@ -417,7 +880,7 @@ export class Editor {
     next.forEach((c, i) => {
       const before = kids[i];
       this.put(fitText(c));
-      if (c.type === 'FRAME' && (c.width !== before.width || c.height !== before.height)) {
+      if (canHaveChildren(c) && !c.layout && (c.width !== before.width || c.height !== before.height)) {
         this.applyFrameConstraints(c, before.width, before.height, c.width, c.height);
       }
     });
@@ -432,11 +895,14 @@ export class Editor {
   deleteSelection() {
     if (this.selection.length === 0) return;
     this.transact(() => {
+      const doomed = new Set<string>();
       for (const id of this.selection) {
         if (!this.doc.has(id)) continue;
-        for (const d of this.doc.descendants(id)) this.drop(d);
-        this.drop(id);
+        doomed.add(id);
+        for (const d of this.doc.descendants(id)) doomed.add(d);
       }
+      this.detachInstancesOfDeleted(doomed);
+      for (const d of doomed) this.drop(d);
       this.selection = [];
     });
     this.emit('selection');
@@ -461,23 +927,35 @@ export class Editor {
     return out;
   }
 
+  /** Connector ends follow copied layers when those were copied too; otherwise they let go. */
+  private remapClones(clones: SceneNode[], map: Map<string, string>): SceneNode[] {
+    return clones.map((c) => {
+      if (c.type !== 'LINE' || (!c.startBind && !c.endBind)) return c;
+      const remap = (b: Binding | undefined) => (b && map.has(b.nodeId) ? { ...b, nodeId: map.get(b.nodeId)! } : undefined);
+      return { ...c, startBind: remap(c.startBind), endBind: remap(c.endBind) };
+    });
+  }
+
   duplicateSelection(offset?: Point) {
     const roots = this.selectionRoots();
     if (roots.length === 0) return;
     this.transact(() => {
       const created: string[] = [];
+      const map = new Map<string, string>();
+      const all: SceneNode[] = [];
       for (const id of roots) {
         const n = this.doc.get(id)!;
-        const map = new Map<string, string>();
         const clones = this.cloneSubtree(id, n.parentId, keyOnTop(this.doc, n.parentId), map);
         const root = clones[0];
         let dx = offset?.x ?? 0;
         let dy = offset?.y ?? 0;
-        if (!offset && n.parentId === null && n.type === 'FRAME') dx = n.width + 40; // place new frames beside
+        if (!offset && n.parentId === null && canHaveChildren(n)) dx = n.width + 40; // place new frames beside
         clones[0] = { ...root, x: round2(root.x + dx), y: round2(root.y + dy) };
-        for (const c of clones) this.put(c);
+        for (const c of clones) this.put(c); // put first so the next root gets a key above it
+        all.push(...clones);
         created.push(clones[0].id);
       }
+      for (const c of this.remapClones(all, map)) this.put(c);
       this.selection = created;
     });
     this.emit('selection');
@@ -541,9 +1019,27 @@ export class Editor {
     else if (sel.length > 0) parentId = sel[0].parentId;
     if (parentId !== null && this.doc.depth(parentId) + 1 + treeDepth(roots, nodes) > MAX_DEPTH) parentId = null;
     const parentWorld = parentId === null ? IDENTITY : this.doc.world(parentId);
-    this.transact(() => {
+    try {
+      this.transact(() => this.pasteInto(parentId, parentWorld, roots, nodes, byId));
+    } catch {
+      // the pasted layers would make an invalid file (e.g. a component inside its own instance); nothing changed
+      return;
+    }
+    this.emit('selection');
+  }
+
+  private pasteInto(
+    parentId: string | null,
+    parentWorld: Mat,
+    roots: string[],
+    nodes: SceneNode[],
+    byId: Map<string, SceneNode>,
+  ) {
+    {
       const keys = keysOnTop(this.doc, parentId, roots.length);
       const created: string[] = [];
+      const map = new Map<string, string>();
+      const pasted: SceneNode[] = [];
       const children = new Map<string, SceneNode[]>();
       for (const n of nodes) {
         if (n.parentId === null) continue;
@@ -554,7 +1050,6 @@ export class Editor {
       roots.forEach((rid, i) => {
         const root = byId.get(rid);
         if (!root) return;
-        const map = new Map<string, string>();
         const stack: { n: SceneNode; pid: string | null; order: string; isRoot: boolean }[] = [
           { n: root, pid: parentId, order: keys[i], isRoot: true },
         ];
@@ -564,14 +1059,19 @@ export class Editor {
           const nid = newId();
           map.set(n.id, nid);
           const placed = isRoot ? reparentKeepWorld(n, IDENTITY, parentWorld) : n;
-          this.put({ ...placed, id: nid, parentId: pid, order });
-          if (n.type === 'FRAME') for (const c of children.get(n.id) ?? []) stack.push({ n: c, pid: nid, order: c.order, isRoot: false });
+          const { pageId: _p, ...rest } = placed;
+          const copy = { ...rest, id: nid, parentId: pid, order };
+          this.put(copy);
+          pasted.push(copy);
+          if (canHaveChildren(n)) for (const c of children.get(n.id) ?? []) stack.push({ n: c, pid: nid, order: c.order, isRoot: false });
         }
         created.push(map.get(rid)!);
       });
+      for (const c of this.remapClones(pasted, map)) this.put(c);
+      const problem = validateTree(this.doc.all(), this.pages);
+      if (problem) throw new Error(problem);
       this.selection = created;
-    });
-    this.emit('selection');
+    }
   }
 
   selectAll() {
@@ -878,7 +1378,7 @@ export class Editor {
     const ids = this.doc.children(null);
     for (let i = ids.length - 1; i >= 0; i--) {
       const n = this.doc.get(ids[i])!;
-      if (n.type !== 'FRAME' || !n.visible || n.locked) continue;
+      if (!(canHaveChildren(n) || n.type === 'INSTANCE') || !n.visible || n.locked) continue;
       const at = this.toScreen(apply(this.doc.world(n.id), { x: 0, y: 0 }));
       const room = n.width * this.viewport.zoom;
       if (room < 24) continue;
@@ -931,7 +1431,7 @@ export class Editor {
     // Dragging on the empty area of a top-level frame with children draws a marquee.
     if (target) {
       const t = this.doc.get(target)!;
-      if (!label && t.type === 'FRAME' && t.parentId === null && !this.selection.includes(target) && this.doc.children(target).length > 0 && deepest === target) {
+      if (!label && canHaveChildren(t) && t.parentId === null && !this.selection.includes(target) && this.doc.children(target).length > 0 && deepest === target) {
         this.interaction = {
           kind: 'pending',
           start: p,
@@ -964,7 +1464,9 @@ export class Editor {
     const sel = this.selectedNodes();
     this.begin();
     if (handle.kind === 'line-end') {
-      this.interaction = { kind: 'line-end', id: sel[0].id, end: handle.end, original: sel[0] };
+      const loose: SceneNode = handle.end === 0 ? { ...sel[0], startBind: undefined } : { ...sel[0], endBind: undefined };
+      this.put(loose);
+      this.interaction = { kind: 'line-end', id: sel[0].id, end: handle.end, original: loose };
     } else if (handle.kind === 'rotate') {
       const n = sel[0];
       const center = apply(this.doc.world(n.id), { x: n.width / 2, y: n.height / 2 });
@@ -1046,6 +1548,7 @@ export class Editor {
         let rot = it.original.rotation + (a1 - a0) / DEG;
         if (e.shift) rot = Math.round(rot / 15) * 15;
         this.put(rotateAboutCenter(it.original, rot));
+        this.settle();
         this.sizeBadge = { text: `${Math.round(this.doc.get(it.id)!.rotation)}°`, at: { x: e.sx + 16, y: e.sy + 16 } };
         this.emit('doc', 'view');
         return;
@@ -1057,8 +1560,12 @@ export class Editor {
         const fixed = ends[1 - it.end];
         let moving = apply(toParent, this.snapPoint(p, new Set([n.id])));
         if (e.shift) moving = snapAngle(fixed, moving);
-        const next = it.end === 1 ? lineFromEnds(n, fixed, moving) : lineFromEnds(n, moving, fixed);
+        const bind = e.mod ? null : bindingAt(this.doc, p, this.hitTolerance(), new Set([n.id]));
+        this.bindTarget = bind?.nodeId ?? null;
+        let next = it.end === 1 ? lineFromEnds(n, fixed, moving) : lineFromEnds(n, moving, fixed);
+        if (bind) next = settleLine(this.doc, it.end === 1 ? { ...next, endBind: bind } : { ...next, startBind: bind });
         this.put(next);
+        this.settle();
         this.sizeBadge = { text: `${Math.round(next.width)}`, at: { x: e.sx + 16, y: e.sy + 16 } };
         this.emit('doc', 'view');
         return;
@@ -1082,14 +1589,22 @@ export class Editor {
         else if (it.scope !== null) this.setSelection(it.shift ? [...this.selection, it.scope] : [it.scope]);
         break;
       case 'move': {
-        this.finishMove(it);
+        this.finishMove(it, this.toWorld(e.sx, e.sy));
         this.dropTarget = undefined;
+        this.end();
+        break;
+      }
+      case 'line-end': {
+        const p = this.toWorld(e.sx, e.sy);
+        const bind = e.mod ? null : bindingAt(this.doc, p, this.hitTolerance(), new Set([it.id]));
+        const n = this.doc.get(it.id);
+        if (n && bind) this.put(it.end === 1 ? { ...n, endBind: bind } : { ...n, startBind: bind });
+        this.bindTarget = null;
         this.end();
         break;
       }
       case 'resize':
       case 'rotate':
-      case 'line-end':
         this.end();
         break;
       case 'create':
@@ -1108,6 +1623,7 @@ export class Editor {
     this.marquee = null;
     this.sizeBadge = null;
     this.dropTarget = undefined;
+    this.bindTarget = null;
     if (this.tx) this.abort();
     this.emit('view');
     return true;
@@ -1158,6 +1674,18 @@ export class Editor {
   private startMove(start: Point) {
     const ids = this.selectionRoots().filter((id) => !this.doc.isEffectivelyLocked(id));
     if (ids.length === 0) return;
+    const moving = new Set<string>();
+    for (const id of ids) {
+      moving.add(id);
+      for (const d of this.doc.descendants(id)) moving.add(d);
+    }
+    for (const id of ids) {
+      const n = this.doc.get(id)!;
+      if (n.type !== 'LINE') continue;
+      const keep = (b: Binding | undefined) => (b && moving.has(b.nodeId) ? b : undefined);
+      if ((n.startBind && !keep(n.startBind)) || (n.endBind && !keep(n.endBind)))
+        this.put({ ...n, startBind: keep(n.startBind), endBind: keep(n.endBind) });
+    }
     const originals = new Map(ids.map((id) => [id, this.doc.get(id)!]));
     const bounds = unionRects(ids.map((id) => this.doc.worldBounds(id)))!;
     this.interaction = { kind: 'move', start, ids, originals, bounds };
@@ -1178,7 +1706,7 @@ export class Editor {
         if (!n.visible) continue;
         const b = this.doc.worldBounds(id);
         if (rectsIntersect(b, view)) out.push(b);
-        if (n.type === 'FRAME') walk(id);
+        if (canHaveChildren(n)) walk(id);
       }
     };
     walk(null);
@@ -1218,14 +1746,38 @@ export class Editor {
     // drop target: the frame under the pointer
     const target = frameAt(this.doc, p, exclude);
     const parents = new Set(it.ids.map((id) => it.originals.get(id)!.parentId));
-    this.dropTarget = parents.size === 1 && parents.has(target) ? undefined : target;
+    const sameParent = parents.size === 1 && parents.has(target);
+    // inside an auto layout frame, dropping reorders, so show the frame as the target too
+    this.dropTarget = sameParent && !(target && this.doc.get(target)?.layout) ? undefined : target;
+    this.settle(new Set(it.ids));
     this.emit('doc', 'view');
   }
 
-  private finishMove(it: Extract<Interaction, { kind: 'move' }>) {
+  private finishMove(it: Extract<Interaction, { kind: 'move' }>, p: Point) {
     const target = this.dropTarget;
     if (target === undefined) return;
     const targetWorld = target === null ? IDENTITY : this.doc.world(target);
+    const frame = target ? this.doc.get(target) : undefined;
+    if (frame?.layout) {
+      // auto layout: the drop position picks the slot
+      const local = apply(invert(targetWorld), p);
+      const moving = new Set(it.ids);
+      const others = this.doc.children(target).filter((id) => !moving.has(id)).map((id) => this.doc.get(id)!);
+      const index = autoLayoutIndex(frame, others, local);
+      const flowIds = others.filter((k) => k.visible && !k.layoutChild?.absolute).map((k) => k.id);
+      const anchorId = flowIds[index - 1];
+      const allIds = others.map((k) => k.id);
+      const insertAt = anchorId ? allIds.indexOf(anchorId) + 1 : flowIds.length ? allIds.indexOf(flowIds[0]) : allIds.length;
+      const before = insertAt > 0 ? this.doc.get(allIds[insertAt - 1])!.order : null;
+      const after = insertAt < allIds.length ? this.doc.get(allIds[insertAt])!.order : null;
+      const keys = generateNKeysBetween(before, after, it.ids.length);
+      it.ids.forEach((id, i) => {
+        const n = this.doc.get(id)!;
+        const placed = n.parentId === target ? n : reparentKeepWorld(n, this.doc.parentWorld(n), targetWorld);
+        this.put({ ...placed, parentId: target, order: keys[i] });
+      });
+      return;
+    }
     const keys = keysOnTop(this.doc, target, it.ids.length);
     it.ids.forEach((id, i) => {
       const n = this.doc.get(id)!;
@@ -1251,10 +1803,22 @@ export class Editor {
         next = { ...next, text: { ...o.text!, autoResize: horizontalOnly ? 'height' : 'none' } };
         next = fitText(next);
       }
+      if (o.layout) {
+        const horizontal = it.handle.includes('e') || it.handle.includes('w');
+        const vertical = it.handle.startsWith('n') || it.handle.startsWith('s');
+        next = {
+          ...next,
+          layout: {
+            ...o.layout,
+            widthMode: horizontal ? 'fixed' : o.layout.widthMode,
+            heightMode: vertical ? 'fixed' : o.layout.heightMode,
+          },
+        };
+      }
       // restore all descendants first so constraints start from the originals
       for (const [id, orig] of it.originals) if (id !== o.id) this.put(orig);
       this.put(next);
-      if (o.type === 'FRAME') {
+      if (canHaveChildren(o) && !o.layout) {
         if (e.mod) {
           // Ctrl/Cmd: children stay where they are on the page
           const oldWorld = world;
@@ -1312,6 +1876,7 @@ export class Editor {
       const nb = this.selectionBounds()!;
       this.sizeBadge = { text: `${round2(nb.width)} × ${round2(nb.height)}`, at: this.badgeAnchor() };
     }
+    this.settle();
     this.emit('doc', 'view');
   }
 
@@ -1342,6 +1907,7 @@ export class Editor {
     if (type === 'LINE') {
       if (e.shift) cur = snapAngle(it.start, cur);
       const next = lineFromEnds(n, apply(toParent, it.start), apply(toParent, cur));
+      this.bindTarget = e.mod ? null : (bindingAt(this.doc, p, this.hitTolerance(), new Set([n.id]))?.nodeId ?? null);
       this.put(next);
       this.sizeBadge = { text: `${Math.round(next.width)}`, at: { x: e.sx + 16, y: e.sy + 16 } };
     } else {
@@ -1373,10 +1939,11 @@ export class Editor {
       this.put(next);
       this.sizeBadge = { text: `${round2(next.width)} × ${round2(next.height)}`, at: this.badgeAnchor() };
     }
+    this.settle();
     this.emit('doc', 'view');
   }
 
-  private finishCreate(it: Extract<Interaction, { kind: 'create' }>, _e: PointerInput) {
+  private finishCreate(it: Extract<Interaction, { kind: 'create' }>, e: PointerInput) {
     const type = TOOL_TYPE[it.tool]!;
     if (!it.nodeId) {
       // click without drag: default size at the click point
@@ -1397,7 +1964,16 @@ export class Editor {
     } else if (type === 'TEXT') {
       const n = this.doc.get(it.nodeId)!;
       this.put(fitText(n));
+    } else if (type === 'LINE' && !e.mod) {
+      // connector: attach ends that start or finish on a shape
+      const n = this.doc.get(it.nodeId)!;
+      const skip = new Set([n.id]);
+      const tol = this.hitTolerance();
+      const startBind = bindingAt(this.doc, it.start, tol, skip) ?? undefined;
+      const endBind = bindingAt(this.doc, this.toWorld(e.sx, e.sy), tol, skip) ?? undefined;
+      if (startBind || endBind) this.put(settleLine(this.doc, { ...n, startBind, endBind }));
     }
+    this.bindTarget = null;
     this.end();
     this.setTool('move');
     if (type === 'TEXT' && it.nodeId) {
@@ -1454,6 +2030,22 @@ export class Editor {
           if (shift) this.unwrapFrames();
           else this.wrapInFrame();
           return true;
+        case 'KeyK':
+          if (alt) {
+            this.createComponent();
+            return true;
+          }
+          if (shift) {
+            this.onRequestImage?.();
+            return true;
+          }
+          return false;
+        case 'KeyB':
+          if (alt) {
+            this.detachInstances();
+            return true;
+          }
+          return false;
         case 'BracketRight':
           this.reorder(shift || alt ? 'front' : 'forward');
           return true;
@@ -1492,6 +2084,11 @@ export class Editor {
       if (code === 'Digit2') return this.zoomToSelection(), true;
       if (code === 'Digit0') return this.zoomTo(1), true;
       if (code === 'KeyL') return this.setTool('arrow'), true;
+      if (code === 'KeyA') {
+        if (this.selection.length === 0) return false;
+        this.addAutoLayout();
+        return true;
+      }
     }
 
     switch (code) {
@@ -1586,19 +2183,4 @@ export class Editor {
     const cursors = ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'];
     return cursors[Math.round(a / 45) % 4];
   }
-}
-
-/** Recomputes a text layer's size from its content and auto-resize mode. */
-export function fitText(n: SceneNode): SceneNode {
-  if (n.type !== 'TEXT' || !n.text) return n;
-  const t = n.text;
-  if (t.autoResize === 'width') {
-    const l = layoutText(t, null);
-    return { ...n, width: clamp(l.width, 1, MAX_SIZE), height: clamp(l.height, 1, MAX_SIZE) };
-  }
-  if (t.autoResize === 'height') {
-    const l = layoutText(t, n.width);
-    return { ...n, height: clamp(l.height, 1, MAX_SIZE) };
-  }
-  return n;
 }
