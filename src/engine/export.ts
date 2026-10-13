@@ -125,7 +125,7 @@ function shapeElement(n: SceneNode, attrs: string): string {
 }
 
 const paintAttrs = (p: Paint, kind: 'fill' | 'stroke') =>
-  ` ${kind}="${p.color}"${p.opacity < 1 ? ` ${kind}-opacity="${num(p.opacity)}"` : ''}`;
+  ` ${kind}="${escapeXml(p.color)}"${p.opacity < 1 ? ` ${kind}-opacity="${num(p.opacity)}"` : ''}`;
 
 class SvgWriter {
   private defs: string[] = [];
@@ -199,7 +199,7 @@ class SvgWriter {
     if (fills.length === 0) return '';
     const family = escapeXml(fontStack(t.fontFamily).replace(/"/g, "'"));
     const common =
-      ` font-family="${family}" font-size="${num(t.fontSize)}" font-weight="${t.fontWeight}"` +
+      ` font-family="${family}" font-size="${num(t.fontSize)}" font-weight="${num(Number(t.fontWeight))}"` +
       (t.letterSpacing ? ` letter-spacing="${num(t.letterSpacing)}"` : '') +
       ' xml:space="preserve"';
     return fills
@@ -254,7 +254,7 @@ export function exportSvg(doc: SceneDoc, target: ExportTarget): string {
   if (!b) throw new Error('Nothing to export');
   const w = new SvgWriter(doc);
   const parts: string[] = [];
-  if (target.background) parts.push(`<rect x="${num(b.x)}" y="${num(b.y)}" width="${num(b.width)}" height="${num(b.height)}" fill="${target.background}"/>`);
+  if (target.background) parts.push(`<rect x="${num(b.x)}" y="${num(b.y)}" width="${num(b.width)}" height="${num(b.height)}" fill="${escapeXml(target.background)}"/>`);
   for (const id of target.ids) {
     const n = doc.get(id)!;
     const pw = n.parentId === null ? IDENTITY : doc.world(n.parentId);

@@ -13,7 +13,8 @@ export function downloadBlob(blob: Blob, filename: string) {
 /** A file name that is safe on every OS. */
 export function safeFileName(name: string, fallback = 'export'): string {
   const cleaned = name
-    .replace(/[\\/:*?"<>|\u0000-\u001F]/g, '_')
+    // path separators, reserved characters, control and bidi characters (which can fake an extension)
+    .replace(/[\\/:*?"<>|\u0000-\u001F\u007F\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '_')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 100);
