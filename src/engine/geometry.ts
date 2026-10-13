@@ -97,8 +97,8 @@ export function applyBox(node: SceneNode, box: Box, minSize = 0.01): SceneNode {
     ...node,
     x: round2(origin.x),
     y: round2(origin.y),
-    width: Math.max(minSize, round2(nb.r - nb.l)),
-    height: Math.max(minSize, round2(nb.b - nb.t)),
+    width: Math.min(1e7, Math.max(minSize, round2(nb.r - nb.l))),
+    height: Math.min(1e7, Math.max(minSize, round2(nb.b - nb.t))),
   };
 }
 

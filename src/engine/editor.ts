@@ -1,4 +1,12 @@
-import type { NodeType, SceneNode } from '../../shared/schema.ts';
+import { z } from 'zod';
+import {
+  type NodeType,
+  type SceneNode,
+  MAX_DEPTH,
+  MAX_NODES_PER_FILE,
+  SceneNodeSchema,
+  validateTree,
+} from '../../shared/schema.ts';
 import { SceneDoc, type Patch } from './doc.ts';
 import {
   type Handle,
@@ -93,6 +101,25 @@ const TOOL_TYPE: Partial<Record<Tool, NodeType>> = {
 };
 
 const CLIP_PREFIX = 'localframe-clipboard:';
+const ClipboardSchema = z
+  .object({ roots: z.array(z.string().max(64)).max(10_000), nodes: z.array(SceneNodeSchema).max(50_000) })
+  .strict();
+
+/** Depth of the deepest pasted layer below its root (0 = roots only). */
+function treeDepth(roots: string[], nodes: SceneNode[]): number {
+  const kids = new Map<string, string[]>();
+  for (const n of nodes) if (n.parentId !== null) kids.set(n.parentId, [...(kids.get(n.parentId) ?? []), n.id]);
+  let max = 0;
+  const stack = roots.map((id) => ({ id, d: 0 }));
+  while (stack.length) {
+    const { id, d } = stack.pop()!;
+    max = Math.max(max, d);
+    for (const c of kids.get(id) ?? []) stack.push({ id: c, d: d + 1 });
+  }
+  return max;
+}
+
+const MAX_SIZE = 1e7;
 
 export class Editor {
   readonly doc = new SceneDoc();
@@ -304,7 +331,13 @@ export class Editor {
   transact(fn: () => void) {
     const nested = this.tx !== null;
     this.begin();
-    fn();
+    try {
+      fn();
+    } catch (err) {
+      // Never leave a half-applied step behind: roll it back and close the transaction.
+      if (!nested) this.abort();
+      throw err;
+    }
     if (!nested) this.end();
   }
 
@@ -366,8 +399,8 @@ export class Editor {
         if (width !== null && height === null) h = (n.height * w) / n.width;
         if (height !== null && width === null) w = (n.width * h) / n.height;
       }
-      w = Math.max(0.01, round2(w));
-      h = n.type === 'LINE' ? 0 : Math.max(0.01, round2(h));
+      w = clamp(round2(w), 0.01, MAX_SIZE);
+      h = n.type === 'LINE' ? 0 : clamp(round2(h), 0.01, MAX_SIZE);
       let next: SceneNode = { ...n, width: w, height: h };
       if (n.type === 'TEXT' && width !== null && n.text!.autoResize === 'width') {
         next = { ...next, text: { ...n.text!, autoResize: 'height' } };
@@ -471,14 +504,20 @@ export class Editor {
 
   pasteText(text: string) {
     if (text.startsWith(CLIP_PREFIX)) {
-      let data: { roots: string[]; nodes: SceneNode[] };
+      let raw: unknown;
       try {
-        data = JSON.parse(text.slice(CLIP_PREFIX.length));
+        raw = JSON.parse(text.slice(CLIP_PREFIX.length));
       } catch {
         return;
       }
-      if (!Array.isArray(data.roots) || !Array.isArray(data.nodes)) return;
-      this.pasteNodes(data.roots, data.nodes);
+      // Clipboard text can come from anywhere: validate it like an import before it touches the document.
+      const parsed = ClipboardSchema.safeParse(raw);
+      if (!parsed.success || validateTree(parsed.data.nodes)) return;
+      const byId = new Map(parsed.data.nodes.map((n) => [n.id, n]));
+      const roots = [...new Set(parsed.data.roots)].filter((id) => byId.get(id)?.parentId === null);
+      if (roots.length === 0) return;
+      if (this.doc.size + parsed.data.nodes.length > MAX_NODES_PER_FILE) return;
+      this.pasteNodes(roots, parsed.data.nodes);
       return;
     }
     const plain = text.slice(0, 20_000);
@@ -500,6 +539,7 @@ export class Editor {
     let parentId: string | null = null;
     if (sel.length === 1 && canHaveChildren(sel[0]) && !roots.includes(sel[0].id)) parentId = sel[0].id;
     else if (sel.length > 0) parentId = sel[0].parentId;
+    if (parentId !== null && this.doc.depth(parentId) + 1 + treeDepth(roots, nodes) > MAX_DEPTH) parentId = null;
     const parentWorld = parentId === null ? IDENTITY : this.doc.world(parentId);
     this.transact(() => {
       const keys = keysOnTop(this.doc, parentId, roots.length);
@@ -515,14 +555,18 @@ export class Editor {
         const root = byId.get(rid);
         if (!root) return;
         const map = new Map<string, string>();
-        const walk = (n: SceneNode, pid: string | null, order: string, isRoot: boolean) => {
+        const stack: { n: SceneNode; pid: string | null; order: string; isRoot: boolean }[] = [
+          { n: root, pid: parentId, order: keys[i], isRoot: true },
+        ];
+        while (stack.length) {
+          const { n, pid, order, isRoot } = stack.pop()!;
+          if (map.has(n.id)) continue;
           const nid = newId();
           map.set(n.id, nid);
           const placed = isRoot ? reparentKeepWorld(n, IDENTITY, parentWorld) : n;
           this.put({ ...placed, id: nid, parentId: pid, order });
-          for (const c of children.get(n.id) ?? []) walk(c, nid, c.order, false);
-        };
-        walk(root, parentId, keys[i], true);
+          if (n.type === 'FRAME') for (const c of children.get(n.id) ?? []) stack.push({ n: c, pid: nid, order: c.order, isRoot: false });
+        }
         created.push(map.get(rid)!);
       });
       this.selection = created;
@@ -1550,11 +1594,11 @@ export function fitText(n: SceneNode): SceneNode {
   const t = n.text;
   if (t.autoResize === 'width') {
     const l = layoutText(t, null);
-    return { ...n, width: Math.max(1, l.width), height: l.height };
+    return { ...n, width: clamp(l.width, 1, MAX_SIZE), height: clamp(l.height, 1, MAX_SIZE) };
   }
   if (t.autoResize === 'height') {
     const l = layoutText(t, n.width);
-    return { ...n, height: l.height };
+    return { ...n, height: clamp(l.height, 1, MAX_SIZE) };
   }
   return n;
 }
