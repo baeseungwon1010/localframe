@@ -24,6 +24,7 @@
   --color-canvas-default: #F3F3F1;
   --color-handle-fill: #FFFFFF;
   --color-guide: #E2361F;
+  --color-component: #6B35C9;
 
   --font-ui: "IBM Plex Sans", system-ui, sans-serif;
   --font-ui-features: "tnum" 1;
@@ -75,6 +76,7 @@
     --color-warning: #F0A63C;
     --color-canvas-default: #26282C;
     --color-guide: #FF6A4D;
+    --color-component: #B99AFF;
     --shadow-popover: 0 0 0 1px rgba(255, 255, 255, .06), 0 8px 24px rgba(0, 0, 0, .5);
   }
 }
@@ -99,6 +101,7 @@
   --color-warning: #F0A63C;
   --color-canvas-default: #26282C;
   --color-guide: #FF6A4D;
+  --color-component: #B99AFF;
   --shadow-popover: 0 0 0 1px rgba(255, 255, 255, .06), 0 8px 24px rgba(0, 0, 0, .5);
 }
 
