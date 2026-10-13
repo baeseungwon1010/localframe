@@ -1,10 +1,18 @@
-import type { Paint, SceneNode } from '../../shared/schema.ts';
+import type { ImagePaint, Paint, SceneNode, SolidPaint } from '../../shared/schema.ts';
 import type { SceneDoc } from './doc.ts';
+import { embeddedFontCss, type TextRun } from './fonts.ts';
+import { ensureImages, imageDataUrl, imageSize } from './images.ts';
+import { instanceDoc } from './instances.ts';
 import { type Mat, type Rect, IDENTITY, localMatrix, unionRects } from './math.ts';
-import { arrowSize, clampRadii, drawNode } from './render.ts';
+import { buildPdf, type PdfPage } from './pdf.ts';
+import { arrowSize, clampRadii, drawNode, imageRect, imagesUsed } from './render.ts';
 import { fontStack, layoutText, lineOffset } from './text.ts';
 
 export type ExportTarget = { ids: string[]; background: string | null };
+export type RasterFormat = 'png' | 'jpg' | 'webp';
+export type ExportFormat = RasterFormat | 'svg' | 'pdf';
+
+const isContainer = (n: SceneNode) => n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'INSTANCE';
 
 /** Extra room for strokes and arrow heads that reach outside a node's box. */
 function overhang(doc: SceneDoc, id: string): number {
@@ -18,18 +26,18 @@ function overhang(doc: SceneDoc, id: string): number {
       else if (n.strokeAlign === 'center') max = Math.max(max, n.strokeWeight / 2);
       else if (n.strokeAlign === 'outside') max = Math.max(max, n.strokeWeight);
     }
-    if (!(n.type === 'FRAME' && n.clipsContent)) for (const c of doc.children(nid)) visit(c);
+    if (!(isContainer(n) && n.clipsContent)) for (const c of doc.children(nid)) visit(c);
   };
   visit(id);
   return max;
 }
 
-/** Area to export: a frame exports exactly its box; anything else its bounds plus strokes. */
+/** Area to export: a clipping frame exports exactly its box; anything else its bounds plus strokes. */
 export function exportBounds(doc: SceneDoc, ids: string[]): Rect | null {
   const rects = ids.map((id) => {
     const n = doc.get(id)!;
     const b = doc.worldBounds(id);
-    if (n.type === 'FRAME' && n.clipsContent) return b;
+    if (isContainer(n) && n.clipsContent) return b;
     const pad = overhang(doc, id);
     return { x: b.x - pad, y: b.y - pad, width: b.width + pad * 2, height: b.height + pad * 2 };
   });
@@ -45,19 +53,21 @@ export function exportBounds(doc: SceneDoc, ids: string[]): Rect | null {
 
 const MAX_PIXELS = 16384 * 16384;
 
-export async function exportPng(doc: SceneDoc, target: ExportTarget, scale: number): Promise<Blob> {
+/** Draws the target into a new canvas at `scale` (lowered if the result would be too large). */
+export async function renderCanvas(doc: SceneDoc, target: ExportTarget, scale: number, background: string | null = target.background) {
   const b = exportBounds(doc, target.ids);
   if (!b) throw new Error('Nothing to export');
+  await ensureImages(imagesUsed(doc, target.ids));
   let s = scale;
-  while (b.width * s * b.height * s > MAX_PIXELS && s > 0.1) s /= 2;
+  while (b.width * s * b.height * s > MAX_PIXELS && s > 0.05) s /= 2;
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(b.width * s));
   canvas.height = Math.max(1, Math.round(b.height * s));
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas is not available');
   ctx.setTransform(s, 0, 0, s, -b.x * s, -b.y * s);
-  if (target.background) {
-    ctx.fillStyle = target.background;
+  if (background) {
+    ctx.fillStyle = background;
     ctx.fillRect(b.x, b.y, b.width, b.height);
   }
   for (const id of target.ids) {
@@ -68,9 +78,37 @@ export async function exportPng(doc: SceneDoc, target: ExportTarget, scale: numb
     drawNode(ctx, doc, n);
     ctx.restore();
   }
+  return { canvas, bounds: b, scale: s };
+}
+
+const MIME: Record<RasterFormat, string> = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' };
+
+function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
   return new Promise((resolve, reject) =>
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('PNG encoding failed'))), 'image/png'),
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Image encoding failed'))), type, quality),
   );
+}
+
+/** PNG and WebP keep transparency; JPG has none, so empty areas become white (or the page colour). */
+export async function exportImage(doc: SceneDoc, target: ExportTarget, scale: number, format: RasterFormat): Promise<Blob> {
+  const bg = format === 'jpg' ? (target.background ?? '#FFFFFF') : target.background;
+  const { canvas } = await renderCanvas(doc, target, scale, bg);
+  return toBlob(canvas, MIME[format], format === 'png' ? undefined : 0.92);
+}
+
+/** Kept for callers that only need PNG. */
+export const exportPng = (doc: SceneDoc, target: ExportTarget, scale: number) => exportImage(doc, target, scale, 'png');
+
+/** One PDF page per target (for example one per frame). Pages are images at `scale`. */
+export async function exportPdf(doc: SceneDoc, targets: ExportTarget[], scale: number, title: string): Promise<Blob> {
+  const pages: PdfPage[] = [];
+  for (const t of targets) {
+    const { canvas, bounds } = await renderCanvas(doc, t, scale, t.background ?? '#FFFFFF');
+    const jpeg = new Uint8Array(await (await toBlob(canvas, 'image/jpeg', 0.92)).arrayBuffer());
+    pages.push({ jpeg, pxWidth: canvas.width, pxHeight: canvas.height, ptWidth: bounds.width * 0.75, ptHeight: bounds.height * 0.75 });
+  }
+  if (pages.length === 0) throw new Error('Nothing to export');
+  return buildPdf(pages, title);
 }
 
 // ------------------------------------------------------------------ SVG
@@ -124,24 +162,49 @@ function shapeElement(n: SceneNode, attrs: string): string {
   return `<path d="${roundedRectPath(n)}"${attrs}/>`;
 }
 
-const paintAttrs = (p: Paint, kind: 'fill' | 'stroke') =>
+const paintAttrs = (p: SolidPaint, kind: 'fill' | 'stroke') =>
   ` ${kind}="${escapeXml(p.color)}"${p.opacity < 1 ? ` ${kind}-opacity="${num(p.opacity)}"` : ''}`;
+
+export type SvgAssets = { images: Map<string, { url: string; width: number; height: number }> };
 
 class SvgWriter {
   private defs: string[] = [];
   private seq = 0;
-  private readonly doc: SceneDoc;
+  readonly runs: TextRun[] = [];
+  private readonly root: SceneDoc;
+  private readonly assets: SvgAssets;
 
-  constructor(doc: SceneDoc) {
-    this.doc = doc;
+  constructor(root: SceneDoc, assets: SvgAssets) {
+    this.root = root;
+    this.assets = assets;
   }
 
   private id(prefix: string) {
     return `${prefix}${++this.seq}`;
   }
 
-  get defsMarkup() {
-    return this.defs.length ? `<defs>${this.defs.join('')}</defs>` : '';
+  defsMarkup(extra = '') {
+    return this.defs.length || extra ? `<defs>${extra}${this.defs.join('')}</defs>` : '';
+  }
+
+  private fills(n: SceneNode): string {
+    return n.fills
+      .filter((p) => p.visible)
+      .map((p: Paint) => (p.type === 'IMAGE' ? this.imageFill(n, p) : shapeElement(n, paintAttrs(p, 'fill'))))
+      .join('');
+  }
+
+  private imageFill(n: SceneNode, p: ImagePaint): string {
+    const img = this.assets.images.get(p.imageId);
+    if (!img) return shapeElement(n, ' fill="#808080" fill-opacity="0.18"');
+    const cid = this.id('clip');
+    this.defs.push(`<clipPath id="${cid}">${shapeElement(n, '')}</clipPath>`);
+    const r = imageRect(p, img.width, img.height, n.width, n.height);
+    const opacity = p.opacity < 1 ? ` opacity="${num(p.opacity)}"` : '';
+    return (
+      `<g clip-path="url(#${cid})"${opacity}><image href="${escapeXml(img.url)}" x="${num(r.x)}" y="${num(r.y)}" ` +
+      `width="${num(r.width)}" height="${num(r.height)}" preserveAspectRatio="none"/></g>`
+    );
   }
 
   private strokes(n: SceneNode): string {
@@ -195,9 +258,15 @@ class SvgWriter {
   private text(n: SceneNode): string {
     const t = n.text!;
     const layout = layoutText(t, t.autoResize === 'width' ? null : n.width);
-    const fills = n.fills.filter((p) => p.visible);
+    const fills = n.fills.filter((p): p is SolidPaint => p.visible && p.type !== 'IMAGE');
     if (fills.length === 0) return '';
-    const family = escapeXml(fontStack(t.fontFamily).replace(/"/g, "'"));
+    const stack = fontStack(t.fontFamily);
+    this.runs.push({
+      stack: stack.split(',').map((f) => f.trim().replace(/^"|"$/g, '')).filter((f) => f !== 'sans-serif'),
+      weight: t.fontWeight,
+      text: t.characters,
+    });
+    const family = escapeXml(stack.replace(/"/g, "'"));
     const common =
       ` font-family="${family}" font-size="${num(t.fontSize)}" font-weight="${num(Number(t.fontWeight))}"` +
       (t.letterSpacing ? ` letter-spacing="${num(t.letterSpacing)}"` : '') +
@@ -216,27 +285,35 @@ class SvgWriter {
       .join('');
   }
 
-  node(n: SceneNode): string {
+  private container(doc: SceneDoc, n: SceneNode, depth: number): string {
+    let kids = doc.children(n.id).map((id) => this.node(doc, doc.get(id)!, depth)).join('');
+    if (n.clipsContent && kids) {
+      const cid = this.id('clip');
+      this.defs.push(`<clipPath id="${cid}">${shapeElement(n, '')}</clipPath>`);
+      kids = `<g clip-path="url(#${cid})">${kids}</g>`;
+    }
+    return this.fills(n) + kids + this.strokes(n);
+  }
+
+  node(doc: SceneDoc, n: SceneNode, depth = 0): string {
     if (!n.visible) return '';
     const m = localMatrix(n.x, n.y, n.rotation);
     const opacity = n.opacity < 1 ? ` opacity="${num(n.opacity)}"` : '';
     const name = ` data-name="${escapeXml(n.name)}"`;
     let body = '';
     switch (n.type) {
-      case 'FRAME': {
-        const fills = n.fills.filter((p) => p.visible).map((p) => shapeElement(n, paintAttrs(p, 'fill'))).join('');
-        let kids = this.doc.children(n.id).map((id) => this.node(this.doc.get(id)!)).join('');
-        if (n.clipsContent && kids) {
-          const cid = this.id('clip');
-          this.defs.push(`<clipPath id="${cid}">${shapeElement(n, '')}</clipPath>`);
-          kids = `<g clip-path="url(#${cid})">${kids}</g>`;
-        }
-        body = fills + kids + this.strokes(n);
+      case 'FRAME':
+      case 'COMPONENT':
+        body = this.container(doc, n, depth);
+        break;
+      case 'INSTANCE': {
+        const v = depth < 12 ? instanceDoc(this.root, n) : null;
+        body = v ? this.container(v, v.get(n.id)!, depth + 1) : '';
         break;
       }
       case 'RECTANGLE':
       case 'ELLIPSE':
-        body = n.fills.filter((p) => p.visible).map((p) => shapeElement(n, paintAttrs(p, 'fill'))).join('') + this.strokes(n);
+        body = this.fills(n) + this.strokes(n);
         break;
       case 'LINE':
         body = this.line(n);
@@ -249,22 +326,43 @@ class SvgWriter {
   }
 }
 
-export function exportSvg(doc: SceneDoc, target: ExportTarget): string {
+/** SVG markup with the given assets (images as URLs). Text runs are returned for font embedding. */
+export function svgMarkup(doc: SceneDoc, target: ExportTarget, assets: SvgAssets = { images: new Map() }, fontCss = '') {
   const b = exportBounds(doc, target.ids);
   if (!b) throw new Error('Nothing to export');
-  const w = new SvgWriter(doc);
+  const w = new SvgWriter(doc, assets);
   const parts: string[] = [];
-  if (target.background) parts.push(`<rect x="${num(b.x)}" y="${num(b.y)}" width="${num(b.width)}" height="${num(b.height)}" fill="${escapeXml(target.background)}"/>`);
+  if (target.background)
+    parts.push(`<rect x="${num(b.x)}" y="${num(b.y)}" width="${num(b.width)}" height="${num(b.height)}" fill="${escapeXml(target.background)}"/>`);
   for (const id of target.ids) {
     const n = doc.get(id)!;
     const pw = n.parentId === null ? IDENTITY : doc.world(n.parentId);
-    const inner = w.node(n);
+    const inner = w.node(doc, n);
     parts.push(pw === IDENTITY ? inner : `<g${matrixAttr(pw)}>${inner}</g>`);
   }
-  return (
+  const style = fontCss ? `<style>${fontCss}</style>` : '';
+  const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${num(b.width)}" height="${num(b.height)}" viewBox="${num(b.x)} ${num(b.y)} ${num(b.width)} ${num(b.height)}" fill="none">` +
-    w.defsMarkup +
+    w.defsMarkup(style) +
     parts.join('') +
-    '</svg>'
+    '</svg>';
+  return { svg, runs: w.runs };
+}
+
+/** Self-contained SVG: images and the font subsets the text needs are embedded. */
+export async function exportSvg(doc: SceneDoc, target: ExportTarget, opts: { embedFonts?: boolean } = {}): Promise<string> {
+  const ids = imagesUsed(doc, target.ids);
+  await ensureImages(ids);
+  const images = new Map<string, { url: string; width: number; height: number }>();
+  await Promise.all(
+    ids.map(async (id) => {
+      const url = await imageDataUrl(id);
+      const size = imageSize(id);
+      if (url && size) images.set(id, { url, ...size });
+    }),
   );
+  const first = svgMarkup(doc, target, { images });
+  if (opts.embedFonts === false || first.runs.length === 0) return first.svg;
+  const css = await embeddedFontCss(first.runs);
+  return css ? svgMarkup(doc, target, { images }, css).svg : first.svg;
 }
