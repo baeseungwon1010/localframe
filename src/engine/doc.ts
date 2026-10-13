@@ -83,8 +83,13 @@ export class SceneDoc {
   }
 
   set(node: SceneNode) {
+    const prev = this.nodes.get(node.id);
     this.nodes.set(node.id, node);
-    this.touch();
+    if (prev && prev.parentId === node.parentId && prev.order === node.order && prev.pageId === node.pageId) {
+      // same place in the tree: only positions may have changed
+      this.worldCache.clear();
+      this.version++;
+    } else this.touch();
   }
 
   remove(id: string) {

@@ -7,6 +7,7 @@ import {
   type Override,
   type Page,
   type SceneNode,
+  MAX_COORD,
   MAX_DEPTH,
   MAX_NODES_PER_FILE,
   MAX_PAGES,
@@ -141,6 +142,23 @@ function treeDepth(roots: string[], nodes: SceneNode[]): number {
 }
 
 const MAX_SIZE = 1e7;
+
+/**
+ * Keeps derived geometry inside the range the file format accepts. Layout, constraints and
+ * connectors compute sizes and positions; a NaN or an out-of-range value would make every later
+ * save fail, so it falls back to the previous value (or is clamped).
+ */
+function sanitize(n: SceneNode, prev: SceneNode | undefined): SceneNode {
+  const fix = (v: number, fallback: number, lo: number, hi: number) =>
+    Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : Number.isFinite(fallback) ? Math.min(hi, Math.max(lo, fallback)) : 0;
+  const x = fix(n.x, prev?.x ?? 0, -MAX_COORD, MAX_COORD);
+  const y = fix(n.y, prev?.y ?? 0, -MAX_COORD, MAX_COORD);
+  const width = fix(n.width, prev?.width ?? 1, 0, MAX_SIZE);
+  const height = fix(n.height, prev?.height ?? 1, 0, MAX_SIZE);
+  const rotation = fix(n.rotation, prev?.rotation ?? 0, -360, 360);
+  if (x === n.x && y === n.y && width === n.width && height === n.height && rotation === n.rotation) return n;
+  return { ...n, x, y, width, height, rotation };
+}
 
 
 export class Editor {
@@ -325,7 +343,7 @@ export class Editor {
 
   /** Writes a node inside the current transaction. Top-level layers get the current page. */
   put(node: SceneNode) {
-    let n = node;
+    let n = sanitize(node, this.doc.get(node.id));
     if (n.parentId === null && n.pageId === undefined) n = { ...n, pageId: this.doc.currentPage };
     else if (n.parentId !== null && n.pageId !== undefined) {
       const { pageId: _drop, ...rest } = n;
@@ -489,9 +507,21 @@ export class Editor {
       if (out.frame !== doc.get(fid)) this.put(out.frame);
     }
 
-    // connectors
+    // connectors whose own line or bound layers (or their ancestors) changed
+    const changed = new Set(tx.keys());
+    const near = (id: string | undefined) => {
+      if (!id) return false;
+      if (!doc.has(id)) return true; // bound layer was deleted: let go
+      let cur = doc.get(id);
+      for (let guard = 0; cur && guard < 200; guard++) {
+        if (changed.has(cur.id)) return true;
+        cur = cur.parentId ? doc.get(cur.parentId) : undefined;
+      }
+      return false;
+    };
     for (const n of doc.all()) {
       if (n.type !== 'LINE' || (!n.startBind && !n.endBind)) continue;
+      if (!changed.has(n.id) && !near(n.startBind?.nodeId) && !near(n.endBind?.nodeId) && !near(n.id)) continue;
       let line = n;
       const page = doc.pageOf(n.id);
       const valid = (b: Binding | undefined) => b && doc.has(b.nodeId) && b.nodeId !== n.id && doc.pageOf(b.nodeId) === page;
