@@ -189,6 +189,67 @@ export const ComponentPropSchema = z.union([
 ]);
 export type ComponentProp = z.infer<typeof ComponentPropSchema>;
 
+/** Font settings a text style carries (not the text itself, alignment or resizing). */
+export const TextStyleValueSchema = z
+  .object({
+    fontFamily: z.string().min(1).max(100),
+    fontWeight: z.number().int().min(100).max(900),
+    fontSize: z.number().min(1).max(2000),
+    lineHeight: z.number().min(0).max(4000).nullable(),
+    letterSpacing: z.number().min(-200).max(2000),
+  })
+  .strict();
+export type TextStyleValue = z.infer<typeof TextStyleValueSchema>;
+
+export const StyleSchema = z.union([
+  z.object({ id, name: z.string().trim().min(1).max(200), type: z.literal('FILL'), value: z.array(PaintSchema).min(1).max(16) }).strict(),
+  z.object({ id, name: z.string().trim().min(1).max(200), type: z.literal('TEXT'), value: TextStyleValueSchema }).strict(),
+  z.object({ id, name: z.string().trim().min(1).max(200), type: z.literal('EFFECT'), value: z.array(EffectSchema).min(1).max(8) }).strict(),
+]);
+export type Style = z.infer<typeof StyleSchema>;
+export const StylesSchema = z
+  .array(StyleSchema)
+  .max(500)
+  .refine((list) => new Set(list.map((x) => x.id)).size === list.length, 'duplicate style id');
+
+export const VariableSchema = z
+  .object({
+    id,
+    collectionId: id,
+    name: z.string().trim().min(1).max(200),
+    type: z.enum(['COLOR', 'NUMBER']),
+    values: z.record(id, z.union([hexColor, z.number().min(-1e7).max(1e7)])),
+  })
+  .strict()
+  .refine((v) => Object.values(v.values).every((x) => (v.type === 'COLOR' ? typeof x === 'string' : typeof x === 'number')), 'value type');
+export type Variable = z.infer<typeof VariableSchema>;
+
+export const VariablesSchema = z
+  .object({
+    collections: z
+      .array(
+        z
+          .object({
+            id,
+            name: z.string().trim().min(1).max(200),
+            modes: z.array(z.object({ id, name: z.string().trim().min(1).max(100) }).strict()).min(1).max(20),
+          })
+          .strict(),
+      )
+      .max(50),
+    vars: z.array(VariableSchema).max(2000),
+  })
+  .strict()
+  .refine((v) => {
+    const ids = new Set(v.collections.map((c) => c.id));
+    return ids.size === v.collections.length && v.vars.every((x) => ids.has(x.collectionId)) && new Set(v.vars.map((x) => x.id)).size === v.vars.length;
+  }, 'variables must belong to existing collections');
+export type Variables = z.infer<typeof VariablesSchema>;
+export const EMPTY_VARIABLES: Variables = { collections: [], vars: [] };
+
+export const BINDABLE = ['fill', 'stroke', 'radius', 'gap', 'padding', 'strokeWeight', 'opacity'] as const;
+export type Bindable = (typeof BINDABLE)[number];
+
 export const SceneNodeSchema = z
   .object({
     id,
@@ -227,6 +288,17 @@ export const SceneNodeSchema = z
     booleanOp: z.enum(BOOLEAN_OPS).optional(),
     /** Clips the layers above it in the same parent. */
     isMask: z.boolean().optional(),
+    fillStyleId: id.optional(),
+    strokeStyleId: id.optional(),
+    textStyleId: id.optional(),
+    effectStyleId: id.optional(),
+    /** Properties driven by variables: property -> variable id. */
+    bindings: z.partialRecord(z.enum(BINDABLE), id).optional(),
+    /** Variable modes chosen on this layer for its content: collection id -> mode id. */
+    modes: z
+      .record(id, id)
+      .refine((m) => Object.keys(m).length <= 50, 'too many modes')
+      .optional(),
     /** Variant values of a component inside a component set, e.g. { Size: 'Large' }. */
     variant: z
       .record(shortText, z.string().max(100))
@@ -300,6 +372,8 @@ export const FileMetaSchema = z
     name: z.string().min(1).max(200),
     background: hexColor,
     pages: PagesSchema,
+    styles: StylesSchema,
+    variables: VariablesSchema,
     version: z.number().int().min(0),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -317,6 +391,8 @@ export const ChangesSchema = z
     upserts: z.array(SceneNodeSchema).max(50_000),
     deletes: z.array(id).max(50_000),
     pages: PagesSchema.optional(),
+    styles: StylesSchema.optional(),
+    variables: VariablesSchema.optional(),
   })
   .strict();
 export type Changes = z.infer<typeof ChangesSchema>;
@@ -343,6 +419,8 @@ export const ExportedFileSchema = z
     name: z.string().trim().min(1).max(200),
     background: hexColor,
     pages: PagesSchema.optional(),
+    styles: StylesSchema.optional(),
+    variables: VariablesSchema.optional(),
     nodes: z.array(SceneNodeSchema).max(MAX_NODES_PER_FILE),
     images: z.array(ExportedImageSchema).max(500).optional(),
   })
