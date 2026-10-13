@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { generateKeyBetween } from 'fractional-indexing';
 
-export const NODE_TYPES = ['FRAME', 'GROUP', 'BOOLEAN', 'COMPONENT', 'INSTANCE', 'RECTANGLE', 'ELLIPSE', 'VECTOR', 'LINE', 'TEXT'] as const;
+export const NODE_TYPES = ['FRAME', 'GROUP', 'BOOLEAN', 'COMPONENT_SET', 'COMPONENT', 'INSTANCE', 'RECTANGLE', 'ELLIPSE', 'VECTOR', 'LINE', 'TEXT'] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
 
 const hexColor = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
@@ -180,6 +180,15 @@ export const OverrideSchema = z
   .strict();
 export type Override = z.infer<typeof OverrideSchema>;
 
+const shortText = z.string().min(1).max(100);
+
+/** A component property: text that instances can change, or a boolean that shows or hides layers. */
+export const ComponentPropSchema = z.union([
+  z.object({ id, name: shortText, type: z.literal('TEXT'), defaultValue: z.string().max(10_000) }).strict(),
+  z.object({ id, name: shortText, type: z.literal('BOOLEAN'), defaultValue: z.boolean() }).strict(),
+]);
+export type ComponentProp = z.infer<typeof ComponentPropSchema>;
+
 export const SceneNodeSchema = z
   .object({
     id,
@@ -218,6 +227,19 @@ export const SceneNodeSchema = z
     booleanOp: z.enum(BOOLEAN_OPS).optional(),
     /** Clips the layers above it in the same parent. */
     isMask: z.boolean().optional(),
+    /** Variant values of a component inside a component set, e.g. { Size: 'Large' }. */
+    variant: z
+      .record(shortText, z.string().max(100))
+      .refine((v) => Object.keys(v).length <= 20, 'too many variant properties')
+      .optional(),
+    componentProps: z.array(ComponentPropSchema).max(50).optional(),
+    /** Links this layer's text or visibility to a property of its component. */
+    propRefs: z.object({ characters: id.optional(), visible: id.optional() }).strict().optional(),
+    /** An instance's values for its component's properties. */
+    propValues: z
+      .record(id, z.union([z.string().max(10_000), z.boolean()]))
+      .refine((v) => Object.keys(v).length <= 50, 'too many property values')
+      .optional(),
     componentId: id.optional(),
     overrides: z
       .record(id, OverrideSchema)
@@ -227,7 +249,7 @@ export const SceneNodeSchema = z
   .strict()
   .superRefine((n, ctx) => {
     const issue = (message: string) => ctx.addIssue({ code: 'custom', message });
-    const container = n.type === 'FRAME' || n.type === 'COMPONENT';
+    const container = n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'COMPONENT_SET';
     if (n.type === 'GROUP' && (n.fills.length || n.strokes.length || n.clipsContent || n.layout))
       issue('groups have no fills, strokes, clipping or auto layout');
     if ((n.type === 'VECTOR') !== (n.vector !== undefined)) issue('VECTOR needs vector');
@@ -241,17 +263,21 @@ export const SceneNodeSchema = z
     if (n.type !== 'LINE' && (n.startBind || n.endBind)) issue('only LINE has bindings');
     if ((n.type === 'INSTANCE') !== (n.componentId !== undefined)) issue('INSTANCE needs componentId');
     if (n.type !== 'INSTANCE' && n.overrides) issue('only INSTANCE has overrides');
+    if (n.type !== 'INSTANCE' && n.propValues) issue('only INSTANCE has property values');
+    if (n.type !== 'COMPONENT' && n.variant) issue('only components have variant values');
+    if (n.componentProps && n.type !== 'COMPONENT' && n.type !== 'COMPONENT_SET') issue('only components have properties');
     if (n.parentId === n.id) issue('node cannot be its own parent');
     if (n.parentId !== null && n.pageId !== undefined) issue('only top-level layers have a page');
   });
 export type SceneNode = z.infer<typeof SceneNodeSchema>;
 
 /** Types whose children are stored layers. */
-export const isContainerType = (t: NodeType) => t === 'FRAME' || t === 'COMPONENT' || t === 'GROUP' || t === 'BOOLEAN';
+export const isContainerType = (t: NodeType) =>
+  t === 'FRAME' || t === 'COMPONENT' || t === 'COMPONENT_SET' || t === 'GROUP' || t === 'BOOLEAN';
 /** Containers whose box always fits their children. */
 export const fitsChildren = (t: NodeType) => t === 'GROUP' || t === 'BOOLEAN';
 /** Containers that are frames (own box, fills, clipping, auto layout, drop target). */
-export const isFrameLike = (t: NodeType) => t === 'FRAME' || t === 'COMPONENT';
+export const isFrameLike = (t: NodeType) => t === 'FRAME' || t === 'COMPONENT' || t === 'COMPONENT_SET';
 
 export const PageSchema = z
   .object({
@@ -378,6 +404,7 @@ export function validateTree(nodes: Iterable<SceneNode>, pages?: Page[]): string
       const parent = byId.get(cur.parentId);
       if (!parent) return `node ${cur.id} has a missing parent`;
       if (!isContainerType(parent.type)) return `node ${cur.id} is inside a ${parent.type.toLowerCase()}`;
+      if (parent.type === 'COMPONENT_SET' && cur.type !== 'COMPONENT') return `a component set can only hold components`;
       cur = parent;
     }
     for (let i = path.length - 1; i >= 0; i--) {

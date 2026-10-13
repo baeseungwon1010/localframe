@@ -12,6 +12,7 @@ export const TYPE_LABEL: Record<NodeType, string> = {
   BOOLEAN: 'Boolean',
   VECTOR: 'Vector',
   COMPONENT: 'Component',
+  COMPONENT_SET: 'Component set',
   INSTANCE: 'Instance',
   RECTANGLE: 'Rectangle',
   ELLIPSE: 'Ellipse',
@@ -104,6 +105,16 @@ export function createNode(
     case 'FRAME':
     case 'COMPONENT':
       return { ...base, fills: [solid('#FFFFFF')], radii: [0, 0, 0, 0], clipsContent: true };
+    case 'COMPONENT_SET':
+      return {
+        ...base,
+        fills: [],
+        strokes: [solid('#6B35C9')],
+        strokeDash: [6, 4],
+        strokeAlign: 'inside',
+        radii: [6, 6, 6, 6],
+        clipsContent: false,
+      };
     case 'INSTANCE':
       return { ...base, componentId: '', overrides: {} };
     case 'GROUP':
