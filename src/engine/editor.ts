@@ -33,7 +33,7 @@ import {
   round2,
   unionRects,
 } from './math.ts';
-import { canHaveChildren, createNode, keyAt, keyOnTop, keysOnTop, newId } from './nodes.ts';
+import { canHaveChildren, createNode, keyAt, keyOnTop, keysOnTop, newId, nextName } from './nodes.ts';
 import { layoutText } from './text.ts';
 
 export type Tool = 'move' | 'hand' | 'frame' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'text';
@@ -1243,7 +1243,7 @@ export class Editor {
     if (!it.nodeId) {
       this.begin();
       const node = createNode(this.doc, type, it.parentId, { x: 0, y: 0, width: 1, height: 1 });
-      const withArrow = it.tool === 'arrow' ? { ...node, arrowEnd: true, name: node.name.replace(/^Line/, 'Arrow') } : node;
+      const withArrow = it.tool === 'arrow' ? { ...node, arrowEnd: true, name: nextName(this.doc, 'Arrow') } : node;
       this.put(withArrow);
       it.nodeId = node.id;
       this.selection = [node.id];
@@ -1302,7 +1302,7 @@ export class Editor {
         width: type === 'LINE' ? 100 : 100,
         height: type === 'LINE' ? 0 : 100,
       });
-      if (it.tool === 'arrow') node = { ...node, arrowEnd: true, name: node.name.replace(/^Line/, 'Arrow') };
+      if (it.tool === 'arrow') node = { ...node, arrowEnd: true, name: nextName(this.doc, 'Arrow') };
       if (type === 'TEXT') node = fitText({ ...node, y: round2(at.y - 10) });
       this.put(node);
       it.nodeId = node.id;

@@ -47,8 +47,8 @@ export function keyAt(doc: SceneDoc, siblings: string[], index: number, exclude:
   return generateKeyBetween(before, after);
 }
 
-export function nextName(doc: SceneDoc, type: NodeType): string {
-  const label = TYPE_LABEL[type];
+export function nextName(doc: SceneDoc, typeOrLabel: NodeType | string): string {
+  const label = (TYPE_LABEL as Record<string, string>)[typeOrLabel] ?? typeOrLabel;
   const re = new RegExp(`^${label} (\\d+)$`);
   let max = 0;
   for (const n of doc.all()) {
