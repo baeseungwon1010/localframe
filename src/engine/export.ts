@@ -13,7 +13,7 @@ export type ExportTarget = { ids: string[]; background: string | null };
 export type RasterFormat = 'png' | 'jpg' | 'webp';
 export type ExportFormat = RasterFormat | 'svg' | 'pdf';
 
-const isContainer = (n: SceneNode) => n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'INSTANCE';
+const isContainer = (n: SceneNode) => n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'COMPONENT_SET' || n.type === 'INSTANCE';
 const clips = (n: SceneNode) => isContainer(n) && !!n.clipsContent;
 
 /** Extra room for strokes and arrow heads that reach outside a node's box. */
@@ -453,6 +453,7 @@ class SvgWriter {
     switch (n.type) {
       case 'FRAME':
       case 'COMPONENT':
+      case 'COMPONENT_SET':
         body = this.container(doc, n, depth);
         break;
       case 'GROUP':

@@ -1,6 +1,7 @@
 import type { SceneNode } from '../../shared/schema.ts';
 import type { Editor } from './editor.ts';
 import { type Mat, apply, multiply } from './math.ts';
+import { instanceDoc } from './instances.ts';
 import { drawChildren } from './render.ts';
 import { tracePath } from './vector.ts';
 
@@ -97,7 +98,7 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
   ctx.textBaseline = 'bottom';
   for (const id of doc.children(null)) {
     const n = doc.get(id)!;
-    if (!(n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'INSTANCE') || !n.visible) continue;
+    if (!(n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'COMPONENT_SET' || n.type === 'INSTANCE') || !n.visible) continue;
     const m = multiply(view, doc.world(id));
     const at = apply(m, { x: 0, y: 0 });
     const right = apply(m, { x: n.width, y: 0 });
@@ -106,9 +107,9 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
     ctx.save();
     ctx.translate(at.x, at.y);
     ctx.rotate(Math.atan2(m[1], m[0]));
-    const isComponent = n.type === 'COMPONENT' || n.type === 'INSTANCE';
+    const isComponent = n.type === 'COMPONENT' || n.type === 'COMPONENT_SET' || n.type === 'INSTANCE';
     ctx.fillStyle = selected.has(id) ? c.accent : isComponent ? c.component : c.textMuted;
-    let label = n.type === 'COMPONENT' ? `❖ ${n.name}` : n.type === 'INSTANCE' ? `◇ ${n.name}` : n.name;
+    let label = n.type === 'COMPONENT' || n.type === 'COMPONENT_SET' ? `❖ ${n.name}` : n.type === 'INSTANCE' ? `◇ ${n.name}` : n.name;
     while (label.length > 1 && ctx.measureText(label).width > room) label = label.slice(0, -2) + '…';
     ctx.fillText(label, 0, -4);
     ctx.restore();
@@ -253,6 +254,18 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
         ctx.strokeStyle = c.accent;
         ctx.stroke();
       }
+    }
+  }
+
+  // the layer picked inside an instance
+  if (editor.inner) {
+    const inst = doc.get(editor.inner.instanceId);
+    const v = inst ? instanceDoc(doc, inst) : null;
+    const vid = `${editor.inner.instanceId}~${editor.inner.sourceId}`;
+    const vn = v?.get(vid);
+    if (inst && v && vn) {
+      outlinePath(ctx, vn, multiply(view, multiply(doc.world(inst.id), v.world(vid))));
+      haloStroke(ctx, { ...c, accent: c.component }, 1.5);
     }
   }
 

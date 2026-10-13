@@ -1,4 +1,4 @@
-import type { SceneNode } from '../../shared/schema.ts';
+import type { ComponentProp, SceneNode } from '../../shared/schema.ts';
 import { SceneDoc } from './doc.ts';
 import { applyConstraints } from './geometry.ts';
 import { applyAutoLayout } from './layout.ts';
@@ -27,6 +27,13 @@ export const sourceId = (virtualId: string) => virtualId.slice(virtualId.indexOf
 function build(root: SceneDoc, inst: SceneNode): SceneDoc | null {
   const comp = inst.componentId ? root.get(inst.componentId) : undefined;
   if (!comp || comp.type !== 'COMPONENT') return null;
+  const props = componentPropsOf(root, comp.id);
+  const propValue = (propId: string) => {
+    const def = props.find((p) => p.id === propId);
+    if (!def) return undefined;
+    const v = inst.propValues && Object.hasOwn(inst.propValues, propId) ? inst.propValues[propId] : undefined;
+    return typeof v === typeof def.defaultValue ? v : def.defaultValue;
+  };
   const map = new Map<string, string>([[comp.id, inst.id]]);
   const vid = (id: string) => {
     let v = map.get(id);
@@ -58,6 +65,15 @@ function build(root: SceneDoc, inst: SceneNode): SceneDoc | null {
     let n: SceneNode = { ...src, id: vid(src.id), parentId: vid(src.parentId!) };
     if (n.startBind) n = { ...n, startBind: { ...n.startBind, nodeId: vid(n.startBind.nodeId) } };
     if (n.endBind) n = { ...n, endBind: { ...n.endBind, nodeId: vid(n.endBind.nodeId) } };
+    // linked component properties first, then this instance's own overrides
+    if (n.propRefs?.visible) {
+      const v = propValue(n.propRefs.visible);
+      if (typeof v === 'boolean') n = { ...n, visible: v };
+    }
+    if (n.propRefs?.characters && n.text) {
+      const v = propValue(n.propRefs.characters);
+      if (typeof v === 'string') n = fitText({ ...n, text: { ...n.text, characters: v } });
+    }
     const o = inst.overrides && Object.hasOwn(inst.overrides, src.id) ? inst.overrides[src.id] : undefined;
     if (o) {
       if (o.visible !== undefined) n = { ...n, visible: o.visible };
@@ -105,6 +121,46 @@ function build(root: SceneDoc, inst: SceneNode): SceneDoc | null {
     }
   }
   return doc;
+}
+
+/** Properties of a component: its own, or those of the component set it belongs to. */
+export function componentPropsOf(root: SceneDoc, componentId: string): ComponentProp[] {
+  const comp = root.get(componentId);
+  if (!comp) return [];
+  const parent = comp.parentId ? root.get(comp.parentId) : undefined;
+  return [...(parent?.type === 'COMPONENT_SET' ? (parent.componentProps ?? []) : []), ...(comp.componentProps ?? [])];
+}
+
+/** Variant properties of a component set and the values its variants use. */
+export function variantOptions(root: SceneDoc, setId: string): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const id of root.children(setId)) {
+    const c = root.get(id)!;
+    for (const [k, v] of Object.entries(c.variant ?? {})) {
+      const list = out.get(k) ?? [];
+      if (!list.includes(v)) list.push(v);
+      out.set(k, list);
+    }
+  }
+  return out;
+}
+
+/** "Size=Large, State=Default" */
+export const variantName = (v: Record<string, string>) =>
+  Object.entries(v)
+    .map(([k, val]) => `${k}=${val}`)
+    .join(', ')
+    .slice(0, 500) || 'Variant';
+
+/** Names from the component down to a layer, used to carry overrides across variants. */
+export function namePath(root: SceneDoc, componentId: string, id: string): string {
+  const names: string[] = [];
+  let cur = root.get(id);
+  while (cur && cur.id !== componentId) {
+    names.unshift(cur.name);
+    cur = cur.parentId ? root.get(cur.parentId) : undefined;
+  }
+  return names.join('/');
 }
 
 /** Text layers of a component that an instance can override, in reading order. */

@@ -28,7 +28,7 @@ const MAX_INSTANCE_DEPTH = 12;
 /** Largest offscreen layer for effects, in device pixels per side. */
 const MAX_LAYER = 4096;
 
-const isBox = (n: SceneNode) => n.type === 'FRAME' || n.type === 'COMPONENT';
+const isBox = (n: SceneNode) => n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'COMPONENT_SET';
 
 /** How far effects reach outside a layer's box, in its own units. */
 export function effectReach(n: SceneNode): number {
@@ -273,6 +273,7 @@ function drawBody(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions, root
   switch (n.type) {
     case 'FRAME':
     case 'COMPONENT':
+    case 'COMPONENT_SET':
       drawContainer(ctx, doc, n, { ...opts, root });
       break;
     case 'GROUP':
