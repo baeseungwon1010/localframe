@@ -1,6 +1,6 @@
 import type { Paint, SceneNode } from '../../shared/schema.ts';
 import type { SceneDoc } from './doc.ts';
-import { localMatrix } from './math.ts';
+import { type Rect, localMatrix, rectsIntersect } from './math.ts';
 import { fontString, layoutText, lineOffset } from './text.ts';
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -8,7 +8,18 @@ type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 export type DrawOptions = {
   /** Nodes drawn by something else (the text being edited). */
   skip?: Set<string>;
+  /** World area that is visible; layers fully outside it are not drawn. */
+  cull?: Rect;
 };
+
+function culled(doc: SceneDoc, n: SceneNode, cull: Rect | undefined): boolean {
+  if (!cull) return false;
+  // Frames that don't clip can have children anywhere, so only their own box is skipped.
+  if (n.type === 'FRAME' && !n.clipsContent) return false;
+  const b = doc.worldBounds(n.id);
+  const pad = n.strokeWeight * 2 + (n.type === 'LINE' ? 20 + n.strokeWeight * 4 : 0);
+  return !rectsIntersect({ x: b.x - pad, y: b.y - pad, width: b.width + pad * 2, height: b.height + pad * 2 }, cull);
+}
 
 export function paintCss(p: Paint, extraAlpha = 1): string {
   const r = parseInt(p.color.slice(1, 3), 16);
@@ -141,7 +152,7 @@ function drawText(ctx: Ctx, n: SceneNode) {
 }
 
 export function drawNode(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions = {}) {
-  if (!n.visible || opts.skip?.has(n.id)) return;
+  if (!n.visible || opts.skip?.has(n.id) || culled(doc, n, opts.cull)) return;
   ctx.save();
   const m = localMatrix(n.x, n.y, n.rotation);
   ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);

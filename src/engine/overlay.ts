@@ -72,7 +72,11 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
   // document
   ctx.save();
   ctx.setTransform(dpr * v.zoom, 0, 0, dpr * v.zoom, dpr * v.x, dpr * v.y);
-  drawChildren(ctx, doc, null, { skip: editor.editingText ? new Set([editor.editingText]) : undefined });
+  const topLeft = editor.toWorld(0, 0);
+  drawChildren(ctx, doc, null, {
+    skip: editor.editingText ? new Set([editor.editingText]) : undefined,
+    cull: { x: topLeft.x, y: topLeft.y, width: width / v.zoom, height: height / v.zoom },
+  });
   ctx.restore();
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
