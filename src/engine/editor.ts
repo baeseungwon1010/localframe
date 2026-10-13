@@ -34,7 +34,7 @@ import {
   unionRects,
 } from './math.ts';
 import { canHaveChildren, createNode, keyAt, keyOnTop, keysAbove, keysOnTop, newId, nextName } from './nodes.ts';
-import { layoutText } from './text.ts';
+import { canvasMeasure, layoutText } from './text.ts';
 
 export type Tool = 'move' | 'hand' | 'frame' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'text';
 export type Viewport = { x: number; y: number; zoom: number };
@@ -829,6 +829,21 @@ export class Editor {
     return null;
   }
 
+  /** Top-level frame whose name label (drawn above it) is under the screen point. */
+  frameLabelAt(sx: number, sy: number): string | null {
+    const ids = this.doc.children(null);
+    for (let i = ids.length - 1; i >= 0; i--) {
+      const n = this.doc.get(ids[i])!;
+      if (n.type !== 'FRAME' || !n.visible || n.locked) continue;
+      const at = this.toScreen(apply(this.doc.world(n.id), { x: 0, y: 0 }));
+      const room = n.width * this.viewport.zoom;
+      if (room < 24) continue;
+      const w = Math.min(room, canvasMeasure(n.name, '500 11px "IBM Plex Sans", system-ui, sans-serif') + 4);
+      if (sx >= at.x && sx <= at.x + w && sy >= at.y - 20 && sy <= at.y - 2) return n.id;
+    }
+    return null;
+  }
+
   // ---------------------------------------------------------------- input
 
   pointerDown(e: PointerInput) {
@@ -857,9 +872,11 @@ export class Editor {
     const handle = this.handleAt(e.sx, e.sy);
     if (handle) return this.startHandleDrag(handle, p);
 
-    const deepest = hitDeepest(this.doc, p, this.hitTolerance());
+    const label = this.frameLabelAt(e.sx, e.sy);
+    const deepest = label ?? hitDeepest(this.doc, p, this.hitTolerance());
     let target: string | null = null;
-    if (deepest) target = e.mod ? deepest : pickTarget(this.doc, deepest, this.selection);
+    if (label) target = label;
+    else if (deepest) target = e.mod ? deepest : pickTarget(this.doc, deepest, this.selection);
     // Clicking inside the current selection box keeps the selection (so it can be dragged).
     if (!e.shift && this.selection.length > 1) {
       const b = this.selectionBounds();
@@ -870,7 +887,7 @@ export class Editor {
     // Dragging on the empty area of a top-level frame with children draws a marquee.
     if (target) {
       const t = this.doc.get(target)!;
-      if (t.type === 'FRAME' && t.parentId === null && !this.selection.includes(target) && this.doc.children(target).length > 0 && deepest === target) {
+      if (!label && t.type === 'FRAME' && t.parentId === null && !this.selection.includes(target) && this.doc.children(target).length > 0 && deepest === target) {
         this.interaction = {
           kind: 'pending',
           start: p,
@@ -932,6 +949,8 @@ export class Editor {
     switch (it.kind) {
       case 'none': {
         if (this.tool === 'move' && !this.editingText && !this.spaceDown) {
+          const label = this.frameLabelAt(e.sx, e.sy);
+          if (label) return this.setHover(label);
           const deepest = hitDeepest(this.doc, p, this.hitTolerance());
           this.setHover(deepest ? (e.mod ? deepest : pickTarget(this.doc, deepest, this.selection)) : null);
         } else this.setHover(null);

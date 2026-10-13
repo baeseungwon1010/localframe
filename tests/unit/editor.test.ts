@@ -197,3 +197,18 @@ describe('frames as groups', () => {
     expect([...ed.doc.all()].some((n) => n.type === 'FRAME')).toBe(true);
   });
 });
+
+describe('frame labels', () => {
+  it('clicking a top-level frame name selects the frame, dragging it moves the frame', () => {
+    const ed = setup();
+    ed.setTool('frame');
+    drag(ed, [100, 100], [400, 300]);
+    const frame = ed.selection[0];
+    ed.setTool('rect');
+    drag(ed, [150, 150], [200, 200]);
+    ed.setSelection([]);
+    drag(ed, [104, 92], [154, 142]);
+    expect(ed.selection).toEqual([frame]);
+    expect(ed.doc.get(frame)).toMatchObject({ x: 150, y: 150 });
+  });
+});
