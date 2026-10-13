@@ -1,3 +1,4 @@
+import { SceneNodeSchema } from '../../shared/schema.ts';
 import { ApiError, api } from '../api.ts';
 import type { Patch } from './doc.ts';
 import type { Editor } from './editor.ts';
@@ -76,6 +77,14 @@ export class SyncQueue {
     }
     this.inflight = true;
     const { ids, changes } = this.takeBatch();
+    const bad = changes.upserts.find((n) => !SceneNodeSchema.safeParse(n).success);
+    if (bad) {
+      // Don't send what the server will refuse; say which layer needs fixing.
+      for (const id of ids) this.dirty.add(id);
+      this.inflight = false;
+      this.setStatus('error', `Couldn't save: “${bad.name.slice(0, 60)}” has a value out of range. Undo the last change or fix that layer.`);
+      return;
+    }
     try {
       const res = await api.saveChanges(this.fileId, changes);
       this.version = res.version;
