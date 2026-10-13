@@ -137,3 +137,75 @@ describe('limits and escaping', () => {
     expect(safeFileName('report‮gnp.svg')).toBe('report_gnp.svg');
   });
 });
+
+describe('components cannot blow up', () => {
+  // component L holds `fan` instances of component L+1
+  function chainOfComponents(fan: number, levels: number): SceneNode[] {
+    const nodes: SceneNode[] = [];
+    for (let l = 0; l < levels; l++) {
+      nodes.push({ ...frame(`c${l}`, null), type: 'COMPONENT', x: l * 100 });
+      if (l + 1 < levels)
+        for (let i = 0; i < fan; i++)
+          nodes.push({ ...frame(`c${l}i${i}`, `c${l}`), type: 'INSTANCE', componentId: `c${l + 1}`, radii: undefined, clipsContent: undefined });
+    }
+    return nodes;
+  }
+
+  it('refuses files whose instances expand exponentially', () => {
+    expect(validateTree(chainOfComponents(4, 4))).toBeNull();
+    expect(validateTree(chainOfComponents(10, 8))).toMatch(/expands to more than/);
+  });
+
+  it('finds cycles through components nested inside components', () => {
+    const nodes: SceneNode[] = [
+      { ...frame('A', null), type: 'COMPONENT' },
+      { ...frame('B', 'A'), type: 'COMPONENT' },
+      { ...frame('i', 'B'), type: 'INSTANCE', componentId: 'A', radii: undefined, clipsContent: undefined },
+    ];
+    expect(validateTree(nodes)).toMatch(/instance of itself/);
+  });
+
+  it('the editor refuses to place such an instance', () => {
+    const ed = new Editor();
+    ed.setViewSize(1000, 800);
+    ed.load([{ ...frame('A', null), type: 'COMPONENT', width: 400, height: 400 }, { ...frame('B', 'A'), type: 'COMPONENT' }], '#FFFFFF');
+    expect(ed.createInstance('A', undefined, 'B')).toBeNull();
+  });
+});
+
+describe('derived geometry stays saveable', () => {
+  it('a hugging auto layout frame never grows past the size limit', () => {
+    const ed = new Editor();
+    ed.load(
+      [
+        { ...frame('f', null), layout: { mode: 'horizontal', gap: 0, padding: [0, 0, 0, 0], primaryAlign: 'start', crossAlign: 'start', widthMode: 'hug', heightMode: 'hug' } },
+        { ...frame('a', 'f', { order: 'a0' }), type: 'RECTANGLE', clipsContent: undefined, width: 6e6 },
+        { ...frame('b', 'f', { order: 'a1' }), type: 'RECTANGLE', clipsContent: undefined, width: 6e6 },
+      ],
+      '#FFFFFF',
+    );
+    ed.updateNodes(['a'], (n) => ({ ...n, name: 'x' }));
+    for (const n of ed.doc.all()) expect(SceneNodeSchema.safeParse(n).success).toBe(true);
+  });
+});
+
+describe('export details', () => {
+  it('embeds an image once however often it is used', () => {
+    const doc = new SceneDoc();
+    const img = { type: 'IMAGE' as const, imageId: 'a'.repeat(64), scaleMode: 'fill' as const, opacity: 1, visible: true };
+    doc.load([
+      { ...frame('r1', null), type: 'RECTANGLE', clipsContent: undefined, fills: [img] },
+      { ...frame('r2', null, { order: 'a1' }), type: 'RECTANGLE', clipsContent: undefined, fills: [img] },
+    ]);
+    const images = new Map([[img.imageId, { url: 'data:image/png;base64,AAAA', width: 10, height: 10 }]]);
+    const { svg } = svgMarkup(doc, { ids: ['r1', 'r2'], background: null }, { images });
+    expect(svg.split('data:image/png').length - 1).toBe(1);
+    expect(svg.split('<use ').length - 1).toBe(2);
+  });
+
+  it('file names avoid names Windows cannot use', () => {
+    expect(safeFileName('CON')).toBe('_CON');
+    expect(safeFileName('...')).toBe('export');
+    expect(safeFileName('report. ')).toBe('report');
+  });
+});
