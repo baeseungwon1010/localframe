@@ -812,7 +812,7 @@ export class Editor {
   handleAt(sx: number, sy: number): SelectionHandle | null {
     const handles = this.handlePositions();
     for (const { handle, at } of handles) {
-      if (Math.abs(at.x - sx) <= HANDLE_HIT && Math.abs(at.y - sy) <= HANDLE_HIT) return handle;
+      if (Math.hypot(at.x - sx, at.y - sy) <= HANDLE_HIT) return handle;
     }
     // rotation zones just outside the corners (single, non-line node)
     const sel = this.selectedNodes();
