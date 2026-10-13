@@ -1,0 +1,116 @@
+/* localframe UI tokens. Generated from tokens.json / tokens.dark.json.
+   Components use var(--…) only, never raw hex. */
+
+
+:root {
+  color-scheme: light;
+
+  --color-bg: #E8E9EB;
+  --color-surface: #F7F7F8;
+  --color-surface-raised: #FFFFFF;
+  --color-surface-hover: #ECEDEF;
+  --color-border: #DADCE0;
+  --color-border-input: #868B94;
+  --color-text: #1B1D21;
+  --color-text-muted: #5B6068;
+  --color-text-disabled: #A3A8AF;
+  --color-accent: #C8106E;
+  --color-on-accent: #FFFFFF;
+  --color-accent-soft: #FBE4EF;
+  --color-accent-hover: #A80C5C;
+  --color-danger: #B42318;
+  --color-success: #1E7548;
+  --color-warning: #9A5800;
+  --color-canvas-default: #F3F3F1;
+  --color-handle-fill: #FFFFFF;
+  --color-guide: #E2361F;
+
+  --font-ui: "IBM Plex Sans", system-ui, sans-serif;
+  --font-ui-features: "tnum" 1;
+
+  --text-xs: 11px;  --leading-xs: 16px;
+  --text-sm: 12px;  --leading-sm: 16px;
+  --text-md: 14px;  --leading-md: 20px;
+  --text-lg: 20px;  --leading-lg: 28px;
+
+  --space-0: 0; --space-1: 2px; --space-2: 4px; --space-3: 6px; --space-4: 8px;
+  --space-5: 12px; --space-6: 16px; --space-7: 24px; --space-8: 32px;
+
+  --titlebar-h: 40px;
+  --toolrail-w: 44px;
+  --layers-w: 240px;
+  --props-w: 256px;
+  --row-h: 28px;
+  --input-h: 24px;
+  --tool-btn: 32px;
+  --icon: 16px;
+
+  --radius-xs: 2px; --radius-sm: 4px; --radius-md: 6px; --radius-pill: 999px;
+  --focus-ring: 0 0 0 2px var(--color-accent);
+  --shadow-popover: 0 0 0 1px rgba(27, 29, 33, .08), 0 8px 24px rgba(27, 29, 33, .16);
+
+  --motion-fast: 100ms;
+  --motion-base: 160ms;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-bg: #16171A;
+    --color-surface: #1F2125;
+    --color-surface-raised: #292B30;
+    --color-surface-hover: #2C2F34;
+    --color-border: #363940;
+    --color-border-input: #7A808A;
+    --color-text: #ECEDEF;
+    --color-text-muted: #A6ABB3;
+    --color-text-disabled: #5E636B;
+    --color-accent: #FF5CAD;
+    --color-on-accent: #16171A;
+    --color-accent-soft: #45192F;
+    --color-accent-hover: #FF85C1;
+    --color-danger: #FF7A6B;
+    --color-success: #4CC98A;
+    --color-warning: #F0A63C;
+    --color-canvas-default: #26282C;
+    --color-guide: #FF6A4D;
+    --shadow-popover: 0 0 0 1px rgba(255, 255, 255, .06), 0 8px 24px rgba(0, 0, 0, .5);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #16171A;
+  --color-surface: #1F2125;
+  --color-surface-raised: #292B30;
+  --color-surface-hover: #2C2F34;
+  --color-border: #363940;
+  --color-border-input: #7A808A;
+  --color-text: #ECEDEF;
+  --color-text-muted: #A6ABB3;
+  --color-text-disabled: #5E636B;
+  --color-accent: #FF5CAD;
+  --color-on-accent: #16171A;
+  --color-accent-soft: #45192F;
+  --color-accent-hover: #FF85C1;
+  --color-danger: #FF7A6B;
+  --color-success: #4CC98A;
+  --color-warning: #F0A63C;
+  --color-canvas-default: #26282C;
+  --color-guide: #FF6A4D;
+  --shadow-popover: 0 0 0 1px rgba(255, 255, 255, .06), 0 8px 24px rgba(0, 0, 0, .5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --motion-fast: 0ms; --motion-base: 0ms; }
+}
+
+html, body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: var(--text-sm) / var(--leading-sm) var(--font-ui);
+  font-feature-settings: var(--font-ui-features);
+  -webkit-font-smoothing: antialiased;
+}
