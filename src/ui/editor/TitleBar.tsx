@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronLeft, Redo2, Undo2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, Download, Redo2, Undo2 } from 'lucide-react';
 import type { FileMeta } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
 import type { SaveStatus } from '../../engine/sync.ts';
@@ -23,6 +23,7 @@ export function TitleBar(props: {
   theme: Theme;
   setTheme: (t: Theme) => void;
   onRename: (name: string) => Promise<void>;
+  onExportFile: () => void;
 }) {
   const { editor, file, saveStatus, saveError } = props;
   useEditorRev(editor, 'view', 'doc');
@@ -83,6 +84,9 @@ export function TitleBar(props: {
           {Math.round(editor.viewport.zoom * 100)}%
           <ChevronDown size={14} strokeWidth={1.5} />
         </button>
+        <IconButton label="Export file" shortcut={`${MOD}${SHIFT}E`} onClick={props.onExportFile}>
+          <Download size={16} strokeWidth={1.5} />
+        </IconButton>
         <ThemeToggle theme={props.theme} setTheme={props.setTheme} />
       </div>
       {zoomMenu && (

@@ -3,11 +3,11 @@ import { FilePlus2, MoreHorizontal, Upload } from 'lucide-react';
 import type { FileMeta } from '../../shared/schema.ts';
 import { ApiError, api } from '../api.ts';
 import { navigate } from './App.tsx';
+import { ExportFileDialog } from './ExportFileDialog.tsx';
 import { IconButton, Menu, type MenuItem, ThemeToggle, relativeTime } from './components.tsx';
-import { downloadBlob, safeFileName } from './download.ts';
 import type { Theme } from './hooks.ts';
 
-const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
+const MAX_IMPORT_BYTES = 150 * 1024 * 1024;
 
 export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme) => void }) {
   const [files, setFiles] = useState<FileMeta[] | null>(null);
@@ -15,6 +15,7 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
   const [notice, setNotice] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ file: FileMeta; x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [exporting, setExporting] = useState<FileMeta | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
@@ -42,7 +43,7 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
 
   const onImport = async (file: File | undefined) => {
     if (!file) return;
-    if (file.size > MAX_IMPORT_BYTES) return setError('That file is larger than 20 MB, which is the import limit.');
+    if (file.size > MAX_IMPORT_BYTES) return setError('That file is larger than 150 MB, which is the import limit.');
     try {
       const data = JSON.parse(await file.text());
       const meta = await api.importFile(data);
@@ -62,14 +63,7 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
   const menuItems = (f: FileMeta): MenuItem[] => [
     { label: 'Open', onSelect: () => navigate(`#/file/${f.id}`) },
     { label: 'Rename', onSelect: () => setRenaming(f.id) },
-    {
-      label: 'Export file',
-      onSelect: async () => {
-        const data = await api.exportFile(f.id);
-        downloadBlob(new Blob([JSON.stringify(data)], { type: 'application/json' }), `${safeFileName(f.name, 'file')}.localframe.json`);
-        setNotice(`Exported “${f.name}”.`);
-      },
-    },
+    { label: 'Export file…', onSelect: () => setExporting(f) },
     'separator',
     {
       label: 'Delete file',
@@ -188,6 +182,7 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
         )}
       </main>
       {menu && <Menu label="File actions" x={menu.x} y={menu.y} items={menuItems(menu.file)} onClose={() => setMenu(null)} />}
+      {exporting && <ExportFileDialog fileId={exporting.id} fileName={exporting.name} onClose={() => setExporting(null)} />}
     </div>
   );
 }
