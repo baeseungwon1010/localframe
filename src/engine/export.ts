@@ -353,16 +353,32 @@ class SvgWriter {
       ` font-family="${family}" font-size="${num(t.fontSize)}" font-weight="${num(Number(t.fontWeight))}"` +
       (t.letterSpacing ? ` letter-spacing="${num(t.letterSpacing)}"` : '') +
       ' xml:space="preserve"';
+    for (const line of layout.lines)
+      for (const seg of line.segments)
+        if (seg.style.fontFamily !== t.fontFamily || seg.style.fontWeight !== t.fontWeight)
+          this.runs.push({ stack: fontStack(seg.style.fontFamily).split(',').map((f) => f.trim().replace(/^"|"$/g, '')).filter((f) => f !== 'sans-serif'), weight: seg.style.fontWeight, text: seg.text });
+    const fillAttr = fills.map((p) => this.paint(p, 'fill', n.width, n.height));
     return fills
-      .map((p) => {
+      .map((_, fi) => {
         const spans = layout.lines
-          .map((line, i) => {
-            const x = lineOffset(t.align, n.width, line.width);
-            const y = i * layout.lineHeight + layout.lineHeight / 2;
-            return `<tspan x="${num(x)}" y="${num(y)}" dominant-baseline="central">${escapeXml(line.text)}</tspan>`;
+          .map((line) => {
+            const x0 = lineOffset(t.align, n.width, line.width);
+            return line.segments
+              .map((seg) => {
+                const st = seg.style;
+                const attrs =
+                  (st.fontFamily !== t.fontFamily ? ` font-family="${escapeXml(fontStack(st.fontFamily).replace(/"/g, "'"))}"` : '') +
+                  (st.fontWeight !== t.fontWeight ? ` font-weight="${num(st.fontWeight)}"` : '') +
+                  (st.fontSize !== t.fontSize ? ` font-size="${num(st.fontSize)}"` : '') +
+                  (st.italic ? ' font-style="italic"' : '') +
+                  (st.decoration === 'underline' ? ' text-decoration="underline"' : st.decoration === 'strikethrough' ? ' text-decoration="line-through"' : '') +
+                  (st.color ? ` fill="${escapeXml(st.color)}"` : '');
+                return `<tspan x="${num(x0 + seg.x)}" y="${num(line.baseline)}"${attrs}>${escapeXml(seg.text)}</tspan>`;
+              })
+              .join('');
           })
           .join('');
-        return `<text${common}${this.paint(p, 'fill', n.width, n.height)}>${spans}</text>`;
+        return `<text${common}${fillAttr[fi]}>${spans}</text>`;
       })
       .join('');
   }

@@ -232,15 +232,28 @@ function drawLine(ctx: Ctx, n: SceneNode) {
 function drawText(ctx: Ctx, n: SceneNode) {
   const t = n.text!;
   const layout = layoutText(t, t.autoResize === 'width' ? null : n.width);
-  ctx.font = fontString(t);
   if ('letterSpacing' in ctx) (ctx as CanvasRenderingContext2D).letterSpacing = `${t.letterSpacing}px`;
-  ctx.textBaseline = 'middle';
-  for (const p of n.fills) {
-    if (!p.visible || p.type === 'IMAGE') continue;
-    ctx.fillStyle = paintStyle(ctx, p, n.width, n.height);
-    layout.lines.forEach((line, i) => {
-      ctx.fillText(line.text, lineOffset(t.align, n.width, line.width), i * layout.lineHeight + layout.lineHeight / 2);
-    });
+  ctx.textBaseline = 'alphabetic';
+  const fills = n.fills.filter((p) => p.visible && p.type !== 'IMAGE');
+  for (const line of layout.lines) {
+    const x0 = lineOffset(t.align, n.width, line.width);
+    for (const seg of line.segments) {
+      ctx.font = fontString(seg.style);
+      const x = x0 + seg.x;
+      // a run's own colour replaces the layer's fills for that stretch
+      const paints = seg.style.color ? [{ color: seg.style.color, opacity: 1, visible: true } as SolidPaint] : fills;
+      for (const p of paints) {
+        if (p.type === 'IMAGE') continue;
+        ctx.fillStyle = paintStyle(ctx, p, n.width, n.height);
+        ctx.fillText(seg.text, x, line.baseline);
+        if (seg.style.decoration !== 'none') {
+          const size = seg.style.fontSize;
+          const thick = Math.max(1, size / 14);
+          const y = seg.style.decoration === 'underline' ? line.baseline + size * 0.12 : line.baseline - size * 0.3;
+          ctx.fillRect(x, y - thick / 2, seg.width, thick);
+        }
+      }
+    }
   }
 }
 
