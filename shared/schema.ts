@@ -104,6 +104,21 @@ export type ShadowEffect = z.infer<typeof ShadowEffectSchema>;
 export type BlurEffect = z.infer<typeof BlurEffectSchema>;
 export type Effect = z.infer<typeof EffectSchema>;
 
+export const TextRunSchema = z
+  .object({
+    start: z.number().int().min(0).max(100_000),
+    end: z.number().int().min(0).max(100_000),
+    fontFamily: z.string().min(1).max(100).optional(),
+    fontWeight: z.number().int().min(100).max(900).optional(),
+    fontSize: z.number().min(1).max(2000).optional(),
+    color: hexColor.optional(),
+    italic: z.boolean().optional(),
+    decoration: z.enum(['none', 'underline', 'strikethrough']).optional(),
+  })
+  .strict()
+  .refine((r) => r.end > r.start, 'empty run');
+export type TextRun = z.infer<typeof TextRunSchema>;
+
 export const TextStyleSchema = z
   .object({
     characters: z.string().max(100_000),
@@ -114,6 +129,10 @@ export const TextStyleSchema = z
     letterSpacing: z.number().min(-200).max(2000), // px
     align: z.enum(['left', 'center', 'right']),
     autoResize: z.enum(['width', 'height', 'none']),
+    italic: z.boolean().optional(),
+    decoration: z.enum(['none', 'underline', 'strikethrough']).optional(),
+    /** Ranges of the text with their own style (character offsets, end exclusive). */
+    runs: z.array(TextRunSchema).max(2000).optional(),
   })
   .strict();
 export type TextStyle = z.infer<typeof TextStyleSchema>;
