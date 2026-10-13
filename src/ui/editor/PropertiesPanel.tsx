@@ -8,8 +8,10 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   AlignVerticalSpaceAround,
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
+  Component,
   Link2,
   Link2Off,
   Plus,
@@ -19,15 +21,17 @@ import {
   TextAlignEnd,
   TextAlignStart,
 } from 'lucide-react';
-import type { Constraints, Paint, SceneNode, TextStyle } from '../../../shared/schema.ts';
+import type { Constraints, Layout, LayoutChild, Paint, SceneNode, TextStyle } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
-import { exportPng, exportSvg } from '../../engine/export.ts';
+import { type ExportFormat, exportImage, exportPdf, exportSvg } from '../../engine/export.ts';
+import { overridableTexts } from '../../engine/instances.ts';
+import { DEFAULT_LAYOUT } from '../../engine/layout.ts';
 import { solid, TYPE_LABEL } from '../../engine/nodes.ts';
 import { FONT_FAMILIES, FONT_WEIGHTS, fontStack } from '../../engine/text.ts';
 import { IconButton } from '../components.tsx';
 import { downloadBlob, safeFileName } from '../download.ts';
 import { useEditorRev } from '../hooks.ts';
-import { MIXED, NumberField, PaintRow, Section, Segmented, SelectField, common, normalizeHex } from './fields.tsx';
+import { ImagePaintRow, MIXED, NumberField, PaintRow, Section, Segmented, SelectField, common, normalizeHex } from './fields.tsx';
 
 const ICON = { size: 14, strokeWidth: 1.5 };
 
@@ -37,15 +41,15 @@ function uniformRadius(nodes: SceneNode[]) {
   return r.every((v) => v === r[0]) ? r[0] : MIXED;
 }
 
-export function PropertiesPanel(props: { editor: Editor; fileName: string; onBackground: (c: string) => void }) {
+export function PropertiesPanel(props: { editor: Editor; fileName: string }) {
   const { editor } = props;
-  useEditorRev(editor, 'doc', 'selection');
+  useEditorRev(editor, 'doc', 'selection', 'pages');
   const sel = editor.selectedNodes();
 
   return (
     <aside className="props" aria-label="Properties">
       {sel.length === 0 ? (
-        <PageProps editor={editor} fileName={props.fileName} onBackground={props.onBackground} />
+        <PageProps key={editor.currentPage.id} editor={editor} fileName={props.fileName} />
       ) : (
         <SelectionProps editor={editor} nodes={sel} />
       )}
@@ -53,17 +57,21 @@ export function PropertiesPanel(props: { editor: Editor; fileName: string; onBac
   );
 }
 
-function PageProps(props: { editor: Editor; fileName: string; onBackground: (c: string) => void }) {
+function PageProps(props: { editor: Editor; fileName: string }) {
   const { editor } = props;
+  const page = editor.currentPage;
   const [hex, setHex] = useState(editor.background.slice(1));
+  const setBackground = (c: string) => editor.setPageBackground(page.id, c);
   const commit = (v: string) => {
     const h = normalizeHex(v);
-    if (h) props.onBackground(h);
+    if (h) setBackground(h);
     else setHex(editor.background.slice(1));
   };
   return (
     <>
-      <div className="panel-title">Page</div>
+      <div className="panel-title">
+        Page<span className="panel-subtitle">{page.name}</span>
+      </div>
       <Section title="Background">
         <div className="paint-row simple">
           <label className="swatch" style={{ background: editor.background }}>
@@ -73,7 +81,7 @@ function PageProps(props: { editor: Editor; fileName: string; onBackground: (c: 
               value={editor.background.toLowerCase()}
               onChange={(e) => {
                 setHex(e.target.value.slice(1).toUpperCase());
-                props.onBackground(e.target.value.toUpperCase());
+                setBackground(e.target.value.toUpperCase());
               }}
             />
           </label>
@@ -91,7 +99,7 @@ function PageProps(props: { editor: Editor; fileName: string; onBackground: (c: 
           />
         </div>
       </Section>
-      <ExportSection editor={editor} ids={editor.doc.children(null).filter((id) => editor.doc.get(id)!.visible)} name={props.fileName} pageBackground />
+      <ExportSection editor={editor} ids={editor.doc.children(null).filter((id) => editor.doc.get(id)!.visible)} name={page.name} pageBackground />
     </>
   );
 }
@@ -105,9 +113,13 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
   const allType = (t: SceneNode['type']) => nodes.every((n) => n.type === t);
   const allLines = allType('LINE');
   const allText = allType('TEXT');
-  const hasRadius = nodes.every((n) => n.type === 'RECTANGLE' || n.type === 'FRAME');
-  const allFrames = allType('FRAME');
-  const constrained = nodes.every((n) => n.parentId !== null && editor.doc.get(n.parentId)?.type === 'FRAME');
+  const isBox = (n: SceneNode) => n.type === 'FRAME' || n.type === 'COMPONENT';
+  const hasRadius = nodes.every((n) => n.type === 'RECTANGLE' || isBox(n));
+  const allFrames = nodes.every(isBox);
+  const anyInstance = nodes.some((n) => n.type === 'INSTANCE');
+  const parent = (n: SceneNode) => (n.parentId ? editor.doc.get(n.parentId) : undefined);
+  const inAutoLayout = nodes.every((n) => parent(n)?.layout);
+  const constrained = !inAutoLayout && nodes.every((n) => { const p = parent(n); return p && isBox(p) && !p.layout; });
   const title = single ? TYPE_LABEL[single.type] : `${nodes.length} layers`;
   const canAlign = nodes.length > 1 || (single !== null && single.parentId !== null);
 
@@ -146,6 +158,8 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
           </IconButton>
         </div>
       )}
+
+      {single && (single.type === 'COMPONENT' || single.type === 'INSTANCE') && <ComponentSection editor={editor} node={single} />}
 
       <Section title="Position">
         <div className="grid2">
@@ -193,7 +207,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
         </div>
       </Section>
 
-      {hasRadius && (
+      {hasRadius && !anyInstance && (
         <Section
           title="Corner radius"
           action={
@@ -235,6 +249,10 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
         </Section>
       )}
 
+      {allFrames && <AutoLayoutSection editor={editor} nodes={nodes} update={update} />}
+      {inAutoLayout && <LayoutChildSection nodes={nodes} update={update} />}
+      {single?.type === 'LINE' && (single.startBind || single.endBind) && <ConnectorSection editor={editor} line={single} />}
+
       {allFrames && (
         <Section title="Frame">
           <label className="check-row">
@@ -274,16 +292,16 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
         set={(n, p) => ({ ...n, fills: p })}
         defaultPaint={allText ? solid('#1B1D21') : solid('#D9D9D9')}
         update={update}
-        hidden={allLines}
+        hidden={allLines || anyInstance}
       />
       <PaintsSection
         title="Stroke"
         nodes={nodes}
         get={(n) => n.strokes}
-        set={(n, p) => ({ ...n, strokes: p })}
+        set={(n, p) => ({ ...n, strokes: p as SceneNode['strokes'] })}
         defaultPaint={solid('#1B1D21')}
         update={update}
-        hidden={allText}
+        hidden={allText || anyInstance}
       >
         <div className="grid2">
           <NumberField
@@ -474,24 +492,33 @@ function PaintsSection(props: {
       {paints === MIXED ? (
         <p className="field-caption">Mixed. Click + to replace them with one {label}.</p>
       ) : (
-        paints.map((p, i) => (
-          <PaintRow
-            key={i}
-            paint={p}
-            label={paints.length > 1 ? `${props.title} ${i + 1}` : props.title}
-            onChange={(next) => update((n) => set(n, get(n).map((q, j) => (j === i ? next : q))))}
-            onRemove={() => update((n) => set(n, get(n).filter((_, j) => j !== i)))}
-          />
-        ))
+        paints.map((p, i) => {
+          const label = paints.length > 1 ? `${props.title} ${i + 1}` : props.title;
+          const onChange = (next: Paint) => update((n) => set(n, get(n).map((q, j) => (j === i ? next : q))));
+          const onRemove = () => update((n) => set(n, get(n).filter((_, j) => j !== i)));
+          return p.type === 'IMAGE' ? (
+            <ImagePaintRow key={i} paint={p} label={`${label} image`} onChange={onChange} onRemove={onRemove} />
+          ) : (
+            <PaintRow key={i} paint={p} label={label} onChange={onChange} onRemove={onRemove} />
+          );
+        })
       )}
       {(paints === MIXED || paints.length > 0) && props.children}
     </Section>
   );
 }
 
+const EXPORT_FORMATS: { value: ExportFormat; label: string }[] = [
+  { value: 'png', label: 'PNG' },
+  { value: 'jpg', label: 'JPG' },
+  { value: 'webp', label: 'WebP' },
+  { value: 'svg', label: 'SVG' },
+  { value: 'pdf', label: 'PDF' },
+];
+
 function ExportSection(props: { editor: Editor; ids: string[]; name: string; pageBackground: boolean }) {
   const { editor, ids } = props;
-  const [format, setFormat] = useState<'png' | 'svg'>('png');
+  const [format, setFormat] = useState<ExportFormat>('png');
   const [scale, setScale] = useState(2);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -503,9 +530,19 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
     try {
       const target = { ids, background: props.pageBackground ? editor.background : null };
       const base = safeFileName(props.name);
-      if (format === 'png') downloadBlob(await exportPng(editor.doc, target, scale), `${base}${scale === 1 ? '' : `@${scale}x`}.png`);
-      else downloadBlob(new Blob([exportSvg(editor.doc, target)], { type: 'image/svg+xml' }), `${base}.svg`);
-      setMessage(`Exported ${base}.${format}`);
+      const suffix = scale === 1 ? '' : `@${scale}x`;
+      let filename: string;
+      if (format === 'svg') {
+        filename = `${base}.svg`;
+        downloadBlob(new Blob([await exportSvg(editor.doc, target)], { type: 'image/svg+xml' }), filename);
+      } else if (format === 'pdf') {
+        filename = `${base}.pdf`;
+        downloadBlob(await exportPdf(editor.doc, [{ ...target, background: target.background ?? editor.background }], scale, props.name), filename);
+      } else {
+        filename = `${base}${suffix}.${format}`;
+        downloadBlob(await exportImage(editor.doc, target, scale, format), filename);
+      }
+      setMessage(`Exported ${filename}`);
     } catch (e) {
       setMessage(`Couldn't export: ${e instanceof Error ? e.message : 'unknown error'}`);
     } finally {
@@ -522,23 +559,252 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
           options={[1, 2, 3, 4].map((s) => ({ value: s, label: `${s}x` }))}
           onChange={(v) => setScale(v)}
         />
-        <SelectField
-          label="Export format"
-          value={format}
-          options={[
-            { value: 'png', label: 'PNG' },
-            { value: 'svg', label: 'SVG' },
-          ]}
-          onChange={(v) => setFormat(v)}
-        />
+        <SelectField label="Export format" value={format} options={EXPORT_FORMATS} onChange={(v) => setFormat(v)} />
       </div>
       <button type="button" className="btn secondary full" disabled={empty || busy} onClick={run}>
-        {empty ? 'Nothing to export yet' : `Export ${props.pageBackground ? 'page' : props.name}`}
+        {empty ? 'Nothing to export yet' : busy ? 'Exporting…' : `Export ${props.name}`}
       </button>
       {message && (
         <p className="field-caption" role="status">
           {message}
         </p>
+      )}
+    </Section>
+  );
+}
+
+function ComponentSection({ editor, node }: { editor: Editor; node: SceneNode }) {
+  if (node.type === 'COMPONENT') {
+    const count = [...editor.doc.all()].filter((n) => n.type === 'INSTANCE' && n.componentId === node.id).length;
+    return (
+      <Section title="Component">
+        <p className="field-caption">
+          <Component {...ICON} className="component-ink" /> Main component. {count === 0 ? 'No instances yet.' : `${count} instance${count === 1 ? '' : 's'} follow its changes.`}
+        </p>
+        <button type="button" className="btn secondary full" onClick={() => editor.createInstance(node.id)}>
+          Create instance
+        </button>
+      </Section>
+    );
+  }
+  const comp = node.componentId ? editor.doc.get(node.componentId) : undefined;
+  const texts = comp ? overridableTexts(editor.doc, comp.id) : [];
+  const overrides = node.overrides ?? {};
+  return (
+    <Section title="Instance">
+      <p className="field-caption">{comp ? <>Instance of “{comp.name}”.</> : 'The main component was removed.'}</p>
+      <div className="grid2">
+        <button type="button" className="btn secondary full" disabled={!comp} onClick={() => editor.goToMainComponent(node.id)}>
+          Go to main
+        </button>
+        <button type="button" className="btn secondary full" onClick={() => editor.detachInstances([node.id])}>
+          Detach
+        </button>
+      </div>
+      {texts.length > 0 && (
+        <div className="override-list">
+          <span className="field-caption">Text in this instance</span>
+          {texts.map((t) => (
+            <OverrideText
+              key={t.id}
+              label={t.name}
+              placeholder={t.text!.characters}
+              value={overrides[t.id]?.characters ?? t.text!.characters}
+              onCommit={(v) => editor.setOverride(node.id, t.id, v === t.text!.characters ? null : { characters: v })}
+            />
+          ))}
+        </div>
+      )}
+      {Object.keys(overrides).length > 0 && (
+        <button type="button" className="btn secondary full" onClick={() => editor.resetOverrides([node.id])}>
+          Reset all changes
+        </button>
+      )}
+    </Section>
+  );
+}
+
+function OverrideText(props: { label: string; value: string; placeholder: string; onCommit: (v: string) => void }) {
+  const [text, setText] = useState(props.value);
+  return (
+    <label className="override-row">
+      <span className="field-caption">{props.label}</span>
+      <textarea
+        className="hex-input override-input"
+        value={text}
+        rows={Math.min(4, Math.max(1, text.split('\n').length))}
+        aria-label={`Text of ${props.label}`}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => text !== props.value && props.onCommit(text)}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) (e.target as HTMLTextAreaElement).blur();
+        }}
+      />
+    </label>
+  );
+}
+
+/** Shared padding of two sides across nodes, or Mixed. */
+function pad(nodes: SceneNode[], a: number, b: number) {
+  const v = common(nodes, (n) => [n.layout?.padding[a], n.layout?.padding[b]]);
+  if (v === MIXED || v[0] !== v[1] || v[0] === undefined) return MIXED;
+  return v[0];
+}
+
+function AutoLayoutSection(props: { editor: Editor; nodes: SceneNode[]; update: (fn: (n: SceneNode) => SceneNode) => void }) {
+  const { editor, nodes, update } = props;
+  const all = nodes.every((n) => n.layout);
+  const none = nodes.every((n) => !n.layout);
+  const L = (n: SceneNode) => n.layout ?? DEFAULT_LAYOUT;
+  const setL = (patch: Partial<Layout>) => update((n) => (n.layout ? { ...n, layout: { ...n.layout, ...patch } } : n));
+  return (
+    <Section
+      title="Auto layout"
+      action={
+        all ? (
+          <IconButton label="Remove auto layout" onClick={() => editor.removeAutoLayout(nodes.map((n) => n.id))}>
+            <span aria-hidden="true">−</span>
+          </IconButton>
+        ) : (
+          <IconButton label="Add auto layout" shortcut="Shift+A" onClick={() => editor.addAutoLayout()}>
+            <Plus {...ICON} />
+          </IconButton>
+        )
+      }
+    >
+      {none ? null : (
+        <>
+          <div className="grid2">
+            <Segmented
+              label="Direction"
+              value={common(nodes, (n) => L(n).mode)}
+              options={[
+                { value: 'vertical', label: 'Vertical', icon: <ArrowDown {...ICON} /> },
+                { value: 'horizontal', label: 'Horizontal', icon: <ArrowRight {...ICON} /> },
+              ]}
+              onChange={(v) => setL({ mode: v })}
+            />
+            <NumberField label="Gap" ariaLabel="Gap between items" value={common(nodes, (n) => L(n).gap)} onCommit={(v) => setL({ gap: v })} />
+            <NumberField
+              label="H pad"
+              ariaLabel="Horizontal padding"
+              value={pad(nodes, 1, 3)}
+              min={0}
+              onCommit={(v) => update((n) => (n.layout ? { ...n, layout: { ...n.layout, padding: [n.layout.padding[0], v, n.layout.padding[2], v] } } : n))}
+            />
+            <NumberField
+              label="V pad"
+              ariaLabel="Vertical padding"
+              value={pad(nodes, 0, 2)}
+              min={0}
+              onCommit={(v) => update((n) => (n.layout ? { ...n, layout: { ...n.layout, padding: [v, n.layout.padding[1], v, n.layout.padding[3]] } } : n))}
+            />
+            <SelectField
+              label="Distribute items"
+              value={common(nodes, (n) => L(n).primaryAlign)}
+              options={[
+                { value: 'start', label: 'Pack at start' },
+                { value: 'center', label: 'Pack in center' },
+                { value: 'end', label: 'Pack at end' },
+                { value: 'space-between', label: 'Space between' },
+              ]}
+              onChange={(v) => setL({ primaryAlign: v })}
+            />
+            <SelectField
+              label="Align items"
+              value={common(nodes, (n) => L(n).crossAlign)}
+              options={[
+                { value: 'start', label: 'Align start' },
+                { value: 'center', label: 'Align center' },
+                { value: 'end', label: 'Align end' },
+                { value: 'stretch', label: 'Stretch' },
+              ]}
+              onChange={(v) => setL({ crossAlign: v })}
+            />
+            <SelectField
+              label="Width sizing"
+              value={common(nodes, (n) => L(n).widthMode)}
+              options={[
+                { value: 'hug', label: 'W: Hug contents' },
+                { value: 'fixed', label: 'W: Fixed' },
+              ]}
+              onChange={(v) => setL({ widthMode: v })}
+            />
+            <SelectField
+              label="Height sizing"
+              value={common(nodes, (n) => L(n).heightMode)}
+              options={[
+                { value: 'hug', label: 'H: Hug contents' },
+                { value: 'fixed', label: 'H: Fixed' },
+              ]}
+              onChange={(v) => setL({ heightMode: v })}
+            />
+          </div>
+        </>
+      )}
+    </Section>
+  );
+}
+
+function LayoutChildSection(props: { nodes: SceneNode[]; update: (fn: (n: SceneNode) => SceneNode) => void }) {
+  const { nodes, update } = props;
+  const C = (n: SceneNode): LayoutChild => n.layoutChild ?? { horizontal: 'fixed', vertical: 'fixed', absolute: false };
+  const setC = (patch: Partial<LayoutChild>) => update((n) => ({ ...n, layoutChild: { ...C(n), ...patch } }));
+  return (
+    <Section title="In auto layout">
+      <div className="grid2">
+        <SelectField
+          label="Width in layout"
+          value={common(nodes, (n) => C(n).horizontal)}
+          options={[
+            { value: 'fixed', label: 'W: Fixed' },
+            { value: 'fill', label: 'W: Fill container' },
+          ]}
+          onChange={(v) => setC({ horizontal: v })}
+        />
+        <SelectField
+          label="Height in layout"
+          value={common(nodes, (n) => C(n).vertical)}
+          options={[
+            { value: 'fixed', label: 'H: Fixed' },
+            { value: 'fill', label: 'H: Fill container' },
+          ]}
+          onChange={(v) => setC({ vertical: v })}
+        />
+      </div>
+      <label className="check-row">
+        <input type="checkbox" checked={nodes.every((n) => C(n).absolute)} onChange={(e) => setC({ absolute: e.target.checked })} />
+        Ignore auto layout (absolute position)
+      </label>
+    </Section>
+  );
+}
+
+function ConnectorSection({ editor, line }: { editor: Editor; line: SceneNode }) {
+  const name = (id: string | undefined) => (id ? (editor.doc.get(id)?.name ?? 'a removed layer') : '');
+  const side = (a: string | undefined) => (a === 'auto' || !a ? 'nearest side' : `${a} side`);
+  return (
+    <Section title="Connector">
+      {line.startBind && (
+        <div className="bind-row">
+          <span className="field-caption">
+            Start on “{name(line.startBind.nodeId)}”, {side(line.startBind.anchor)}
+          </span>
+          <button type="button" className="mini-btn wide" onClick={() => editor.updateNodes([line.id], (n) => ({ ...n, startBind: undefined }))}>
+            Detach
+          </button>
+        </div>
+      )}
+      {line.endBind && (
+        <div className="bind-row">
+          <span className="field-caption">
+            End on “{name(line.endBind.nodeId)}”, {side(line.endBind.anchor)}
+          </span>
+          <button type="button" className="mini-btn wide" onClick={() => editor.updateNodes([line.id], (n) => ({ ...n, endBind: undefined }))}>
+            Detach
+          </button>
+        </div>
       )}
     </Section>
   );

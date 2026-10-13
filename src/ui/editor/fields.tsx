@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Eye, EyeOff, Minus } from 'lucide-react';
-import type { Paint } from '../../../shared/schema.ts';
+import type { ImagePaint, SolidPaint } from '../../../shared/schema.ts';
+import { getImage } from '../../engine/images.ts';
 
 export const MIXED = Symbol('mixed');
 export type Maybe<T> = T | typeof MIXED;
@@ -195,9 +196,9 @@ export function normalizeHex(input: string): string | null {
 }
 
 export function PaintRow(props: {
-  paint: Paint;
+  paint: SolidPaint;
   label: string;
-  onChange: (p: Paint) => void;
+  onChange: (p: SolidPaint) => void;
   onRemove: () => void;
 }) {
   const { paint, label } = props;
@@ -230,6 +231,49 @@ export function PaintRow(props: {
           if (e.key === 'Enter') commitHex((e.target as HTMLInputElement).value);
         }}
       />
+      <NumberField
+        label=""
+        ariaLabel={`${label} opacity`}
+        value={Math.round(paint.opacity * 100)}
+        min={0}
+        max={100}
+        precision={0}
+        suffix="%"
+        onCommit={(v) => props.onChange({ ...paint, opacity: v / 100 })}
+      />
+      <button
+        type="button"
+        className="mini-btn"
+        aria-label={paint.visible ? `Hide ${label}` : `Show ${label}`}
+        aria-pressed={!paint.visible}
+        onClick={() => props.onChange({ ...paint, visible: !paint.visible })}
+      >
+        {paint.visible ? <Eye size={14} strokeWidth={1.5} /> : <EyeOff size={14} strokeWidth={1.5} />}
+      </button>
+      <button type="button" className="mini-btn" aria-label={`Remove ${label}`} onClick={props.onRemove}>
+        <Minus size={14} strokeWidth={1.5} />
+      </button>
+    </div>
+  );
+}
+
+/** An image fill: preview, how it fits the shape, opacity, visibility. */
+export function ImagePaintRow(props: { paint: ImagePaint; label: string; onChange: (p: ImagePaint) => void; onRemove: () => void }) {
+  const { paint, label } = props;
+  const img = getImage(paint.imageId);
+  return (
+    <div className={`paint-row image-row ${paint.visible ? '' : 'hidden-paint'}`}>
+      <span className="swatch image-swatch" style={img ? { backgroundImage: `url(${img.src})` } : undefined} aria-hidden="true" />
+      <select
+        className="select-field"
+        aria-label={`${label} fit`}
+        value={paint.scaleMode}
+        onChange={(e) => props.onChange({ ...paint, scaleMode: e.target.value as ImagePaint['scaleMode'] })}
+      >
+        <option value="fill">Fill</option>
+        <option value="fit">Fit</option>
+        <option value="stretch">Stretch</option>
+      </select>
       <NumberField
         label=""
         ariaLabel={`${label} opacity`}
