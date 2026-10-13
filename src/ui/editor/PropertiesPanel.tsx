@@ -31,7 +31,8 @@ import { FONT_FAMILIES, FONT_WEIGHTS, fontStack } from '../../engine/text.ts';
 import { IconButton } from '../components.tsx';
 import { downloadBlob, safeFileName } from '../download.ts';
 import { useEditorRev } from '../hooks.ts';
-import { ImagePaintRow, MIXED, NumberField, PaintRow, Section, Segmented, SelectField, common, normalizeHex } from './fields.tsx';
+import { MIXED, NumberField, Section, Segmented, SelectField, common, normalizeHex } from './fields.tsx';
+import { DEFAULT_SHADOW, EffectEditor, PaintEditor } from './paints.tsx';
 
 const ICON = { size: 14, strokeWidth: 1.5 };
 
@@ -117,6 +118,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
   const hasRadius = nodes.every((n) => n.type === 'RECTANGLE' || isBox(n));
   const allFrames = nodes.every(isBox);
   const anyInstance = nodes.some((n) => n.type === 'INSTANCE');
+  const anyGroup = nodes.some((n) => n.type === 'GROUP');
   const parent = (n: SceneNode) => (n.parentId ? editor.doc.get(n.parentId) : undefined);
   const inAutoLayout = nodes.every((n) => parent(n)?.layout);
   const constrained = !inAutoLayout && nodes.every((n) => { const p = parent(n); return p && isBox(p) && !p.layout; });
@@ -292,7 +294,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
         set={(n, p) => ({ ...n, fills: p })}
         defaultPaint={allText ? solid('#1B1D21') : solid('#D9D9D9')}
         update={update}
-        hidden={allLines || anyInstance}
+        hidden={allLines || anyInstance || anyGroup}
       />
       <PaintsSection
         title="Stroke"
@@ -301,7 +303,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
         set={(n, p) => ({ ...n, strokes: p as SceneNode['strokes'] })}
         defaultPaint={solid('#1B1D21')}
         update={update}
-        hidden={allText || anyInstance}
+        hidden={allText || anyInstance || anyGroup}
       >
         <div className="grid2">
           <NumberField
@@ -362,6 +364,8 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
           </div>
         )}
       </PaintsSection>
+
+      <EffectsSection nodes={nodes} update={update} />
 
       <ExportSection key={ids.join(',')} editor={editor} ids={ids} name={single ? single.name : 'Selection'} pageBackground={false} />
     </>
@@ -496,14 +500,41 @@ function PaintsSection(props: {
           const label = paints.length > 1 ? `${props.title} ${i + 1}` : props.title;
           const onChange = (next: Paint) => update((n) => set(n, get(n).map((q, j) => (j === i ? next : q))));
           const onRemove = () => update((n) => set(n, get(n).filter((_, j) => j !== i)));
-          return p.type === 'IMAGE' ? (
-            <ImagePaintRow key={i} paint={p} label={`${label} image`} onChange={onChange} onRemove={onRemove} />
-          ) : (
-            <PaintRow key={i} paint={p} label={label} onChange={onChange} onRemove={onRemove} />
-          );
+          return <PaintEditor key={i} paint={p} label={label} allowImage={props.title === 'Fill'} onChange={onChange} onRemove={onRemove} />;
         })
       )}
       {(paints === MIXED || paints.length > 0) && props.children}
+    </Section>
+  );
+}
+
+function EffectsSection({ nodes, update }: { nodes: SceneNode[]; update: (fn: (n: SceneNode) => SceneNode) => void }) {
+  const effects = common(nodes, (n) => n.effects ?? []);
+  return (
+    <Section
+      title="Effects"
+      action={
+        <IconButton
+          label="Add effect"
+          onClick={() => update((n) => ({ ...n, effects: effects === MIXED ? [DEFAULT_SHADOW] : [...(n.effects ?? []), DEFAULT_SHADOW].slice(0, 8) }))}
+        >
+          <Plus {...ICON} />
+        </IconButton>
+      }
+    >
+      {effects === MIXED ? (
+        <p className="field-caption">Mixed. Click + to replace them with one shadow.</p>
+      ) : effects.length === 0 ? null : (
+        effects.map((e, i) => (
+          <EffectEditor
+            key={i}
+            index={i}
+            effect={e}
+            onChange={(next) => update((n) => ({ ...n, effects: (n.effects ?? []).map((x, j) => (j === i ? next : x)) }))}
+            onRemove={() => update((n) => ({ ...n, effects: (n.effects ?? []).filter((_, j) => j !== i) }))}
+          />
+        ))
+      )}
     </Section>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Circle, Component, Diamond, Eye, EyeOff, Frame, Image, LayoutGrid, Lock, LockOpen, Minus, MoveUpRight, Square, Type } from 'lucide-react';
+import { ChevronDown, ChevronRight, Circle, Component, Diamond, Eye, EyeOff, Frame, Group, Image, LayoutGrid, Lock, LockOpen, Minus, MoveUpRight, Square, Type } from 'lucide-react';
 import { type SceneNode, isContainerType } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
 import { useEditorRev } from '../hooks.ts';
@@ -15,6 +15,8 @@ function TypeIcon({ n }: { n: SceneNode }) {
   switch (n.type) {
     case 'FRAME':
       return n.layout ? <LayoutGrid {...props} /> : <Frame {...props} />;
+    case 'GROUP':
+      return <Group {...props} />;
     case 'COMPONENT':
       return <Component {...props} />;
     case 'INSTANCE':
