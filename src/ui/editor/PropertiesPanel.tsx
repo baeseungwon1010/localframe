@@ -17,6 +17,10 @@ import {
   Plus,
   RotateCw,
   Scan,
+  SquaresExclude,
+  SquaresIntersect,
+  SquaresSubtract,
+  SquaresUnite,
   TextAlignCenter,
   TextAlignEnd,
   TextAlignStart,
@@ -162,6 +166,39 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
       )}
 
       {single && (single.type === 'COMPONENT' || single.type === 'INSTANCE') && <ComponentSection editor={editor} node={single} />}
+      {(nodes.length > 1 || single?.type === 'BOOLEAN') && (
+        <div className="align-bar boolean-bar" role="toolbar" aria-label="Boolean operations">
+          {(
+            [
+              ['union', 'Union', SquaresUnite],
+              ['subtract', 'Subtract', SquaresSubtract],
+              ['intersect', 'Intersect', SquaresIntersect],
+              ['exclude', 'Exclude', SquaresExclude],
+            ] as const
+          ).map(([op, label, Icon]) => (
+            <IconButton key={op} label={`${label} selection`} pressed={single?.booleanOp === op} onClick={() => editor.booleanSelection(op)}>
+              <Icon {...ICON} />
+            </IconButton>
+          ))}
+        </div>
+      )}
+      {single?.type === 'VECTOR' && (
+        <Section title="Path">
+          <div className="grid2">
+            <button type="button" className="btn secondary full" onClick={() => editor.startVectorEdit(single.id)}>
+              Edit points
+            </button>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={!!single.vector?.closed}
+                onChange={(e) => update((n) => (n.vector ? { ...n, vector: { ...n.vector, closed: e.target.checked } } : n))}
+              />
+              Closed
+            </label>
+          </div>
+        </Section>
+      )}
 
       <Section title="Position">
         <div className="grid2">
@@ -282,6 +319,12 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
             suffix="%"
             onCommit={(v) => update((n) => ({ ...n, opacity: v / 100 }))}
           />
+          {single && (
+            <label className="check-row">
+              <input type="checkbox" checked={!!single.isMask} onChange={() => editor.useAsMask()} />
+              Use as mask
+            </label>
+          )}
         </div>
       </Section>
 

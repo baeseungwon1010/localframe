@@ -207,6 +207,12 @@ export function CanvasView(props: {
     { label: 'Wrap in frame', shortcut: `${MOD}${ALT}G`, disabled: !hasSel, onSelect: () => editor.wrapInFrame() },
     { label: 'Add auto layout', shortcut: `${SHIFT}A`, disabled: !hasSel, onSelect: () => editor.addAutoLayout() },
     {
+      label: single?.isMask ? 'Stop using as mask' : 'Use as mask',
+      shortcut: `${MOD}${ALT}M`,
+      disabled: !hasSel,
+      onSelect: () => editor.useAsMask(),
+    },
+    {
       label: sel.some((n) => n.type === 'GROUP') ? 'Ungroup' : 'Remove frame',
       shortcut: `${MOD}${SHIFT}G`,
       disabled: !sel.some((n) => n.type === 'FRAME' || n.type === 'GROUP'),

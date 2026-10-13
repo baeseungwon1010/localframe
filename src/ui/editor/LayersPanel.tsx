@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Circle, Component, Diamond, Eye, EyeOff, Frame, Group, Image, LayoutGrid, Lock, LockOpen, Minus, MoveUpRight, Square, Type } from 'lucide-react';
+import { ChevronDown, ChevronRight, Circle, Component, Diamond, Eye, EyeOff, Frame, Group, Image, LayoutGrid, Lock, LockOpen, Minus, MoveUpRight, PenTool, Scissors, Square, SquaresExclude, SquaresIntersect, SquaresSubtract, SquaresUnite, Type } from 'lucide-react';
 import { type SceneNode, isContainerType } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
 import { useEditorRev } from '../hooks.ts';
@@ -12,7 +12,20 @@ type Drop = { parentId: string | null; index: number; line: number; into: string
 
 function TypeIcon({ n }: { n: SceneNode }) {
   const props = { size: 14, strokeWidth: 1.5 };
+  if (n.isMask) return <Scissors {...props} />;
   switch (n.type) {
+    case 'VECTOR':
+      return <PenTool {...props} />;
+    case 'BOOLEAN':
+      return n.booleanOp === 'subtract' ? (
+        <SquaresSubtract {...props} />
+      ) : n.booleanOp === 'intersect' ? (
+        <SquaresIntersect {...props} />
+      ) : n.booleanOp === 'exclude' ? (
+        <SquaresExclude {...props} />
+      ) : (
+        <SquaresUnite {...props} />
+      );
     case 'FRAME':
       return n.layout ? <LayoutGrid {...props} /> : <Frame {...props} />;
     case 'GROUP':
