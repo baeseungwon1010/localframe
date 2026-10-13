@@ -263,7 +263,7 @@ export function ImagePaintRow(props: { paint: ImagePaint; label: string; onChang
   const img = getImage(paint.imageId);
   return (
     <div className={`paint-row image-row ${paint.visible ? '' : 'hidden-paint'}`}>
-      <span className="swatch image-swatch" style={img ? { backgroundImage: `url(${img.src})` } : undefined} aria-hidden="true" />
+      <span className="swatch image-swatch" style={img ? { backgroundImage: `url(${JSON.stringify(img.src)})` } : undefined} aria-hidden="true" />
       <select
         className="select-field"
         aria-label={`${label} fit`}

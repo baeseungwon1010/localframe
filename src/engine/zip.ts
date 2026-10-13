@@ -21,8 +21,9 @@ export type ZipEntry = { name: string; data: Uint8Array };
 /** Unique, safe names inside the archive ("a.png", "a 2.png", ...). */
 export function uniqueName(name: string, used: Set<string>): string {
   const clean = name.replace(/\\/g, '/').replace(/(^|\/)\.\.(?=\/|$)/g, '$1_').replace(/^\/+/, '');
-  if (!used.has(clean)) {
-    used.add(clean);
+  // compare case-insensitively: a.png and A.png collide on Windows and macOS
+  if (!used.has(clean.toLowerCase())) {
+    used.add(clean.toLowerCase());
     return clean;
   }
   const dot = clean.lastIndexOf('.');
@@ -30,14 +31,17 @@ export function uniqueName(name: string, used: Set<string>): string {
   const ext = dot > 0 ? clean.slice(dot) : '';
   for (let i = 2; ; i++) {
     const n = `${base} ${i}${ext}`;
-    if (!used.has(n)) {
-      used.add(n);
+    if (!used.has(n.toLowerCase())) {
+      used.add(n.toLowerCase());
       return n;
     }
   }
 }
 
+/** Without ZIP64, an archive holds at most 65 535 entries and 4 GB. */
 export function buildZip(entries: ZipEntry[]): Blob {
+  const total = entries.reduce((s, e) => s + e.data.length + 128, 0);
+  if (entries.length > 0xffff || total > 0xffffffff) throw new Error('Too much to put in one ZIP file. Export fewer frames at a time.');
   const enc = new TextEncoder();
   const parts: Uint8Array[] = [];
   const central: Uint8Array[] = [];

@@ -58,7 +58,7 @@ function build(root: SceneDoc, inst: SceneNode): SceneDoc | null {
     let n: SceneNode = { ...src, id: vid(src.id), parentId: vid(src.parentId!) };
     if (n.startBind) n = { ...n, startBind: { ...n.startBind, nodeId: vid(n.startBind.nodeId) } };
     if (n.endBind) n = { ...n, endBind: { ...n.endBind, nodeId: vid(n.endBind.nodeId) } };
-    const o = inst.overrides?.[src.id];
+    const o = inst.overrides && Object.hasOwn(inst.overrides, src.id) ? inst.overrides[src.id] : undefined;
     if (o) {
       if (o.visible !== undefined) n = { ...n, visible: o.visible };
       if (o.fills) n = { ...n, fills: o.fills };

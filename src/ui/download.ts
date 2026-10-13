@@ -17,6 +17,10 @@ export function safeFileName(name: string, fallback = 'export'): string {
     .replace(/[\\/:*?"<>|\u0000-\u001F\u007F\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '_')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 100);
-  return cleaned || fallback;
+    .slice(0, 100)
+    // no names of only dots, no trailing dots or spaces (Windows drops them)
+    .replace(/[. ]+$/, '');
+  if (!cleaned || /^\.+$/.test(cleaned)) return fallback;
+  // names Windows reserves for devices
+  return /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i.test(cleaned) ? `_${cleaned}` : cleaned;
 }
