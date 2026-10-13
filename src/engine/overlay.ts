@@ -8,6 +8,7 @@ export type OverlayColors = {
   onAccent: string;
   handleFill: string;
   guide: string;
+  component: string;
   textMuted: string;
   canvasOutside: string;
   font: string;
@@ -88,7 +89,7 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
   ctx.textBaseline = 'bottom';
   for (const id of doc.children(null)) {
     const n = doc.get(id)!;
-    if (n.type !== 'FRAME' || !n.visible) continue;
+    if (!(n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'INSTANCE') || !n.visible) continue;
     const m = multiply(view, doc.world(id));
     const at = apply(m, { x: 0, y: 0 });
     const right = apply(m, { x: n.width, y: 0 });
@@ -97,8 +98,9 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
     ctx.save();
     ctx.translate(at.x, at.y);
     ctx.rotate(Math.atan2(m[1], m[0]));
-    ctx.fillStyle = selected.has(id) ? c.accent : c.textMuted;
-    let label = n.name;
+    const isComponent = n.type === 'COMPONENT' || n.type === 'INSTANCE';
+    ctx.fillStyle = selected.has(id) ? c.accent : isComponent ? c.component : c.textMuted;
+    let label = n.type === 'COMPONENT' ? `❖ ${n.name}` : n.type === 'INSTANCE' ? `◇ ${n.name}` : n.name;
     while (label.length > 1 && ctx.measureText(label).width > room) label = label.slice(0, -2) + '…';
     ctx.fillText(label, 0, -4);
     ctx.restore();
@@ -107,6 +109,15 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
   // drop target
   if (editor.dropTarget) {
     const n = doc.get(editor.dropTarget);
+    if (n) {
+      outlinePath(ctx, n, multiply(view, doc.world(n.id)));
+      haloStroke(ctx, c, 2);
+    }
+  }
+
+  // the layer a connector end will attach to
+  if (editor.bindTarget) {
+    const n = doc.get(editor.bindTarget);
     if (n) {
       outlinePath(ctx, n, multiply(view, doc.world(n.id)));
       haloStroke(ctx, c, 2);
@@ -162,12 +173,15 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
         }
         const s = 7;
         ctx.beginPath();
-        if (handle.kind === 'line-end') ctx.arc(at.x, at.y, 4.5, 0, Math.PI * 2);
+        const line = handle.kind === 'line-end' ? sel[0] : null;
+        const bound = line && (handle.kind === 'line-end' && handle.end === 0 ? line.startBind : line.endBind);
+        if (handle.kind === 'line-end') ctx.arc(at.x, at.y, bound ? 5.5 : 4.5, 0, Math.PI * 2);
         else ctx.rect(crisp(at.x - s / 2), crisp(at.y - s / 2), s - 1, s - 1);
-        ctx.fillStyle = c.handleFill;
+        // attached connector ends are filled, loose ends are hollow
+        ctx.fillStyle = bound ? c.accent : c.handleFill;
         ctx.fill();
         ctx.lineWidth = 1;
-        ctx.strokeStyle = c.accent;
+        ctx.strokeStyle = bound ? c.handleFill : c.accent;
         ctx.stroke();
       }
     }
