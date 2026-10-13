@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Circle, Eye, EyeOff, Frame, Lock, LockOpen, Minus, MoveUpRight, Square, Type } from 'lucide-react';
-import type { SceneNode } from '../../../shared/schema.ts';
+import { ChevronDown, ChevronRight, Circle, Component, Diamond, Eye, EyeOff, Frame, Image, LayoutGrid, Lock, LockOpen, Minus, MoveUpRight, Square, Type } from 'lucide-react';
+import { type SceneNode, isContainerType } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
 import { useEditorRev } from '../hooks.ts';
 
@@ -14,9 +14,13 @@ function TypeIcon({ n }: { n: SceneNode }) {
   const props = { size: 14, strokeWidth: 1.5 };
   switch (n.type) {
     case 'FRAME':
-      return <Frame {...props} />;
+      return n.layout ? <LayoutGrid {...props} /> : <Frame {...props} />;
+    case 'COMPONENT':
+      return <Component {...props} />;
+    case 'INSTANCE':
+      return <Diamond {...props} />;
     case 'RECTANGLE':
-      return <Square {...props} />;
+      return n.fills.some((p) => p.type === 'IMAGE') ? <Image {...props} /> : <Square {...props} />;
     case 'ELLIPSE':
       return <Circle {...props} />;
     case 'LINE':
@@ -55,7 +59,7 @@ export function LayersPanel({ editor }: { editor: Editor }) {
     for (let i = kids.length - 1; i >= 0; i--) {
       const id = kids[i];
       rows.push({ id, depth });
-      if (doc.get(id)!.type === 'FRAME' && !collapsed.has(id)) walk(id, depth + 1);
+      if (isContainerType(doc.get(id)!.type) && !collapsed.has(id)) walk(id, depth + 1);
     }
   };
   walk(null, 0);
@@ -105,7 +109,7 @@ export function LayersPanel({ editor }: { editor: Editor }) {
     const row = rows[Math.max(0, i)];
     const n = doc.get(row.id)!;
     const within = y - Math.max(0, i) * ROW_H;
-    if (n.type === 'FRAME' && within > ROW_H * 0.3 && within < ROW_H * 0.7 && !blocked(n.id)) {
+    if (isContainerType(n.type) && within > ROW_H * 0.3 && within < ROW_H * 0.7 && !blocked(n.id)) {
       return { parentId: n.id, index: doc.children(n.id).length, line: -1, into: n.id };
     }
     const sibs = doc.children(n.parentId);
@@ -164,15 +168,15 @@ export function LayersPanel({ editor }: { editor: Editor }) {
     } else if (e.key === 'ArrowRight' && current) {
       handled();
       const n = doc.get(current)!;
-      if (n.type === 'FRAME' && collapsed.has(current)) toggleCollapse(current);
-      else if (n.type === 'FRAME') {
+      if (isContainerType(n.type) && collapsed.has(current)) toggleCollapse(current);
+      else if (isContainerType(n.type)) {
         const kids = doc.children(current);
         if (kids.length) editor.setSelection([kids[kids.length - 1]]);
       }
     } else if (e.key === 'ArrowLeft' && current) {
       handled();
       const n = doc.get(current)!;
-      if (n.type === 'FRAME' && !collapsed.has(current) && doc.children(current).length) toggleCollapse(current);
+      if (isContainerType(n.type) && !collapsed.has(current) && doc.children(current).length) toggleCollapse(current);
       else if (n.parentId) editor.setSelection([n.parentId]);
     } else if (e.key === 'Enter' && current) {
       handled();
@@ -184,8 +188,7 @@ export function LayersPanel({ editor }: { editor: Editor }) {
   };
 
   return (
-    <aside className="layers" aria-label="Layers">
-      <div className="panel-title">Layers</div>
+    <div className="layers-body">
       {rows.length === 0 ? (
         <p className="panel-empty">Draw a frame or shape to see it here. Press F for a frame, R for a rectangle.</p>
       ) : (
@@ -201,7 +204,7 @@ export function LayersPanel({ editor }: { editor: Editor }) {
           {rows.map(({ id, depth }) => {
             const n = doc.get(id)!;
             const selected = editor.selection.includes(id);
-            const isFrame = n.type === 'FRAME';
+            const isFrame = isContainerType(n.type);
             const hasKids = isFrame && doc.children(id).length > 0;
             const open = !collapsed.has(id);
             const parentHidden = !doc.isEffectivelyVisible(id) && n.visible;
@@ -237,7 +240,7 @@ export function LayersPanel({ editor }: { editor: Editor }) {
                 >
                   {open ? <ChevronDown size={12} strokeWidth={1.5} /> : <ChevronRight size={12} strokeWidth={1.5} />}
                 </button>
-                <span className="row-icon">
+                <span className={`row-icon ${n.type === 'COMPONENT' || n.type === 'INSTANCE' ? 'component' : ''}`}>
                   <TypeIcon n={n} />
                 </span>
                 {renaming === id ? (
@@ -299,6 +302,6 @@ export function LayersPanel({ editor }: { editor: Editor }) {
           {drag?.active && drag.drop && drag.drop.line >= 0 && <div className="drop-line" style={{ top: drag.drop.line - 1 }} />}
         </div>
       )}
-    </aside>
+    </div>
   );
 }
