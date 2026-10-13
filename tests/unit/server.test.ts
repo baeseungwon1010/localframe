@@ -117,6 +117,89 @@ describe('files api', () => {
   });
 });
 
+// smallest valid PNG: 1x1 transparent pixel
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+describe('images and pages', () => {
+  it('stores images by hash, serves them back, and refuses SVG and spoofed types', async () => {
+    const f = await (await call('POST', '/api/files', {})).json();
+    const up = await fetch(`${base}/api/files/${f.id}/images`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png', Origin: origin },
+      body: PNG,
+    });
+    expect(up.status).toBe(201);
+    const { id } = await up.json();
+    expect(id).toMatch(/^[0-9a-f]{64}$/);
+    const back = await fetch(`${base}/api/files/${f.id}/images/${id}`);
+    expect(back.headers.get('content-type')).toBe('image/png');
+    expect(Buffer.from(await back.arrayBuffer()).equals(PNG)).toBe(true);
+
+    const svg = await fetch(`${base}/api/files/${f.id}/images`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/svg+xml', Origin: origin },
+      body: '<svg onload="alert(1)"/>',
+    });
+    expect(svg.status).toBe(415);
+    const spoofed = await fetch(`${base}/api/files/${f.id}/images`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png', Origin: origin },
+      body: '<svg onload="alert(1)"/>',
+    });
+    expect(spoofed.status).toBe(415);
+    const noOrigin = await fetch(`${base}/api/files/${f.id}/images`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png' },
+      body: PNG,
+    });
+    expect(noOrigin.status).toBe(403);
+  });
+
+  it('saves pages with changes and carries pages and images through export and import', async () => {
+    const f = await (await call('POST', '/api/files', { name: 'Paged' })).json();
+    const up = await fetch(`${base}/api/files/${f.id}/images`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png', Origin: origin },
+      body: PNG,
+    });
+    const { id: imageId } = await up.json();
+    const pages = [
+      { id: 'page-1', name: 'Page 1', background: '#FFFFFF' },
+      { id: 'p2', name: 'Flows', background: '#101010' },
+    ];
+    const img = { ...rect('r1'), pageId: 'p2', fills: [{ type: 'IMAGE', imageId, scaleMode: 'fill', opacity: 1, visible: true }] };
+    let r = await call('POST', `/api/files/${f.id}/changes`, { baseVersion: 0, upserts: [img], deletes: [], pages });
+    expect(r.status).toBe(200);
+    // a layer on a page that doesn't exist is refused
+    r = await call('POST', `/api/files/${f.id}/changes`, { baseVersion: 1, upserts: [{ ...rect('x'), pageId: 'nope' }], deletes: [] });
+    expect(r.status).toBe(400);
+
+    const exported = await (await call('GET', `/api/files/${f.id}/export`)).json();
+    expect(exported.pages).toHaveLength(2);
+    expect(exported.images).toHaveLength(1);
+    const imported = await (await call('POST', '/api/files/import', exported)).json();
+    expect(imported.pages.map((p: { name: string }) => p.name)).toEqual(['Page 1', 'Flows']);
+    const back = await fetch(`${base}/api/files/${imported.id}/images/${imageId}`);
+    expect(back.status).toBe(200);
+
+    // a damaged image in an import is refused
+    const broken = { ...exported, images: [{ ...exported.images[0], data: Buffer.from('nope').toString('base64') }] };
+    expect((await call('POST', '/api/files/import', broken)).status).toBe(400);
+  });
+
+  it('refuses a component that contains an instance of itself', async () => {
+    const f = await (await call('POST', '/api/files', {})).json();
+    const comp = { ...rect('c1'), type: 'COMPONENT', clipsContent: false };
+    const inst = { ...rect('i1', 'c1'), type: 'INSTANCE', componentId: 'c1', radii: undefined, fills: [] };
+    const r = await call('POST', `/api/files/${f.id}/changes`, { baseVersion: 0, upserts: [comp, inst], deletes: [] });
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toMatch(/instance of itself/);
+  });
+});
+
 describe('import limits', () => {
   it('refuses a deeply nested file quickly instead of stalling the server', async () => {
     const nodes = Array.from({ length: 15_000 }, (_, i) => ({

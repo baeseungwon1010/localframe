@@ -8,6 +8,10 @@ import {
   ChangesSchema,
   CreateFileSchema,
   ExportedFileSchema,
+  IMAGE_TYPES,
+  ImageIdSchema,
+  MAX_IMAGE_BYTES,
+  MAX_IMPORT_BYTES,
   ThumbnailSchema,
   UpdateFileSchema,
 } from '../shared/schema.ts';
@@ -105,6 +109,19 @@ async function readJson<T>(req: IncomingMessage, schema: ZodType<T>, limit: numb
   return result.data;
 }
 
+async function readBytes(req: IncomingMessage, limit: number): Promise<Buffer> {
+  const declared = Number(req.headers['content-length'] ?? 0);
+  if (declared > limit) throw new HttpError(413, 'File is too large');
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > limit) throw new HttpError(413, 'File is too large');
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
 export function createApp(opts: AppOptions) {
   const { store, staticDir } = opts;
   const limit = opts.maxBodyBytes ?? 25 * 1024 * 1024;
@@ -145,7 +162,7 @@ export function createApp(opts: AppOptions) {
 
     if (path.length === 2 && path[1] === 'import') {
       if (method !== 'POST') throw new HttpError(405, 'Method not allowed');
-      const body = await readJson(req, ExportedFileSchema, limit);
+      const body = await readJson(req, ExportedFileSchema, Math.max(limit, MAX_IMPORT_BYTES));
       return send(res, 201, store.importFile(body));
     }
 
@@ -176,12 +193,38 @@ export function createApp(opts: AppOptions) {
       const body = await readJson(req, ChangesSchema, limit);
       if (!store.getMeta(id)) throw new HttpError(404, 'File not found');
       try {
-        const version = store.applyChanges(id, body.baseVersion, body.upserts, body.deletes);
+        const version = store.applyChanges(id, body.baseVersion, body.upserts, body.deletes, body.pages);
         return send(res, 200, { version });
       } catch (err) {
         if (err instanceof ConflictError) return send(res, 409, { error: 'conflict', version: err.version });
         throw err;
       }
+    }
+
+    if (path.length === 3 && path[2] === 'images') {
+      if (method !== 'POST') throw new HttpError(405, 'Method not allowed');
+      const type = (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+      if (!(IMAGE_TYPES as readonly string[]).includes(type)) throw new HttpError(415, 'Images must be PNG, JPEG, WebP or GIF');
+      if (!store.getMeta(id)) throw new HttpError(404, 'File not found');
+      const bytes = await readBytes(req, MAX_IMAGE_BYTES);
+      const saved = store.putImage(id, bytes);
+      if (!saved) throw new HttpError(415, 'That file is not a PNG, JPEG, WebP or GIF image');
+      return send(res, 201, saved);
+    }
+
+    if (path.length === 4 && path[2] === 'images') {
+      if (method !== 'GET') throw new HttpError(405, 'Method not allowed');
+      if (!ImageIdSchema.safeParse(path[3]).success) throw new HttpError(404, 'Image not found');
+      const img = store.getImage(id, path[3]);
+      if (!img) throw new HttpError(404, 'Image not found');
+      res.writeHead(200, {
+        ...SECURITY_HEADERS,
+        'Content-Security-Policy': API_CSP,
+        'Content-Type': img.mime,
+        // content-addressed: the bytes for this URL never change
+        'Cache-Control': 'private, max-age=31536000, immutable',
+      });
+      return res.end(Buffer.from(img.data));
     }
 
     if (path.length === 3 && path[2] === 'thumbnail') {

@@ -1,15 +1,19 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
-  type FileMeta,
-  type SceneNode,
   type ExportedFile,
-  SceneNodeSchema,
-  validateTree,
+  type FileMeta,
+  type Page,
+  type SceneNode,
   EXPORT_FORMAT,
   EXPORT_VERSION,
+  IMAGE_TYPES,
+  PagesSchema,
+  SceneNodeSchema,
+  sniffImage,
+  validateTree,
 } from '../shared/schema.ts';
 
 const MIGRATIONS = [
@@ -29,6 +33,14 @@ const MIGRATIONS = [
      data     text not null check (json_valid(data)),
      primary key (file_id, id)
    );`,
+  `alter table files add column pages text check (pages is null or json_valid(pages));
+   create table images (
+     file_id  text not null references files(id) on delete cascade,
+     id       text not null,
+     mime     text not null,
+     data     blob not null,
+     primary key (file_id, id)
+   );`,
 ];
 
 export class ConflictError extends Error {
@@ -45,17 +57,26 @@ type FileRow = {
   id: string;
   name: string;
   background: string;
+  pages: string | null;
   version: number;
   created_at: string;
   updated_at: string;
   has_thumbnail: number;
 };
 
+export const defaultPages = (background: string): Page[] => [{ id: 'page-1', name: 'Page 1', background }];
+
 function toMeta(r: FileRow): FileMeta {
+  let pages: Page[] = defaultPages(r.background);
+  if (r.pages) {
+    const parsed = PagesSchema.safeParse(JSON.parse(r.pages));
+    if (parsed.success) pages = parsed.data;
+  }
   return {
     id: r.id,
     name: r.name,
-    background: r.background,
+    background: pages[0].background,
+    pages,
     version: r.version,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -64,7 +85,9 @@ function toMeta(r: FileRow): FileMeta {
 }
 
 const now = () => new Date().toISOString();
-const META_COLS = 'id, name, background, version, created_at, updated_at, (thumbnail is not null) as has_thumbnail';
+const META_COLS = 'id, name, background, pages, version, created_at, updated_at, (thumbnail is not null) as has_thumbnail';
+
+export const imageHash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
 export class Store {
   readonly db: DatabaseSync;
@@ -114,21 +137,19 @@ export class Store {
     return row ? toMeta(row) : null;
   }
 
-  createFile(name: string, background = '#F3F3F1'): FileMeta {
+  createFile(name: string, pages: Page[] = defaultPages('#F3F3F1')): FileMeta {
     const id = randomUUID();
     const t = now();
     this.db
-      .prepare('insert into files (id, name, background, version, created_at, updated_at) values (?, ?, ?, 0, ?, ?)')
-      .run(id, name, background, t, t);
+      .prepare('insert into files (id, name, background, pages, version, created_at, updated_at) values (?, ?, ?, ?, 0, ?, ?)')
+      .run(id, name, pages[0].background, JSON.stringify(pages), t, t);
     return this.getMeta(id)!;
   }
 
-  updateFile(id: string, patch: { name?: string; background?: string }): FileMeta | null {
+  updateFile(id: string, patch: { name?: string }): FileMeta | null {
     const meta = this.getMeta(id);
     if (!meta) return null;
-    this.db
-      .prepare('update files set name = ?, background = ?, updated_at = ? where id = ?')
-      .run(patch.name ?? meta.name, patch.background ?? meta.background, now(), id);
+    this.db.prepare('update files set name = ?, updated_at = ? where id = ?').run(patch.name ?? meta.name, now(), id);
     return this.getMeta(id);
   }
 
@@ -141,7 +162,7 @@ export class Store {
     return rows.map((r) => JSON.parse(r.data) as SceneNode);
   }
 
-  applyChanges(fileId: string, baseVersion: number, upserts: SceneNode[], deletes: string[]): number {
+  applyChanges(fileId: string, baseVersion: number, upserts: SceneNode[], deletes: string[], pages?: Page[]): number {
     return this.tx(() => {
       const meta = this.getMeta(fileId);
       if (!meta) throw new InvalidError('file not found');
@@ -152,10 +173,13 @@ export class Store {
         'insert into nodes (file_id, id, data) values (?, ?, ?) on conflict (file_id, id) do update set data = excluded.data',
       );
       for (const n of upserts) put.run(fileId, n.id, JSON.stringify(n));
-      const problem = validateTree(this.getNodes(fileId));
+      const finalPages = pages ?? meta.pages;
+      const problem = validateTree(this.getNodes(fileId), finalPages);
       if (problem) throw new InvalidError(problem);
       const version = meta.version + 1;
-      this.db.prepare('update files set version = ?, updated_at = ? where id = ?').run(version, now(), fileId);
+      this.db
+        .prepare('update files set version = ?, pages = ?, background = ?, updated_at = ? where id = ?')
+        .run(version, JSON.stringify(finalPages), finalPages[0].background, now(), fileId);
       return version;
     });
   }
@@ -171,25 +195,66 @@ export class Store {
     return row?.thumbnail ?? null;
   }
 
+  /** Stores image bytes under their hash. Returns null when the bytes are not a supported image. */
+  putImage(fileId: string, bytes: Uint8Array): { id: string; mime: string } | null {
+    const mime = sniffImage(bytes);
+    if (!mime) return null;
+    const id = imageHash(bytes);
+    this.db
+      .prepare('insert into images (file_id, id, mime, data) values (?, ?, ?, ?) on conflict (file_id, id) do nothing')
+      .run(fileId, id, mime, bytes);
+    return { id, mime };
+  }
+
+  getImage(fileId: string, id: string): { mime: string; data: Uint8Array } | null {
+    const row = this.db.prepare('select mime, data from images where file_id = ? and id = ?').get(fileId, id) as
+      | { mime: string; data: Uint8Array }
+      | undefined;
+    return row ?? null;
+  }
+
   exportFile(id: string): ExportedFile | null {
     const meta = this.getMeta(id);
     if (!meta) return null;
+    const nodes = this.getNodes(id);
+    const used = new Set<string>();
+    for (const n of nodes) {
+      for (const p of n.fills) if (p.type === 'IMAGE') used.add(p.imageId);
+      for (const o of Object.values(n.overrides ?? {})) for (const p of o.fills ?? []) if (p.type === 'IMAGE') used.add(p.imageId);
+    }
+    const images = [...used]
+      .map((imageId) => {
+        const img = this.getImage(id, imageId);
+        return img
+          ? { id: imageId, mime: img.mime as (typeof IMAGE_TYPES)[number], data: Buffer.from(img.data).toString('base64') }
+          : null;
+      })
+      .filter((x) => x !== null);
     return {
       format: EXPORT_FORMAT,
       version: EXPORT_VERSION,
       name: meta.name,
       background: meta.background,
-      nodes: this.getNodes(id),
+      pages: meta.pages,
+      nodes,
+      images,
     };
   }
 
   importFile(data: ExportedFile): FileMeta {
-    const problem = validateTree(data.nodes);
+    const pages = data.pages ?? defaultPages(data.background);
+    const problem = validateTree(data.nodes, pages);
     if (problem) throw new InvalidError(problem);
+    const images = (data.images ?? []).map((img) => {
+      const bytes = Buffer.from(img.data, 'base64');
+      if (imageHash(bytes) !== img.id || sniffImage(bytes) !== img.mime) throw new InvalidError(`image ${img.id.slice(0, 8)} is damaged`);
+      return bytes;
+    });
     return this.tx(() => {
-      const meta = this.createFile(data.name, data.background);
+      const meta = this.createFile(data.name, pages);
       const put = this.db.prepare('insert into nodes (file_id, id, data) values (?, ?, ?)');
       for (const n of data.nodes) put.run(meta.id, n.id, JSON.stringify(SceneNodeSchema.parse(n)));
+      for (const bytes of images) this.putImage(meta.id, bytes);
       if (data.nodes.length > 0) this.db.prepare('update files set version = 1 where id = ?').run(meta.id);
       return this.getMeta(meta.id)!;
     });

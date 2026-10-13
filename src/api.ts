@@ -38,7 +38,7 @@ export const api = {
   listFiles: () => request<FileMeta[]>('GET', '/api/files'),
   createFile: (name?: string) => request<FileMeta>('POST', '/api/files', name ? { name } : {}),
   getFile: (id: string) => request<{ file: FileMeta; nodes: SceneNode[] }>('GET', `/api/files/${encodeURIComponent(id)}`),
-  updateFile: (id: string, patch: { name?: string; background?: string }) =>
+  updateFile: (id: string, patch: { name?: string }) =>
     request<FileMeta>('PATCH', `/api/files/${encodeURIComponent(id)}`, patch),
   deleteFile: (id: string) => request<void>('DELETE', `/api/files/${encodeURIComponent(id)}`),
   saveChanges: (id: string, changes: Changes, keepalive = false) =>
@@ -47,6 +47,17 @@ export const api = {
     request<void>('PUT', `/api/files/${encodeURIComponent(id)}/thumbnail`, { dataUrl }),
   exportFile: (id: string) => request<ExportedFile>('GET', `/api/files/${encodeURIComponent(id)}/export`),
   importFile: (data: unknown) => request<FileMeta>('POST', '/api/files/import', data),
+  uploadImage: async (id: string, file: Blob): Promise<{ id: string; mime: string }> => {
+    const res = await fetch(`/api/files/${encodeURIComponent(id)}/images`, {
+      method: 'POST',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+      credentials: 'same-origin',
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiError(res.status, (data as { error?: string }).error ?? res.statusText, data);
+    return data as { id: string; mime: string };
+  },
   thumbnailUrl: (id: string, updatedAt: string) =>
     `/api/files/${encodeURIComponent(id)}/thumbnail?v=${encodeURIComponent(updatedAt)}`,
 };
