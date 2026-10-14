@@ -174,6 +174,12 @@ const TOOL_TYPE: Partial<Record<Tool, NodeType>> = {
 const CLIP_PREFIX = 'localframe-clipboard:';
 const PENCIL_MAX_POINTS = 4000;
 
+/** A text layer's automatic name: its first line, shortened. */
+function textName(characters: string): string {
+  const line = characters.split('\n').find((l) => l.trim())?.trim() ?? 'Text';
+  return line.length > 40 ? `${line.slice(0, 39)}…` : line;
+}
+
 /** 32-bit FNV-1a as 8 hex digits. */
 function fnv(text: string, seed: number): string {
   let h = seed >>> 0;
@@ -2431,7 +2437,11 @@ export class Editor {
         if (characters.trim() === '') {
           this.drop(id);
           this.selection = [];
-        } else this.put(fitText({ ...n, text: adjustRuns(n.text!, characters) }));
+        } else {
+          // a text layer is named after its text until someone renames it
+          const auto = /^Text \d+$/.test(n.name) || n.name === textName(n.text!.characters);
+          this.put(fitText({ ...n, name: auto ? textName(characters) : n.name, text: adjustRuns(n.text!, characters) }));
+        }
       });
       this.mergeLastTwoIfSameNode(id);
     }

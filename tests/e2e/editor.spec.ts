@@ -43,7 +43,8 @@ test('create a file, draw a diagram, and it survives a reload', async ({ page })
   await page.keyboard.press('Escape');
 
   const tree = page.getByRole('tree', { name: 'Layer tree' });
-  for (const name of ['Frame 1', 'Rectangle 1', 'Ellipse 1', 'Arrow 1', 'Text 1']) {
+  // text layers are named after their text
+  for (const name of ['Frame 1', 'Rectangle 1', 'Ellipse 1', 'Arrow 1', 'Start']) {
     await expect(tree.getByRole('treeitem', { name: new RegExp(`^${name}`) })).toBeVisible();
   }
   // the shapes were drawn inside the frame
@@ -51,7 +52,7 @@ test('create a file, draw a diagram, and it survives a reload', async ({ page })
   await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
 
   await page.reload();
-  await expect(page.getByRole('treeitem', { name: /^Text 1/ })).toBeVisible();
+  await expect(page.getByRole('treeitem', { name: /^Start/ })).toBeVisible();
   await expect(page.getByRole('treeitem', { name: /^Arrow 1/ })).toBeVisible();
   expect(errors).toEqual([]);
 });
@@ -206,14 +207,14 @@ test('canvas text: double-click to edit, Korean input, empty text is removed', a
   await page.mouse.click(...at(300, 300));
   await page.keyboard.type('첫 번째');
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('treeitem', { name: /^Text 1/ })).toBeVisible();
+  await expect(page.getByRole('treeitem', { name: /^첫 번째/ })).toBeVisible();
 
   await page.mouse.dblclick(...at(310, 310));
   const editor = page.getByRole('textbox', { name: 'Text' });
   await expect(editor).toBeVisible();
   await editor.fill('');
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('treeitem', { name: /^Text 1/ })).toHaveCount(0);
+  await expect(page.getByRole('treeitem', { name: /^첫 번째/ })).toHaveCount(0);
 });
 
 test('crop an image and print a vector PDF', async ({ page }) => {
