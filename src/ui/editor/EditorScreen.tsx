@@ -15,6 +15,7 @@ import { PropertiesPanel } from './PropertiesPanel.tsx';
 import { TitleBar } from './TitleBar.tsx';
 import { VersionHistory } from './VersionHistory.tsx';
 import { Presenter } from './Presenter.tsx';
+import { FindReplace } from './FindReplace.tsx';
 import { type CommentStore, CommentPins, CommentsPanel, useComments } from './Comments.tsx';
 
 /** Properties, or the comment list in comment mode. */
@@ -79,6 +80,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   const [exporting, setExporting] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [history, setHistory] = useState(false);
+  const [finding, setFinding] = useState(false);
   const [presenting, setPresenting] = useState<{ start: string | null } | null>(null);
   const present = () => setPresenting({ start: presentFrom(editor) });
   const comments = useComments(fileId);
@@ -234,6 +236,11 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
       if (isTypingTarget(e.target) || e.isComposing) return;
       const mod = e.ctrlKey || e.metaKey;
       if (mod && (e.code === 'KeyC' || e.code === 'KeyX' || e.code === 'KeyV')) return; // handled by clipboard events
+      if (mod && !e.shiftKey && !e.altKey && e.code === 'KeyF') {
+        e.preventDefault();
+        setFinding(true);
+        return;
+      }
       if (mod && e.shiftKey && e.code === 'KeyE') {
         e.preventDefault();
         setExporting(true);
@@ -379,6 +386,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
           beforeExport={flushAll}
         />
       )}
+      {finding && <FindReplace editor={editor} onClose={() => setFinding(false)} />}
       {presenting && <Presenter editor={editor} startId={presenting.start} onClose={() => setPresenting(null)} />}
       {history && (
         <VersionHistory

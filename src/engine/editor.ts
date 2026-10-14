@@ -2080,6 +2080,62 @@ export class Editor {
     this.emit('view', 'tool', 'selection');
   }
 
+  // ------------------------------------------------------- find and replace
+
+  /** Text layers on the page (or inside `within`) whose text contains `query`, with how often. */
+  findText(query: string, opts: { matchCase: boolean; within?: string[] | null }): { id: string; count: number }[] {
+    if (!query) return [];
+    const needle = opts.matchCase ? query : query.toLocaleLowerCase();
+    const page = this.doc.currentPage;
+    const scope = opts.within ? new Set(opts.within.filter((id) => this.doc.has(id)).flatMap((id) => [id, ...this.doc.descendants(id)])) : null;
+    const out: { id: string; count: number }[] = [];
+    // in layer panel order, top to bottom
+    const visit = (parentId: string | null) => {
+      const kids = this.doc.children(parentId);
+      for (let i = kids.length - 1; i >= 0; i--) {
+        const n = this.doc.get(kids[i])!;
+        if (parentId === null && this.doc.pageOf(n.id) !== page) continue;
+        if (n.type === 'TEXT' && n.text && (!scope || scope.has(n.id))) {
+          const hay = opts.matchCase ? n.text.characters : n.text.characters.toLocaleLowerCase();
+          let count = 0;
+          for (let at = hay.indexOf(needle); at >= 0; at = hay.indexOf(needle, at + needle.length)) count++;
+          if (count) out.push({ id: n.id, count });
+        }
+        // instance content follows its component; it is edited there
+        if (n.type !== 'INSTANCE') visit(n.id);
+      }
+    };
+    visit(null);
+    return out;
+  }
+
+  /** Replaces every match in one undo step. Styled parts of the text keep their style. Returns how many. */
+  replaceText(query: string, replacement: string, opts: { matchCase: boolean; within?: string[] | null }): number {
+    const found = this.findText(query, opts).filter((f) => !this.doc.isEffectivelyLocked(f.id));
+    if (!found.length) return 0;
+    let total = 0;
+    this.transact(() => {
+      for (const { id } of found) {
+        const n = this.doc.get(id)!;
+        let t = n.text!;
+        const hay = opts.matchCase ? t.characters : t.characters.toLocaleLowerCase();
+        const needle = opts.matchCase ? query : query.toLocaleLowerCase();
+        const starts: number[] = [];
+        for (let at = hay.indexOf(needle); at >= 0; at = hay.indexOf(needle, at + needle.length)) starts.push(at);
+        // back to front, so earlier positions stay valid; one edit at a time keeps styled runs in place
+        for (const at of starts.reverse()) {
+          const next = t.characters.slice(0, at) + replacement + t.characters.slice(at + query.length);
+          if (next.length > 100_000) break;
+          t = adjustRuns(t, next);
+          total++;
+        }
+        this.put(fitText({ ...n, text: t }));
+      }
+    });
+    this.emit('view');
+    return total;
+  }
+
   private pendingTextCreate: string | null = null;
 
   /** A text layer created and typed into is one undo step, not two. */

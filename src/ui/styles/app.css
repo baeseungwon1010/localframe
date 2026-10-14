@@ -1912,3 +1912,36 @@ button:disabled {
   font: inherit;
   outline: none;
 }
+
+/* ---------------------------------------------------------- find and replace */
+
+.find-panel {
+  position: fixed;
+  top: calc(var(--titlebar-h) + var(--space-4));
+  right: calc(var(--props-w) + var(--space-4));
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 280px;
+  padding: var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-popover);
+}
+
+.find-head {
+  display: flex;
+  align-items: center;
+}
+
+.find-title {
+  flex: 1;
+  font-weight: 600;
+}
+
+.find-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+}
