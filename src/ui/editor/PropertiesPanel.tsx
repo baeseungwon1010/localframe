@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { type Constraints, type Layout, type LayoutChild, type Paint, type SceneNode, type TextStyle, BLEND_MODES } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
-import { type ExportFormat, exportBounds, exportImage, exportPdf, exportSvg } from '../../engine/export.ts';
+import { type ExportFormat, exportBounds, exportImage, exportPdf, exportSvg, exportTargetFor } from '../../engine/export.ts';
 import { printSvgPages } from '../print.ts';
 import { PrototypePanel } from './PrototypePanel.tsx';
 import { exportLayers } from '../layerExport.ts';
@@ -915,7 +915,14 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
     setBusy(true);
     setMessage(null);
     try {
-      const out = await exportLayers(editor.doc, withSettings, (n) => (n.parentId === null && !n.fills.length ? editor.background : null), props.name);
+      const out = await exportLayers(
+        editor.doc,
+        withSettings,
+        (n) => (n.parentId === null && !n.fills.length ? editor.background : null),
+        props.name,
+        undefined,
+        () => editor.background,
+      );
       if (!out) throw new Error('Nothing to export');
       downloadBlob(out.blob, out.filename);
       setMessage(`Exported ${out.filename}`);
@@ -991,12 +998,13 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
     setBusy(true);
     setMessage(null);
     try {
-      const target = { ids, background: props.pageBackground ? editor.background : null };
+      const bg = props.pageBackground ? editor.background : null;
+      const target = single?.slice ? exportTargetFor(editor.doc, single, bg, editor.background) : { ids, background: bg };
       const base = safeFileName(props.name);
       const suffix = scale === 1 ? '' : `@${scale}x`;
       let filename: string;
       if (format === 'print') {
-        const b = exportBounds(editor.doc, ids);
+        const b = target.clip ?? exportBounds(editor.doc, ids);
         if (!b) throw new Error('Nothing to export');
         const bg = target.background ?? editor.background;
         await printSvgPages([{ svg: await exportSvg(editor.doc, { ...target, background: bg }), width: b.width, height: b.height }], props.name);

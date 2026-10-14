@@ -399,6 +399,18 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
 
   if (editor.prototypeView) drawPrototype(ctx, editor, c);
 
+  // slices: dashed outlines (they are never drawn in the design or exports)
+  ctx.save();
+  ctx.setLineDash([4, 3]);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = c.textMuted;
+  for (const n of doc.all()) {
+    if (!n.slice || !n.visible || doc.pageOf(n.id) !== doc.currentPage) continue;
+    outlinePath(ctx, n, multiply(view, doc.world(n.id)));
+    ctx.stroke();
+  }
+  ctx.restore();
+
   // Alt: distances from the selection
   const measures = editor.measurements();
   if (measures.length) {

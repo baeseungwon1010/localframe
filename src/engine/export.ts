@@ -9,7 +9,19 @@ import { arrowSize, capOf, clampRadii, gradientRaster, imageFilter, drawNode, ef
 import { fontStack, layoutText, lineOffset } from './text.ts';
 import { svgPathData } from './vector.ts';
 
-export type ExportTarget = { ids: string[]; background: string | null };
+/** What to export: these layers on this background, cut to `clip` (a slice's area) when given. */
+export type ExportTarget = { ids: string[]; background: string | null; clip?: Rect };
+
+/** The export target for a layer: a slice exports everything on its page under its area. */
+export function exportTargetFor(doc: SceneDoc, node: SceneNode, background: string | null, pageBackground: string): ExportTarget {
+  if (!node.slice) return { ids: [node.id], background };
+  const page = doc.pageOf(node.id);
+  const ids = doc.pageChildren(page).filter((id) => {
+    const n = doc.get(id)!;
+    return n.visible && !n.slice;
+  });
+  return { ids, background: pageBackground, clip: doc.worldBounds(node.id) };
+}
 export type RasterFormat = 'png' | 'jpg' | 'webp';
 export type ExportFormat = RasterFormat | 'svg' | 'pdf';
 
@@ -58,7 +70,7 @@ const MAX_PIXELS = 16384 * 16384;
 
 /** Draws the target into a new canvas at `scale` (lowered if the result would be too large). */
 export async function renderCanvas(doc: SceneDoc, target: ExportTarget, scale: number, background: string | null = target.background) {
-  const b = exportBounds(doc, target.ids);
+  const b = target.clip ?? exportBounds(doc, target.ids);
   if (!b) throw new Error('Nothing to export');
   await ensureImages(imagesUsed(doc, target.ids));
   let s = scale;
@@ -513,7 +525,7 @@ class SvgWriter {
   }
 
   node(doc: SceneDoc, n: SceneNode, depth = 0): string {
-    if (!n.visible) return '';
+    if (!n.visible || n.slice) return '';
     if (++this.elements > SVG_MAX_ELEMENTS) throw new Error('This selection is too large to export as SVG. Try PNG or PDF.');
     const m = localMatrix(n.x, n.y, n.rotation);
     // blend mode names come from a fixed list (schema), so they are safe in the attribute
@@ -558,7 +570,7 @@ class SvgWriter {
 
 /** SVG markup with the given assets (images as URLs). Text runs are returned for font embedding. */
 export function svgMarkup(doc: SceneDoc, target: ExportTarget, assets: SvgAssets = { images: new Map() }, fontCss = '') {
-  const b = exportBounds(doc, target.ids);
+  const b = target.clip ?? exportBounds(doc, target.ids);
   if (!b) throw new Error('Nothing to export');
   const w = new SvgWriter(doc, assets);
   const parts: string[] = [];

@@ -462,6 +462,8 @@ export const SceneNodeSchema = z
     fixedOnScroll: z.boolean().optional(),
     /** A main component copied from another file (a library): where from, and which version. */
     libraryRef: z.object({ fileId: id, componentId: id, version: z.string().max(64) }).strict().optional(),
+    /** A frame used as a slice: never drawn, holds nothing, exports the area under it. */
+    slice: z.boolean().optional(),
     /** A frame used as a section: a labelled area on the page that holds frames. Top level only. */
     section: z.boolean().optional(),
     /** A vector drawn as a polygon or star: its points are rebuilt from these when it changes size. */
@@ -525,6 +527,7 @@ export const SceneNodeSchema = z
     if (n.type !== 'LINE' && (n.elbow !== undefined || n.route)) issue('only LINE has elbows');
     if (n.type !== 'VECTOR' && n.shape) issue('only VECTOR has a shape');
     if (n.type !== 'COMPONENT' && n.libraryRef) issue('only components come from libraries');
+    if (n.slice && n.type !== 'FRAME') issue('a slice is a frame');
     if (n.section && (n.type !== 'FRAME' || n.parentId !== null)) issue('a section is a frame on the page itself');
     if ((n.type === 'INSTANCE') !== (n.componentId !== undefined)) issue('INSTANCE needs componentId');
     if (n.type !== 'INSTANCE' && n.overrides) issue('only INSTANCE has overrides');
@@ -738,6 +741,7 @@ export function validateTree(nodes: Iterable<SceneNode>, pages?: Page[]): string
         break;
       }
       const parent = byId.get(cur.parentId);
+      if (parent?.slice) return `slice ${parent.id} can't hold layers`;
       if (!parent) return `node ${cur.id} has a missing parent`;
       if (!isContainerType(parent.type)) return `node ${cur.id} is inside a ${parent.type.toLowerCase()}`;
       if (parent.type === 'COMPONENT_SET' && cur.type !== 'COMPONENT') return `a component set can only hold components`;

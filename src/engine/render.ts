@@ -903,7 +903,7 @@ function drawWithEffects(ctx: Ctx, doc: SceneDoc, n: SceneNode, effects: Effect[
 }
 
 export function drawNode(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions = {}) {
-  if (!n.visible || opts.skip?.has(n.id) || culled(doc, n, opts.cull)) return;
+  if (!n.visible || n.slice || opts.skip?.has(n.id) || culled(doc, n, opts.cull)) return;
   if (opts.depth && opts.budget && opts.budget.left-- <= 0) return;
   const root = opts.root ?? doc;
   ctx.save();

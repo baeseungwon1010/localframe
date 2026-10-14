@@ -33,7 +33,7 @@ function collectItems(doc: SceneDoc, pages: { id: string; name: string; backgrou
       .pageChildren(page.id)
       .flatMap((id) => (doc.get(id)!.section ? doc.children(id) : [id]))
       .map((id) => doc.get(id)!)
-      .filter((n) => n.visible);
+      .filter((n) => n.visible && !n.slice);
     if (top.length === 0) continue;
     const isFrame = (n: SceneNode) => n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'INSTANCE';
     for (const f of top.filter(isFrame)) items.push({ page: page.name, name: f.name, target: { ids: [f.id], background: null } });
@@ -93,6 +93,7 @@ export async function exportWholeFile(fileId: string, format: FileExportFormat, 
         (n) => (n.parentId === null && !n.fills.length ? (pageOf(n)?.background ?? null) : null),
         `${base}-export`,
         file.pages.length > 1 ? (n) => safeFileName(pageOf(n)?.name ?? 'Page', 'Page') : undefined,
+        (n) => pageOf(n)?.background ?? '#FFFFFF',
       );
       if (!out) throw new Error('No layer in this file has export settings. Add them in the Export section.');
       return out;

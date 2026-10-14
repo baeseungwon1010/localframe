@@ -8,6 +8,13 @@ import { linePoints } from './geometry.ts';
 export function hitsShape(doc: SceneDoc, n: SceneNode, p: Point, tolerance: number): boolean {
   if (n.type === 'GROUP' || n.type === 'BOOLEAN') return false; // hit through their children
   const local = apply(invert(doc.world(n.id)), p);
+  if (n.slice) {
+    // a slice is picked by its edge, so what lies under it stays clickable
+    const t = tolerance * 2;
+    const inside = local.x >= -t && local.y >= -t && local.x <= n.width + t && local.y <= n.height + t;
+    const edge = Math.min(Math.abs(local.x), Math.abs(local.y), Math.abs(n.width - local.x), Math.abs(n.height - local.y)) <= t;
+    return inside && edge;
+  }
   if (n.type === 'VECTOR' && n.vector) return hitsVector(n, local, tolerance);
   if (n.type === 'LINE') {
     const pts = linePoints(n);
@@ -84,7 +91,7 @@ export function frameAt(doc: SceneDoc, p: Point, exclude: Set<string> = new Set(
     const kids = doc.children(parentId);
     for (let i = kids.length - 1; i >= 0; i--) {
       const n = doc.get(kids[i])!;
-      if (!isFrameLike(n.type) || !n.visible || n.locked || exclude.has(n.id)) continue;
+      if (!isFrameLike(n.type) || !n.visible || n.locked || n.slice || exclude.has(n.id)) continue;
       if (!insideBox(doc, n, p)) continue;
       return visit(n.id) ?? n.id;
     }

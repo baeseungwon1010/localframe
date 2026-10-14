@@ -77,7 +77,7 @@ import { fitVector, outlineVector, scaleVector, shapeVector, simplifyPoints, smo
 
 export { fitText };
 
-export type Tool = 'move' | 'hand' | 'frame' | 'section' | 'pencil' | 'rect' | 'ellipse' | 'polygon' | 'star' | 'line' | 'arrow' | 'text' | 'pen' | 'comment';
+export type Tool = 'move' | 'hand' | 'frame' | 'section' | 'slice' | 'pencil' | 'rect' | 'ellipse' | 'polygon' | 'star' | 'line' | 'arrow' | 'text' | 'pen' | 'comment';
 
 /** Where a new comment goes: on the page, and inside the layer under it if there is one. */
 export type CommentSpot = { x: number; y: number; nodeId?: string; offset?: Point };
@@ -164,6 +164,7 @@ const TOOL_TYPE: Partial<Record<Tool, NodeType>> = {
   line: 'LINE',
   arrow: 'LINE',
   section: 'FRAME',
+  slice: 'FRAME',
   polygon: 'VECTOR',
   star: 'VECTOR',
   text: 'TEXT',
@@ -955,7 +956,7 @@ export class Editor {
       .children(null)
       .flatMap((id) => (this.doc.get(id)!.section ? this.doc.children(id) : [id]))
       .map((id) => this.doc.get(id)!)
-      .filter((n) => n.visible && !n.section && (n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'INSTANCE'));
+      .filter((n) => n.visible && !n.section && !n.slice && (n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'INSTANCE'));
     return frames.sort((a, b) => (Math.abs(a.y - b.y) > Math.min(a.height, b.height) / 2 ? a.y - b.y : a.x - b.x));
   }
 
@@ -3587,6 +3588,9 @@ export class Editor {
 
   /** A new vector set up as a polygon or star, or a new frame as a section, for those tools. */
   private asShape(node: SceneNode, tool: Tool): SceneNode {
+    if (tool === 'slice') {
+      return { ...node, name: nextName(this.doc, 'Slice'), slice: true, fills: [], strokes: [], radii: [0, 0, 0, 0], clipsContent: false };
+    }
     if (tool === 'section') {
       return {
         ...node,
@@ -3855,6 +3859,9 @@ export class Editor {
         return true;
       case 'KeyH':
         this.setTool('hand');
+        return true;
+      case 'KeyS':
+        this.setTool('slice');
         return true;
       case 'KeyC':
         this.setTool('comment');
