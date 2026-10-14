@@ -134,6 +134,8 @@ type Interaction =
   | { kind: 'marquee'; start: Point; current: Point; scope: string | null; base: string[]; shift: boolean }
   | { kind: 'resize'; start: Point; handle: Handle; originals: Map<string, SceneNode>; ids: string[]; bounds: Rect }
   | { kind: 'rotate'; start: Point; id: string; original: SceneNode; center: Point }
+  | { kind: 'rotate-many'; start: Point; ids: string[]; originals: Map<string, SceneNode>; center: Point }
+  | { kind: 'guide'; axis: 'x' | 'y'; index: number | null }
   | { kind: 'line-end'; id: string; end: 0 | 1; original: SceneNode }
   | { kind: 'create'; tool: Tool; start: Point; startScreen: Point; nodeId: string | null; parentId: string | null }
   | { kind: 'pen-handle' }
@@ -177,6 +179,29 @@ function treeDepth(roots: string[], nodes: SceneNode[]): number {
 }
 
 const MAX_SIZE = 1e7;
+/** Width of the rulers, in screen pixels. */
+export const RULER = 20;
+
+/** Thin rectangles along a frame's layout grid lines (for snapping and drawing). */
+export function gridRects(n: SceneNode, b: Rect): Rect[] {
+  const out: Rect[] = [];
+  for (const g of n.grids ?? []) {
+    if (!g.visible) continue;
+    if (g.type === 'grid') {
+      for (let x = b.x; x <= b.x + b.width + 0.01 && out.length < 2000; x += g.size) out.push({ x, y: b.y, width: 0, height: b.height });
+      for (let y = b.y; y <= b.y + b.height + 0.01 && out.length < 4000; y += g.size) out.push({ x: b.x, y, width: b.width, height: 0 });
+      continue;
+    }
+    const along = g.type === 'columns' ? b.width : b.height;
+    const cell = (along - g.margin * 2 - g.gutter * (g.count - 1)) / g.count;
+    if (cell <= 0) continue;
+    for (let i = 0; i < g.count; i++) {
+      const start = g.margin + i * (cell + g.gutter);
+      out.push(g.type === 'columns' ? { x: b.x + start, y: b.y, width: cell, height: b.height } : { x: b.x, y: b.y + start, width: b.width, height: cell });
+    }
+  }
+  return out;
+}
 
 /**
  * Keeps derived geometry inside the range the file format accepts. Layout, constraints and
@@ -216,6 +241,10 @@ export class Editor {
   /** Vector layer whose points are being edited, and the selected point. */
   editingVector: string | null = null;
   vectorPoint: number | null = null;
+  showGrids = true;
+  showRulers = false;
+  /** A guide being dragged (from a ruler, or an existing one): its axis and position. */
+  guideDrag: { axis: 'x' | 'y'; pos: number; index: number | null; remove: boolean } | null = null;
   /** A layer inside an instance being edited (as overrides), shown with its own outline. */
   inner: { instanceId: string; sourceId: string } | null = null;
   sizeBadge: { text: string; at: Point } | null = null;
@@ -1953,9 +1982,9 @@ export class Editor {
     for (const { handle, at } of handles) {
       if (Math.hypot(at.x - sx, at.y - sy) <= HANDLE_HIT) return handle;
     }
-    // rotation zones just outside the corners (single, non-line node)
+    // rotation zones just outside the corners (not for a single line)
     const sel = this.selectedNodes();
-    if (sel.length === 1 && sel[0].type !== 'LINE') {
+    if (sel.length > 1 || (sel.length === 1 && sel[0].type !== 'LINE')) {
       const { m, w, h } = this.selectionFrame();
       const center = apply(m, { x: w / 2, y: h / 2 });
       for (const corner of ['nw', 'ne', 'se', 'sw'] as Handle[]) {
@@ -2025,6 +2054,13 @@ export class Editor {
     // move tool
     const handle = this.handleAt(e.sx, e.sy);
     if (handle) return this.startHandleDrag(handle, p);
+    const g = this.guideAt(e.sx, e.sy);
+    if (g !== null) {
+      const guide = (this.currentPage.guides ?? [])[g];
+      this.interaction = { kind: 'guide', axis: guide.axis, index: g };
+      this.guideDrag = { axis: guide.axis, pos: guide.pos, index: g, remove: false };
+      return;
+    }
 
     const label = this.frameLabelAt(e.sx, e.sy);
     const deepest = label ?? hitDeepest(this.doc, p, this.hitTolerance());
@@ -2083,6 +2119,11 @@ export class Editor {
       const loose: SceneNode = handle.end === 0 ? { ...sel[0], startBind: undefined } : { ...sel[0], endBind: undefined };
       this.put(loose);
       this.interaction = { kind: 'line-end', id: sel[0].id, end: handle.end, original: loose };
+    } else if (handle.kind === 'rotate' && sel.length > 1) {
+      const ids = this.selectionRoots();
+      const b = this.selectionBounds()!;
+      const center = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+      this.interaction = { kind: 'rotate-many', start: p, ids, originals: new Map(ids.map((id) => [id, this.doc.get(id)!])), center };
     } else if (handle.kind === 'rotate') {
       const n = sel[0];
       const center = apply(this.doc.world(n.id), { x: n.width / 2, y: n.height / 2 });
@@ -2178,6 +2219,24 @@ export class Editor {
         this.emit('doc', 'view');
         return;
       }
+      case 'rotate-many': {
+        const a0 = Math.atan2(it.start.y - it.center.y, it.start.x - it.center.x);
+        const a1 = Math.atan2(p.y - it.center.y, p.x - it.center.x);
+        let delta = (a1 - a0) / DEG;
+        if (e.shift) delta = Math.round(delta / 15) * 15;
+        this.rotateMany(it, delta);
+        this.settle();
+        this.sizeBadge = { text: `${Math.round(delta)}°`, at: { x: e.sx + 16, y: e.sy + 16 } };
+        this.emit('doc', 'view');
+        return;
+      }
+      case 'guide': {
+        const w = this.toWorld(e.sx, e.sy);
+        const remove = it.axis === 'x' ? e.sx < RULER : e.sy < RULER;
+        this.guideDrag = { axis: it.axis, pos: round2(it.axis === 'x' ? w.x : w.y), index: it.index, remove };
+        this.emit('view');
+        return;
+      }
       case 'line-end': {
         const n = it.original;
         const toParent = invert(this.doc.parentWorld(n));
@@ -2241,7 +2300,11 @@ export class Editor {
       }
       case 'resize':
       case 'rotate':
+      case 'rotate-many':
         this.end();
+        break;
+      case 'guide':
+        this.finishGuide();
         break;
       case 'create':
         this.finishCreate(it, e);
@@ -2260,6 +2323,7 @@ export class Editor {
     this.sizeBadge = null;
     this.dropTarget = undefined;
     this.bindTarget = null;
+    this.guideDrag = null;
     if (this.tx) this.abort();
     this.emit('view');
     return true;
@@ -2461,6 +2525,118 @@ export class Editor {
     this.emit('view');
   }
 
+  // ---------------------------------------------------------------- rotate
+
+  /** Turns several layers together about the centre of the selection. */
+  private rotateMany(it: Extract<Interaction, { kind: 'rotate-many' }>, delta: number) {
+    const turn = localMatrix(0, 0, delta);
+    const around = (q: Point) => {
+      const v = apply(turn, { x: q.x - it.center.x, y: q.y - it.center.y });
+      return { x: v.x + it.center.x, y: v.y + it.center.y };
+    };
+    for (const id of it.ids) {
+      const o = it.originals.get(id)!;
+      const pw = this.doc.parentWorld(o);
+      const toParent = invert(pw);
+      if (o.type === 'LINE') {
+        const [a, b] = lineEnds(o).map((q) => apply(pw, q));
+        this.put(lineFromEnds(o, apply(toParent, around(a)), apply(toParent, around(b))));
+        continue;
+      }
+      const c0 = apply(multiply(pw, localMatrix(o.x, o.y, o.rotation)), { x: o.width / 2, y: o.height / 2 });
+      const c1 = around(c0);
+      const spun = rotateAboutCenter(o, o.rotation + delta);
+      const d = applyVector(toParent, { x: c1.x - c0.x, y: c1.y - c0.y });
+      this.put({ ...spun, x: round2(spun.x + d.x), y: round2(spun.y + d.y) });
+    }
+  }
+
+  // ---------------------------------------------------------- guides, grids
+
+  toggleGrids() {
+    this.showGrids = !this.showGrids;
+    this.emit('view', 'tool');
+  }
+
+  toggleRulers() {
+    this.showRulers = !this.showRulers;
+    this.emit('view', 'tool');
+  }
+
+  private guideAt(sx: number, sy: number): number | null {
+    const guides = this.currentPage.guides ?? [];
+    for (let i = guides.length - 1; i >= 0; i--) {
+      const g = guides[i];
+      const s = this.toScreen(g.axis === 'x' ? { x: g.pos, y: 0 } : { x: 0, y: g.pos });
+      if (g.axis === 'x' ? Math.abs(s.x - sx) <= 3 : Math.abs(s.y - sy) <= 3) return i;
+    }
+    return null;
+  }
+
+  /** A guide dragged out of a ruler (the UI calls this on pointer down over a ruler). */
+  startGuideFromRuler(axis: 'x' | 'y') {
+    this.interaction = { kind: 'guide', axis, index: null };
+    this.guideDrag = { axis, pos: 0, index: null, remove: true };
+    this.emit('view');
+  }
+
+  private finishGuide() {
+    const drag = this.guideDrag;
+    this.guideDrag = null;
+    if (!drag) return;
+    const page = this.currentPage;
+    const list = [...(page.guides ?? [])];
+    if (drag.index !== null) list.splice(drag.index, 1);
+    if (!drag.remove) list.push({ axis: drag.axis, pos: drag.pos });
+    if (list.length > 200) return;
+    this.transact(() => this.setFileState({ pages: this.pages.map((p) => (p.id === page.id ? { ...p, guides: list } : p)) }));
+  }
+
+  clearGuides() {
+    const page = this.currentPage;
+    this.transact(() => this.setFileState({ pages: this.pages.map((p) => (p.id === page.id ? { ...p, guides: [] } : p)) }));
+  }
+
+  // ---------------------------------------------------------- presets, names
+
+  /** A frame of a preset size, placed to the right of what is on the page (or in the view). */
+  createFramePreset(width: number, height: number, name: string) {
+    const content = this.contentBounds();
+    const at = content ? { x: content.x + content.width + 80, y: content.y } : this.toWorld(this.viewSize.width / 2 - width / 2, this.viewSize.height / 2 - height / 2);
+    this.transact(() => {
+      const f = { ...createNode(this.doc, 'FRAME', null, { x: round2(at.x), y: round2(at.y), width, height }), name: name.slice(0, 500) };
+      this.put(f);
+      this.selection = [f.id];
+    });
+    this.setTool('move');
+    this.zoomToSelection();
+    this.emit('selection');
+  }
+
+  /**
+   * Renames several layers at once. `pattern` may use $& (the current name) and $n (a number counting
+   * from `start`, in layer order); find/replace changes part of each name.
+   */
+  bulkRename(ids: string[], opts: { pattern?: string; find?: string; replace?: string; start?: number }) {
+    const ordered = [...ids];
+    let n = opts.start ?? 1;
+    this.transact(() => {
+      for (const id of ordered) {
+        const node = this.doc.get(id);
+        if (!node) continue;
+        let name = node.name;
+        if (opts.find) name = name.split(opts.find).join(opts.replace ?? '');
+        if (opts.pattern) name = opts.pattern.replace(/\$&/g, name).replace(/\$n/g, String(n));
+        n++;
+        name = name.trim().slice(0, 500);
+        if (name && name !== node.name) this.put({ ...node, name });
+      }
+    });
+  }
+
+  /** Asks the UI to open the rename dialog (Ctrl/Cmd+R). */
+  onRequestRename: (() => void) | null = null;
+
   // ---------------------------------------------------------------- move
 
   private startMove(start: Point) {
@@ -2502,6 +2678,19 @@ export class Editor {
       }
     };
     walk(null);
+    // page guides
+    for (const g of this.currentPage.guides ?? []) {
+      out.push(g.axis === 'x' ? { x: g.pos, y: view.y, width: 0, height: view.height } : { x: view.x, y: g.pos, width: view.width, height: 0 });
+    }
+    // layout grid columns and rows of visible frames
+    if (this.showGrids) {
+      for (const n of this.doc.all()) {
+        if (!n.grids?.length || !n.visible || n.rotation !== 0 || this.doc.pageOf(n.id) !== this.doc.currentPage) continue;
+        const b = this.doc.worldBounds(n.id);
+        if (!rectsIntersect(b, view)) continue;
+        for (const r of gridRects(n, b)) out.push(r);
+      }
+    }
     return out;
   }
 
@@ -2580,7 +2769,22 @@ export class Editor {
 
   // -------------------------------------------------------------- resize
 
-  private updateResize(it: Extract<Interaction, { kind: 'resize' }>, p: Point, e: PointerInput) {
+  private updateResize(it: Extract<Interaction, { kind: 'resize' }>, p0: Point, e: PointerInput) {
+    let p = p0;
+    // snap the dragged edges (axis-aligned layers) to other layers, guides and grids
+    const one = it.ids.length === 1 ? it.originals.get(it.ids[0])! : null;
+    if (!e.alt && (it.ids.length > 1 || (one && this.doc.world(one.id)[1] === 0 && this.doc.world(one.id)[2] === 0))) {
+      const exclude = new Set<string>();
+      for (const id of it.ids) {
+        exclude.add(id);
+        for (const d of this.doc.descendants(id)) exclude.add(d);
+      }
+      const snap = snapRect({ x: p.x, y: p.y, width: 0, height: 0 }, this.snapCandidates(exclude), 6 / this.viewport.zoom);
+      const mx = it.handle.includes('e') || it.handle.includes('w');
+      const my = it.handle.startsWith('n') || it.handle.startsWith('s');
+      p = { x: p.x + (mx ? snap.dx : 0), y: p.y + (my ? snap.dy : 0) };
+      this.guides = snap.guides.filter((g) => (g.axis === 'x' ? mx : my));
+    } else this.guides = [];
     const delta = { x: p.x - it.start.x, y: p.y - it.start.y };
     const opts = { keepAspect: e.shift, fromCenter: e.alt };
     if (it.ids.length === 1) {
@@ -2859,6 +3063,18 @@ export class Editor {
             return true;
           }
           return false;
+        case 'Digit4':
+          if (shift) {
+            this.toggleGrids();
+            return true;
+          }
+          return false;
+        case 'KeyR':
+          if (this.selection.length && this.onRequestRename) {
+            this.onRequestRename();
+            return true;
+          }
+          return false;
         case 'KeyM':
           if (alt) {
             this.useAsMask();
@@ -2909,6 +3125,7 @@ export class Editor {
       if (code === 'Digit2') return this.zoomToSelection(), true;
       if (code === 'Digit0') return this.zoomTo(1), true;
       if (code === 'KeyL') return this.setTool('arrow'), true;
+      if (code === 'KeyR') return this.toggleRulers(), true;
       if (code === 'KeyA') {
         if (this.selection.length === 0) return false;
         this.addAutoLayout();
@@ -3006,6 +3223,10 @@ export class Editor {
     if (this.spaceDown || this.tool === 'hand') return 'grab';
     if (this.tool === 'text') return 'text';
     if (this.tool !== 'move') return 'crosshair';
+    if (it === 'guide' || this.guideAt(sx, sy) !== null) {
+      const axis = this.guideDrag?.axis ?? (this.currentPage.guides ?? [])[this.guideAt(sx, sy) ?? 0]?.axis;
+      return axis === 'x' ? 'col-resize' : 'row-resize';
+    }
     const h = this.handleAt(sx, sy);
     if (!h) return 'default';
     if (h.kind === 'line-end') return 'crosshair';
