@@ -763,24 +763,45 @@ function noiseTile(color: string): HTMLCanvasElement | null {
   return c;
 }
 
-/** The layer drawn in bands whose blur grows from `start` to `end` along the direction. */
-function drawProgressive(ctx: Ctx, layer: { canvas: HTMLCanvasElement | OffscreenCanvas; x: number; y: number }, e: ProgressiveBlur, s: number) {
+/**
+ * The layer with a blur that grows from `start` to `end` along the direction: each step is a more
+ * blurred copy faded in over the previous one with a gradient mask, so there are no hard bands.
+ * `pad` is the room around the layer's own box in the offscreen layer (device px).
+ */
+function drawProgressive(ctx: Ctx, layer: { canvas: HTMLCanvasElement | OffscreenCanvas; x: number; y: number }, e: ProgressiveBlur, s: number, pad: number) {
   const STEPS = 8;
   const w = layer.canvas.width;
   const h = layer.canvas.height;
   const vertical = e.direction === 'down' || e.direction === 'up';
-  for (let i = 0; i < STEPS; i++) {
-    const t = i / (STEPS - 1);
-    const k = e.direction === 'down' || e.direction === 'right' ? t : 1 - t;
-    const radius = e.start + (e.end - e.start) * k;
-    ctx.save();
-    ctx.beginPath();
-    if (vertical) ctx.rect(layer.x, layer.y + (h * i) / STEPS, w, h / STEPS + 1);
-    else ctx.rect(layer.x + (w * i) / STEPS, layer.y, w / STEPS + 1, h);
-    ctx.clip();
-    ctx.filter = radius > 0 ? `blur(${radius * s * 0.5}px)` : 'none';
-    ctx.drawImage(layer.canvas as CanvasImageSource, layer.x, layer.y);
-    ctx.restore();
+  const forward = e.direction === 'down' || e.direction === 'right';
+  const len = Math.max(1, (vertical ? h : w) - pad * 2);
+  const at = (k: number) => pad + len * (forward ? k : 1 - k);
+  const radius = (k: number) => e.start + (e.end - e.start) * k;
+  const blur = (r: number) => (r > 0 ? `blur(${r * s * 0.5}px)` : 'none');
+  ctx.filter = blur(radius(0));
+  ctx.drawImage(layer.canvas as CanvasImageSource, layer.x, layer.y);
+  ctx.filter = 'none';
+  const tmp = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : null;
+  const tg = tmp?.getContext('2d');
+  if (!tmp || !tg) return;
+  for (let i = 1; i < STEPS; i++) {
+    const k0 = (i - 1) / (STEPS - 1);
+    const k1 = i / (STEPS - 1);
+    tg.globalCompositeOperation = 'source-over';
+    tg.clearRect(0, 0, w, h);
+    tg.filter = blur(radius(k1));
+    tg.drawImage(layer.canvas as CanvasImageSource, 0, 0);
+    tg.filter = 'none';
+    // keep this step only from where the previous one ends, fading in
+    const p0 = at(k0);
+    const p1 = at(k1);
+    const g = vertical ? tg.createLinearGradient(0, p0, 0, p1) : tg.createLinearGradient(p0, 0, p1, 0);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,1)');
+    tg.globalCompositeOperation = 'destination-in';
+    tg.fillStyle = g;
+    tg.fillRect(0, 0, w, h);
+    ctx.drawImage(tmp, layer.x, layer.y);
   }
 }
 
@@ -860,7 +881,7 @@ function drawWithEffects(ctx: Ctx, doc: SceneDoc, n: SceneNode, effects: Effect[
   }
   if (layerBlur && layerBlur.type === 'LAYER_BLUR' && layerBlur.radius > 0) ctx.filter = `blur(${layerBlur.radius * s * 0.5}px)`;
   if (progressive && (progressive.start > 0 || progressive.end > 0)) {
-    drawProgressive(ctx, layer, progressive, s);
+    drawProgressive(ctx, layer, progressive, s, reach * s);
     ctx.restore();
     return;
   }
