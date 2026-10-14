@@ -259,9 +259,13 @@ const EFFECT_LABEL: Record<Effect['type'], string> = {
   INNER_SHADOW: 'Inner shadow',
   LAYER_BLUR: 'Layer blur',
   BACKGROUND_BLUR: 'Background blur',
+  PROGRESSIVE_BLUR: 'Progressive blur',
+  NOISE: 'Noise',
 };
 
 function convertEffect(e: Effect, type: Effect['type']): Effect {
+  if (type === 'NOISE') return { type, color: '#000000', amount: 0.15, size: 1, visible: e.visible };
+  if (type === 'PROGRESSIVE_BLUR') return { type, start: 0, end: 12, direction: 'down', visible: e.visible };
   if (type === 'DROP_SHADOW' || type === 'INNER_SHADOW') {
     return e.type === 'DROP_SHADOW' || e.type === 'INNER_SHADOW' ? { ...e, type } : { ...DEFAULT_SHADOW, type, visible: e.visible } as Effect;
   }
@@ -331,6 +335,25 @@ export function EffectEditor(props: { effect: Effect; index: number; onChange: (
             suffix="%"
             onCommit={(v) => props.onChange({ ...e, opacity: v / 100 })}
           />
+        </div>
+      ) : e.type === 'NOISE' ? (
+        <div className="grid2">
+          <NumberField label="Amt" ariaLabel={`${label} amount`} value={Math.round(e.amount * 100)} min={0} max={100} precision={0} suffix="%" onCommit={(v) => props.onChange({ ...e, amount: v / 100 })} />
+          <NumberField label="Size" ariaLabel={`${label} grain size`} value={e.size} min={0.5} max={20} onCommit={(v) => props.onChange({ ...e, size: v })} />
+          <label className="swatch" style={{ background: e.color }}>
+            <input type="color" aria-label={`${label} colour`} value={e.color.toLowerCase()} onChange={(ev) => props.onChange({ ...e, color: ev.target.value.toUpperCase() })} />
+          </label>
+        </div>
+      ) : e.type === 'PROGRESSIVE_BLUR' ? (
+        <div className="grid2">
+          <NumberField label="From" ariaLabel={`${label} start radius`} value={e.start} min={0} max={1000} onCommit={(v) => props.onChange({ ...e, start: v })} />
+          <NumberField label="To" ariaLabel={`${label} end radius`} value={e.end} min={0} max={1000} onCommit={(v) => props.onChange({ ...e, end: v })} />
+          <select className="select-field" aria-label={`${label} direction`} value={e.direction} onChange={(ev) => props.onChange({ ...e, direction: ev.target.value as typeof e.direction })}>
+            <option value="down">Top to bottom</option>
+            <option value="up">Bottom to top</option>
+            <option value="right">Left to right</option>
+            <option value="left">Right to left</option>
+          </select>
         </div>
       ) : (
         <div className="grid2">

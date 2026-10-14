@@ -1,4 +1,15 @@
-import { type Effect, type GradientPaint, type ImagePaint, type Paint, type SceneNode, type ShadowEffect, type SolidPaint, isGradientPaint } from '../../shared/schema.ts';
+import {
+  type Effect,
+  type GradientPaint,
+  type ImagePaint,
+  type NoiseEffect,
+  type Paint,
+  type ProgressiveBlur,
+  type SceneNode,
+  type ShadowEffect,
+  type SolidPaint,
+  isGradientPaint,
+} from '../../shared/schema.ts';
 import type { SceneDoc } from './doc.ts';
 import { getImage } from './images.ts';
 import { instanceDoc } from './instances.ts';
@@ -40,6 +51,7 @@ export function effectReach(n: SceneNode): number {
     if (!e.visible) continue;
     if (e.type === 'DROP_SHADOW') r = Math.max(r, Math.abs(e.x) + Math.abs(e.y) + e.blur * 1.5 + Math.max(0, e.spread));
     if (e.type === 'LAYER_BLUR') r = Math.max(r, e.radius * 1.5);
+    if (e.type === 'PROGRESSIVE_BLUR') r = Math.max(r, Math.max(e.start, e.end) * 1.5);
   }
   return r;
 }
@@ -721,6 +733,57 @@ function renderLayer(ctx: Ctx, box: Rect, draw: (c: Ctx) => void): Layer | null 
   return { canvas, x: x0, y: y0 };
 }
 
+/** A 64 px tile of grain in one colour with random transparency, the same every time. */
+const noiseTiles = new Map<string, HTMLCanvasElement>();
+function noiseTile(color: string): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const hit = noiseTiles.get(color);
+  if (hit) return hit;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  if (!g) return null;
+  const img = g.createImageData(64, 64);
+  const r = parseInt(color.slice(1, 3), 16);
+  const gg = parseInt(color.slice(3, 5), 16);
+  const b = parseInt(color.slice(5, 7), 16);
+  let seed = 0x2f6b9c1d;
+  for (let i = 0; i < 64 * 64; i++) {
+    // xorshift: a fixed seed keeps exports identical
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    img.data[i * 4] = r;
+    img.data[i * 4 + 1] = gg;
+    img.data[i * 4 + 2] = b;
+    img.data[i * 4 + 3] = (seed >>> 0) % 256;
+  }
+  g.putImageData(img, 0, 0);
+  noiseTiles.set(color, c);
+  return c;
+}
+
+/** The layer drawn in bands whose blur grows from `start` to `end` along the direction. */
+function drawProgressive(ctx: Ctx, layer: { canvas: HTMLCanvasElement | OffscreenCanvas; x: number; y: number }, e: ProgressiveBlur, s: number) {
+  const STEPS = 8;
+  const w = layer.canvas.width;
+  const h = layer.canvas.height;
+  const vertical = e.direction === 'down' || e.direction === 'up';
+  for (let i = 0; i < STEPS; i++) {
+    const t = i / (STEPS - 1);
+    const k = e.direction === 'down' || e.direction === 'right' ? t : 1 - t;
+    const radius = e.start + (e.end - e.start) * k;
+    ctx.save();
+    ctx.beginPath();
+    if (vertical) ctx.rect(layer.x, layer.y + (h * i) / STEPS, w, h / STEPS + 1);
+    else ctx.rect(layer.x + (w * i) / STEPS, layer.y, w / STEPS + 1, h);
+    ctx.clip();
+    ctx.filter = radius > 0 ? `blur(${radius * s * 0.5}px)` : 'none';
+    ctx.drawImage(layer.canvas as CanvasImageSource, layer.x, layer.y);
+    ctx.restore();
+  }
+}
+
 function drawWithEffects(ctx: Ctx, doc: SceneDoc, n: SceneNode, effects: Effect[], opts: DrawOptions, root: SceneDoc) {
   const shadows = effects.filter((e): e is ShadowEffect => e.type === 'DROP_SHADOW');
   const inner = effects.filter((e): e is ShadowEffect => e.type === 'INNER_SHADOW');
@@ -748,7 +811,9 @@ function drawWithEffects(ctx: Ctx, doc: SceneDoc, n: SceneNode, effects: Effect[
     }
   }
 
-  const useLayer = !!layerBlur || (shadows.length > 0 && !hasShapeOutline(n));
+  const noise = effects.find((e): e is NoiseEffect => e.type === 'NOISE');
+  const progressive = effects.find((e): e is ProgressiveBlur => e.type === 'PROGRESSIVE_BLUR');
+  const useLayer = !!layerBlur || !!noise || !!progressive || (shadows.length > 0 && !hasShapeOutline(n));
   if (!useLayer) {
     for (const e of shadows) shapeShadow(ctx, n, e);
     drawBody(ctx, doc, n, opts, root);
@@ -761,6 +826,20 @@ function drawWithEffects(ctx: Ctx, doc: SceneDoc, n: SceneNode, effects: Effect[
   const layer = renderLayer(ctx, { x: box.x - reach, y: box.y - reach, width: box.width + reach * 2, height: box.height + reach * 2 }, (lc) => {
     drawBody(lc, doc, n, opts, root);
     if (hasShapeOutline(n)) for (const e of inner) innerShadow(lc, n, e);
+    if (noise && noise.amount > 0) {
+      // grain only where the layer drew something
+      const tile = noiseTile(noise.color);
+      const pattern = tile ? lc.createPattern(tile, 'repeat') : null;
+      if (pattern) {
+        pattern.setTransform(new DOMMatrix().scale(noise.size, noise.size));
+        lc.save();
+        lc.globalCompositeOperation = 'source-atop';
+        lc.globalAlpha = noise.amount;
+        lc.fillStyle = pattern;
+        lc.fillRect(box.x - reach, box.y - reach, box.width + reach * 2, box.height + reach * 2);
+        lc.restore();
+      }
+    }
   });
   if (!layer) {
     drawBody(ctx, doc, n, opts, root);
@@ -780,6 +859,11 @@ function drawWithEffects(ctx: Ctx, doc: SceneDoc, n: SceneNode, effects: Effect[
     ctx.restore();
   }
   if (layerBlur && layerBlur.type === 'LAYER_BLUR' && layerBlur.radius > 0) ctx.filter = `blur(${layerBlur.radius * s * 0.5}px)`;
+  if (progressive && (progressive.start > 0 || progressive.end > 0)) {
+    drawProgressive(ctx, layer, progressive, s);
+    ctx.restore();
+    return;
+  }
   ctx.drawImage(layer.canvas, layer.x, layer.y);
   ctx.restore();
 }

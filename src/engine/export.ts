@@ -257,9 +257,24 @@ class SvgWriter {
       );
       merge.push(`i${i}`);
     });
+    // grain: turbulence in the noise colour, kept to where the layer is
+    const noise = effects.find((e) => e.type === 'NOISE');
+    if (noise && noise.type === 'NOISE' && noise.amount > 0) {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(noise.color.slice(i, i + 2), 16) / 255);
+      prims.push(
+        `<feTurbulence type="fractalNoise" baseFrequency="${num(Math.min(1, 0.5 / noise.size))}" numOctaves="1" seed="7" result="nz"/>`,
+        `<feColorMatrix in="nz" type="matrix" values="0 0 0 0 ${num(r)} 0 0 0 0 ${num(g)} 0 0 0 0 ${num(b)} 0 0 0 ${num(noise.amount * 2)} ${num(-noise.amount * 0.5)}" result="nc"/>`,
+        `<feComposite in="nc" in2="SourceGraphic" operator="in" result="ng"/>`,
+      );
+      merge.push('ng');
+    }
     prims.push(`<feMerge result="m">${merge.map((m) => `<feMergeNode in="${m}"/>`).join('')}</feMerge>`);
     const blur = effects.find((e) => e.type === 'LAYER_BLUR');
     if (blur && blur.type === 'LAYER_BLUR' && blur.radius > 0) prims.push(`<feGaussianBlur in="m" stdDeviation="${num(blur.radius / 2)}"/>`);
+    // SVG can't vary a blur across the layer: the progressive blur uses its average
+    const prog = effects.find((e) => e.type === 'PROGRESSIVE_BLUR');
+    if (!blur && prog && prog.type === 'PROGRESSIVE_BLUR' && prog.start + prog.end > 0)
+      prims.push(`<feGaussianBlur in="m" stdDeviation="${num((prog.start + prog.end) / 4)}"/>`);
     const r = effectReach(n) + n.strokeWeight * 2 + 2;
     const fid = this.id('fx');
     this.defs.push(

@@ -112,9 +112,25 @@ export const ShadowEffectSchema = z
 export const BlurEffectSchema = z
   .object({ type: z.enum(['LAYER_BLUR', 'BACKGROUND_BLUR']), radius: z.number().min(0).max(1000), visible: z.boolean() })
   .strict();
-export const EffectSchema = z.union([ShadowEffectSchema, BlurEffectSchema]);
+/** Grain over what the layer draws: `amount` is its strength, `size` the grain size in px. */
+export const NoiseEffectSchema = z
+  .object({ type: z.literal('NOISE'), color: hexColor, amount: z.number().min(0).max(1), size: z.number().min(0.5).max(20), visible: z.boolean() })
+  .strict();
+/** A layer blur that grows from `start` to `end` radius in a direction. */
+export const ProgressiveBlurSchema = z
+  .object({
+    type: z.literal('PROGRESSIVE_BLUR'),
+    start: z.number().min(0).max(1000),
+    end: z.number().min(0).max(1000),
+    direction: z.enum(['down', 'up', 'left', 'right']),
+    visible: z.boolean(),
+  })
+  .strict();
+export const EffectSchema = z.union([ShadowEffectSchema, BlurEffectSchema, NoiseEffectSchema, ProgressiveBlurSchema]);
 export type ShadowEffect = z.infer<typeof ShadowEffectSchema>;
 export type BlurEffect = z.infer<typeof BlurEffectSchema>;
+export type NoiseEffect = z.infer<typeof NoiseEffectSchema>;
+export type ProgressiveBlur = z.infer<typeof ProgressiveBlurSchema>;
 export type Effect = z.infer<typeof EffectSchema>;
 
 export const TextRunSchema = z
