@@ -85,6 +85,8 @@ export const MAX_AUTO_VERSIONS = 50;
 export const MAX_NAMED_VERSIONS = 200;
 /** Larger files skip autosaved versions (each one is a full copy). */
 export const MAX_SNAPSHOT_CHARS = 64 * 1024 * 1024;
+/** All of a file's versions together, like its images. */
+export const MAX_VERSION_BYTES_PER_FILE = 1024 * 1024 * 1024;
 
 type Snapshot = { nodes: SceneNode[]; pages: Page[]; styles: Style[]; variables: Variables };
 type CommentRow = {
@@ -171,6 +173,8 @@ export const imageHash = (bytes: Uint8Array) => createHash('sha256').update(byte
 
 export class Store {
   readonly db: DatabaseSync;
+  /** When an autosaved version was last skipped for a file, so the check isn't repeated on every save. */
+  private readonly skippedAt = new Map<string, number>();
 
   constructor(path: string) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -261,7 +265,13 @@ export class Store {
       const last = this.db.prepare('select created_at from versions where file_id = ? and auto = 1 order by id desc limit 1').get(fileId) as
         | { created_at: string }
         | undefined;
-      if (meta.version > 0 && (!last || Date.now() - Date.parse(last.created_at) >= AUTO_VERSION_EVERY_MS)) this.snapshot(fileId, null, true);
+      const due = !last || Date.now() - Date.parse(last.created_at) >= AUTO_VERSION_EVERY_MS;
+      const skipped = this.skippedAt.get(fileId);
+      if (meta.version > 0 && due && !(skipped && Date.now() - skipped < AUTO_VERSION_EVERY_MS)) {
+        // a skipped autosave (file too large) waits as long as a saved one would
+        if (this.snapshot(fileId, null, true) === null) this.skippedAt.set(fileId, Date.now());
+        else this.skippedAt.delete(fileId);
+      }
       const del = this.db.prepare('delete from nodes where file_id = ? and id = ?');
       for (const id of deletes) del.run(fileId, id);
       const put = this.db.prepare(
@@ -336,6 +346,16 @@ export class Store {
 
   /** Saves the file's current content as a version. Autosaves of very large files are skipped. */
   private snapshot(fileId: string, name: string | null, auto: boolean): number | null {
+    // size first, without loading the file: autosaves of very large files are skipped cheaply
+    const size = this.db.prepare('select coalesce(sum(length(data)), 0) as n from nodes where file_id = ?').get(fileId) as { n: number };
+    if (Number(size.n) > MAX_SNAPSHOT_CHARS) {
+      if (auto) return null;
+      throw new InvalidError('this file is too large to save as a version');
+    }
+    if (!auto) {
+      const named = this.db.prepare('select count(*) as n from versions where file_id = ? and auto = 0').get(fileId) as { n: number };
+      if (Number(named.n) >= MAX_NAMED_VERSIONS) throw new InvalidError(`a file keeps up to ${MAX_NAMED_VERSIONS} named versions; delete some first`);
+    }
     const meta = this.getMeta(fileId)!;
     const nodes = this.getNodes(fileId);
     const data: Snapshot = { nodes, pages: meta.pages, styles: meta.styles, variables: meta.variables };
@@ -344,9 +364,17 @@ export class Store {
       if (auto) return null;
       throw new InvalidError('this file is too large to save as a version');
     }
-    if (!auto) {
-      const named = this.db.prepare('select count(*) as n from versions where file_id = ? and auto = 0').get(fileId) as { n: number };
-      if (Number(named.n) >= MAX_NAMED_VERSIONS) throw new InvalidError(`a file keeps up to ${MAX_NAMED_VERSIONS} named versions; delete some first`);
+    // keep all versions of a file under the byte cap: old autosaves make room first
+    const used = () =>
+      Number((this.db.prepare('select coalesce(sum(length(snapshot)), 0) as n from versions where file_id = ?').get(fileId) as { n: number }).n);
+    const oldestAuto = this.db.prepare('select id from versions where file_id = ? and auto = 1 order by id limit 1');
+    while (used() + json.length > MAX_VERSION_BYTES_PER_FILE) {
+      const old = oldestAuto.get(fileId) as { id: number } | undefined;
+      if (!old) {
+        if (auto) return null;
+        throw new InvalidError('versions of this file take up 1 GB; delete some first');
+      }
+      this.db.prepare('delete from versions where id = ?').run(old.id);
     }
     const r = this.db
       .prepare('insert into versions (file_id, name, auto, created_at, node_count, snapshot) values (?, ?, ?, ?, ?, ?)')
@@ -398,7 +426,8 @@ export class Store {
       const problem = validateTree(nodes.data, pages.data);
       if (problem) throw new InvalidError(problem);
       const meta = this.getMeta(fileId)!;
-      this.snapshot(fileId, null, true);
+      // what is there now is kept first, or nothing is replaced
+      if (this.snapshot(fileId, null, true) === null) throw new InvalidError("this file is too large to keep a copy before restoring");
       this.db.prepare('delete from nodes where file_id = ?').run(fileId);
       const put = this.db.prepare('insert into nodes (file_id, id, data) values (?, ?, ?)');
       for (const n of nodes.data) put.run(fileId, n.id, JSON.stringify(n));
@@ -423,6 +452,7 @@ export class Store {
     return this.tx(() => {
       const count = this.db.prepare('select count(*) as n from comments where file_id = ?').get(fileId) as { n: number };
       if (Number(count.n) >= MAX_COMMENTS_PER_FILE) throw new InvalidError(`a file keeps up to ${MAX_COMMENTS_PER_FILE} comments`);
+      if (!c.parentId && !this.getMeta(fileId)?.pages.some((p) => p.id === c.pageId)) throw new InvalidError('that page does not exist');
       let { pageId, nodeId, x, y } = c;
       let ox = c.offset?.x ?? null;
       let oy = c.offset?.y ?? null;
@@ -451,6 +481,9 @@ export class Store {
   ): Comment | null {
     const row = this.db.prepare('select * from comments where file_id = ? and id = ?').get(fileId, id) as CommentRow | undefined;
     if (!row) return null;
+    // replies sit with their thread; move the thread instead
+    if (row.parent_id && (patch.x !== undefined || patch.y !== undefined || patch.nodeId !== undefined || patch.offset !== undefined))
+      throw new InvalidError('move the thread, not a reply');
     const next = {
       body: patch.body ?? row.body,
       resolved: patch.resolved === undefined ? row.resolved : patch.resolved ? 1 : 0,

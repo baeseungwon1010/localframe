@@ -398,6 +398,11 @@ describe('comments', () => {
     const reply = await r.json();
     // replies take their thread's place
     expect(reply).toMatchObject({ parentId: c.id, pageId: 'page-1', x: 10, y: 20 });
+    // replies move with their thread only
+    expect((await call('PATCH', `/api/files/${f.id}/comments/${reply.id}`, { x: 1, y: 1 })).status).toBe(400);
+    expect((await call('PATCH', `/api/files/${f.id}/comments/${reply.id}`, { resolved: true })).status).toBe(200);
+    // threads go on a page of the file
+    expect((await call('POST', `/api/files/${f.id}/comments`, { pageId: 'nope', x: 0, y: 0, body: 'x' })).status).toBe(400);
     // no replies to replies
     expect((await call('POST', `/api/files/${f.id}/comments`, { parentId: reply.id, pageId: 'page-1', x: 0, y: 0, body: 'x' })).status).toBe(400);
 
