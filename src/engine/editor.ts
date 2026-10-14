@@ -75,7 +75,7 @@ import { fitVector, scaleVector, shapeVector } from './vector.ts';
 
 export { fitText };
 
-export type Tool = 'move' | 'hand' | 'frame' | 'rect' | 'ellipse' | 'polygon' | 'star' | 'line' | 'arrow' | 'text' | 'pen' | 'comment';
+export type Tool = 'move' | 'hand' | 'frame' | 'section' | 'rect' | 'ellipse' | 'polygon' | 'star' | 'line' | 'arrow' | 'text' | 'pen' | 'comment';
 
 /** Where a new comment goes: on the page, and inside the layer under it if there is one. */
 export type CommentSpot = { x: number; y: number; nodeId?: string; offset?: Point };
@@ -160,6 +160,7 @@ const TOOL_TYPE: Partial<Record<Tool, NodeType>> = {
   ellipse: 'ELLIPSE',
   line: 'LINE',
   arrow: 'LINE',
+  section: 'FRAME',
   polygon: 'VECTOR',
   star: 'VECTOR',
   text: 'TEXT',
@@ -489,6 +490,8 @@ export class Editor {
       if (!prev || prev.shape !== n.shape || n.width !== prev.width || n.height !== prev.height) n = { ...n, vector: shapeVector(n.shape, n.width, n.height) };
       else if (n.vector !== prev.vector) n = { ...n, shape: undefined };
     }
+    // a section can only sit on the page; moved into anything else it becomes a plain frame
+    if (n.section && n.parentId !== null) n = { ...n, section: undefined };
     if (n.parentId === null && n.pageId === undefined) n = { ...n, pageId: this.doc.currentPage };
     else if (n.parentId !== null && n.pageId !== undefined) {
       const { pageId: _drop, ...rest } = n;
@@ -929,10 +932,12 @@ export class Editor {
 
   /** Top-level frames of the current page, in reading order (rows top to bottom, then left to right). */
   topFrames(): SceneNode[] {
+    // frames inside sections are screens too; the sections themselves aren't
     const frames = this.doc
       .children(null)
+      .flatMap((id) => (this.doc.get(id)!.section ? this.doc.children(id) : [id]))
       .map((id) => this.doc.get(id)!)
-      .filter((n) => n.visible && (n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'INSTANCE'));
+      .filter((n) => n.visible && !n.section && (n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'INSTANCE'));
     return frames.sort((a, b) => (Math.abs(a.y - b.y) > Math.min(a.height, b.height) / 2 ? a.y - b.y : a.x - b.x));
   }
 
@@ -2224,7 +2229,8 @@ export class Editor {
 
   /** Top-level frame whose name label (drawn above it) is under the screen point. */
   frameLabelAt(sx: number, sy: number): string | null {
-    const ids = this.doc.children(null);
+    // frames in sections are labelled too, and drawn above their section
+    const ids = this.doc.children(null).flatMap((id) => (this.doc.get(id)!.section ? [id, ...this.doc.children(id)] : [id]));
     for (let i = ids.length - 1; i >= 0; i--) {
       const n = this.doc.get(ids[i])!;
       if (!(canHaveChildren(n) || n.type === 'INSTANCE') || !n.visible || n.locked) continue;
@@ -2285,7 +2291,7 @@ export class Editor {
     }
 
     if (TOOL_TYPE[this.tool]) {
-      const parentId = frameAt(this.doc, p);
+      const parentId = this.tool === 'section' ? null : frameAt(this.doc, p);
       this.interaction = {
         kind: 'create',
         tool: this.tool,
@@ -3093,6 +3099,8 @@ export class Editor {
     const sameParent = parents.size === 1 && parents.has(target);
     // inside an auto layout frame, dropping reorders, so show the frame as the target too
     this.dropTarget = sameParent && !(target && this.doc.get(target)?.layout) ? undefined : target;
+    // sections stay on the page
+    if (target !== null && it.ids.some((id) => this.doc.get(id)?.section)) this.dropTarget = undefined;
     this.settle(new Set(it.ids));
     this.emit('doc', 'view');
   }
@@ -3306,8 +3314,45 @@ export class Editor {
     this.emit('doc', 'view');
   }
 
-  /** A new vector set up as a polygon or star for those tools. */
+  /** A section drawn around layers on the page takes them in. */
+  private adoptIntoSection(sectionId: string) {
+    const s = this.doc.worldBounds(sectionId);
+    const inside = this.doc
+      .children(null)
+      .filter((id) => {
+        if (id === sectionId) return false;
+        const n = this.doc.get(id)!;
+        if (n.section || n.locked) return false;
+        const b = this.doc.worldBounds(id);
+        return b.x >= s.x && b.y >= s.y && b.x + b.width <= s.x + s.width && b.y + b.height <= s.y + s.height;
+      });
+    if (!inside.length) return;
+    const keys = keysOnTop(this.doc, sectionId, inside.length);
+    const world = this.doc.world(sectionId);
+    inside.forEach((id, i) => {
+      const n = this.doc.get(id)!;
+      this.put({ ...reparentKeepWorld(n, IDENTITY, world), parentId: sectionId, order: keys[i] });
+    });
+    // the section sits behind what it holds
+    const bottom = this.doc.children(null)[0];
+    if (bottom !== sectionId) this.put({ ...this.doc.get(sectionId)!, order: keyAt(this.doc, this.doc.children(null), 0, new Set([sectionId])) });
+  }
+
+  /** A new vector set up as a polygon or star, or a new frame as a section, for those tools. */
   private asShape(node: SceneNode, tool: Tool): SceneNode {
+    if (tool === 'section') {
+      return {
+        ...node,
+        name: nextName(this.doc, 'Section'),
+        section: true,
+        fills: [{ ...solid('#FFFFFF'), opacity: 0.6 }],
+        strokes: [solid('#C9CCD1')],
+        strokeWeight: 1,
+        strokeAlign: 'inside',
+        radii: [8, 8, 8, 8],
+        clipsContent: false,
+      };
+    }
     if (tool !== 'polygon' && tool !== 'star') return node;
     return {
       ...node,
@@ -3351,6 +3396,7 @@ export class Editor {
       const endBind = bindingAt(this.doc, this.toWorld(e.sx, e.sy), tol, skip) ?? undefined;
       if (startBind || endBind) this.put(settleLine(this.doc, { ...n, startBind, endBind }));
     }
+    if (it.tool === 'section' && it.nodeId) this.adoptIntoSection(it.nodeId);
     this.bindTarget = null;
     this.end();
     this.setTool('move');
@@ -3524,6 +3570,7 @@ export class Editor {
       if (code === 'Digit0') return this.zoomTo(1), true;
       if (code === 'KeyL') return this.setTool('arrow'), true;
       if (code === 'KeyR') return this.toggleRulers(), true;
+      if (code === 'KeyS') return this.setTool('section'), true;
       if (code === 'KeyA') {
         if (this.selection.length === 0) return false;
         this.addAutoLayout();

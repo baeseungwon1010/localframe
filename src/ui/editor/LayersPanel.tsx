@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Circle, Search, Star, Triangle, Component, Diamond, Eye, EyeOff, Frame, Group, Image, LayoutGrid, Lock, LockOpen, Minus, MoveUpRight, PenTool, Scissors, Square, SquaresExclude, SquaresIntersect, SquaresSubtract, SquaresUnite, Type } from 'lucide-react';
+import { ChevronDown, ChevronRight, Circle, Search, SquareDashed, Star, Triangle, Component, Diamond, Eye, EyeOff, Frame, Group, Image, LayoutGrid, Lock, LockOpen, Minus, MoveUpRight, PenTool, Scissors, Square, SquaresExclude, SquaresIntersect, SquaresSubtract, SquaresUnite, Type } from 'lucide-react';
 import { type SceneNode, isContainerType } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
 import { useEditorRev } from '../hooks.ts';
@@ -27,7 +27,7 @@ function TypeIcon({ n }: { n: SceneNode }) {
         <SquaresUnite {...props} />
       );
     case 'FRAME':
-      return n.layout ? <LayoutGrid {...props} /> : <Frame {...props} />;
+      return n.section ? <SquareDashed {...props} /> : n.layout ? <LayoutGrid {...props} /> : <Frame {...props} />;
     case 'GROUP':
       return <Group {...props} />;
     case 'COMPONENT':

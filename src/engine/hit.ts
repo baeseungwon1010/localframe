@@ -60,7 +60,9 @@ export function hitDeepest(doc: SceneDoc, p: Point, tolerance: number, skip?: Se
  * unless a sibling at that level is already selected.
  */
 export function pickTarget(doc: SceneDoc, deepest: string, selection: Iterable<string>): string {
-  const chain = [...doc.ancestors(deepest), deepest];
+  let chain = [...doc.ancestors(deepest), deepest];
+  // inside a section, its frames are picked as if they were on the page
+  if (chain.length > 1 && doc.get(chain[0])?.section) chain = chain.slice(1);
   const top = doc.get(chain[0])!;
   let level = isFrameLike(top.type) && chain.length > 1 ? 1 : 0;
   for (const s of selection) {

@@ -26,7 +26,12 @@ type Item = { page: string; name: string; target: ExportTarget };
 function collectItems(doc: SceneDoc, pages: { id: string; name: string; background: string }[]): Item[] {
   const items: Item[] = [];
   for (const page of pages) {
-    const top = doc.pageChildren(page.id).map((id) => doc.get(id)!).filter((n) => n.visible);
+    // frames inside sections are exported like frames on the page; an empty section is skipped
+    const top = doc
+      .pageChildren(page.id)
+      .flatMap((id) => (doc.get(id)!.section ? doc.children(id) : [id]))
+      .map((id) => doc.get(id)!)
+      .filter((n) => n.visible);
     if (top.length === 0) continue;
     const isFrame = (n: SceneNode) => n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'INSTANCE';
     for (const f of top.filter(isFrame)) items.push({ page: page.name, name: f.name, target: { ids: [f.id], background: null } });

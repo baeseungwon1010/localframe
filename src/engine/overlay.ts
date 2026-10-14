@@ -228,7 +228,8 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
   // frame labels (top-level frames)
   ctx.font = `500 ${LABEL_FONT_SIZE}px ${c.font}`;
   ctx.textBaseline = 'bottom';
-  for (const id of doc.children(null)) {
+  const labelled = doc.children(null).flatMap((id) => (doc.get(id)!.section ? [id, ...doc.children(id)] : [id]));
+  for (const id of labelled) {
     const n = doc.get(id)!;
     if (!(n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'COMPONENT_SET' || n.type === 'INSTANCE') || !n.visible) continue;
     const m = multiply(view, doc.world(id));

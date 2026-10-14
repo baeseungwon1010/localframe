@@ -381,6 +381,8 @@ export const SceneNodeSchema = z
     /** Clips the layers above it in the same parent. */
     isMask: z.boolean().optional(),
     reactions: z.array(ReactionSchema).max(20).optional(),
+    /** A frame used as a section: a labelled area on the page that holds frames. Top level only. */
+    section: z.boolean().optional(),
     /** A vector drawn as a polygon or star: its points are rebuilt from these when it changes size. */
     shape: z
       .object({ kind: z.enum(['polygon', 'star']), count: z.number().int().min(3).max(60), ratio: z.number().min(0.01).max(1) })
@@ -441,6 +443,7 @@ export const SceneNodeSchema = z
     if (n.type !== 'LINE' && (n.startBind || n.endBind)) issue('only LINE has bindings');
     if (n.type !== 'LINE' && (n.elbow !== undefined || n.route)) issue('only LINE has elbows');
     if (n.type !== 'VECTOR' && n.shape) issue('only VECTOR has a shape');
+    if (n.section && (n.type !== 'FRAME' || n.parentId !== null)) issue('a section is a frame on the page itself');
     if ((n.type === 'INSTANCE') !== (n.componentId !== undefined)) issue('INSTANCE needs componentId');
     if (n.type !== 'INSTANCE' && n.overrides) issue('only INSTANCE has overrides');
     if (n.type !== 'INSTANCE' && n.propValues) issue('only INSTANCE has property values');

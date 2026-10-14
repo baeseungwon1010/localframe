@@ -150,7 +150,15 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
   const parent = (n: SceneNode) => (n.parentId ? editor.doc.get(n.parentId) : undefined);
   const inAutoLayout = nodes.every((n) => parent(n)?.layout);
   const constrained = !inAutoLayout && nodes.every((n) => { const p = parent(n); return p && isBox(p) && !p.layout; });
-  const title = single?.shape ? (single.shape.kind === 'star' ? 'Star' : 'Polygon') : single ? TYPE_LABEL[single.type] : `${nodes.length} layers`;
+  const title = single?.section
+    ? 'Section'
+    : single?.shape
+      ? single.shape.kind === 'star'
+        ? 'Star'
+        : 'Polygon'
+      : single
+        ? TYPE_LABEL[single.type]
+        : `${nodes.length} layers`;
   const canAlign = nodes.length > 1 || (single !== null && single.parentId !== null);
 
   return (
