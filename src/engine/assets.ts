@@ -62,7 +62,7 @@ export function modeFor(doc: SceneDoc, vars: Variables, nodeId: string, collecti
   return col.modes[0].id;
 }
 
-export function variableValue(doc: SceneDoc, vars: Variables, nodeId: string, varId: string): string | number | null {
+export function variableValue(doc: SceneDoc, vars: Variables, nodeId: string, varId: string): string | number | boolean | null {
   const v = vars.vars.find((x) => x.id === varId);
   if (!v) return null;
   const mode = modeFor(doc, vars, nodeId, v.collectionId);
@@ -75,7 +75,9 @@ export function variableValue(doc: SceneDoc, vars: Variables, nodeId: string, va
 const clampN = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** Writes one bound property from its variable's value. */
-function setBound(n: SceneNode, prop: Bindable, value: string | number): SceneNode {
+function setBound(n: SceneNode, prop: Bindable, value: string | number | boolean): SceneNode {
+  if (prop === 'characters') return typeof value === 'string' && n.text ? fitText({ ...n, text: { ...n.text, characters: value.slice(0, 100_000) } }) : n;
+  if (prop === 'visible') return typeof value === 'boolean' ? { ...n, visible: value } : n;
   if ((prop === 'fill' || prop === 'stroke') && typeof value === 'string') {
     const list = prop === 'fill' ? n.fills : n.strokes;
     const first = list[0];
@@ -131,10 +133,16 @@ export function boundField(n: SceneNode, prop: Bindable): unknown {
       return n.strokeWeight;
     case 'opacity':
       return n.opacity;
+    case 'characters':
+      return n.text?.characters;
+    case 'visible':
+      return n.visible;
   }
 }
 
-export const BINDING_TYPE: Record<Bindable, 'COLOR' | 'NUMBER'> = {
+export const BINDING_TYPE: Record<Bindable, 'COLOR' | 'NUMBER' | 'STRING' | 'BOOLEAN'> = {
+  characters: 'STRING',
+  visible: 'BOOLEAN',
   fill: 'COLOR',
   stroke: 'COLOR',
   radius: 'NUMBER',

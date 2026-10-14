@@ -219,14 +219,15 @@ export function VariablesDialog({ editor, onClose }: { editor: Editor; onClose: 
       vars: vars.vars.map((v) => (v.collectionId === col.id ? { ...v, values: { ...v.values, [mode.id]: v.values[col.modes[0].id] } } : v)),
     });
   };
-  const addVar = (type: 'COLOR' | 'NUMBER') => {
+  const addVar = (type: 'COLOR' | 'NUMBER' | 'STRING' | 'BOOLEAN') => {
     if (!col) return;
-    const values: Record<string, string | number> = {};
-    for (const m of col.modes) values[m.id] = type === 'COLOR' ? '#C8106E' : 8;
+    const start = { COLOR: '#C8106E', NUMBER: 8, STRING: 'Text', BOOLEAN: true }[type];
+    const values: Record<string, string | number | boolean> = {};
+    for (const m of col.modes) values[m.id] = start;
     const n = vars.vars.filter((v) => v.collectionId === col.id).length + 1;
-    save({ ...vars, vars: [...vars.vars, { id: newId(), collectionId: col.id, name: type === 'COLOR' ? `color-${n}` : `number-${n}`, type, values }] });
+    save({ ...vars, vars: [...vars.vars, { id: newId(), collectionId: col.id, name: `${type.toLowerCase()}-${n}`, type, values }] });
   };
-  const setValue = (varId: string, modeId: string, value: string | number) =>
+  const setValue = (varId: string, modeId: string, value: string | number | boolean) =>
     save({ ...vars, vars: vars.vars.map((v) => (v.id === varId ? { ...v, values: { ...v.values, [modeId]: value } } : v)) });
   const renameVar = (varId: string, name: string) => name.trim() && save({ ...vars, vars: vars.vars.map((v) => (v.id === varId ? { ...v, name: name.trim().slice(0, 200) } : v)) });
   const renameMode = (modeId: string, name: string) =>
@@ -272,6 +273,12 @@ export function VariablesDialog({ editor, onClose }: { editor: Editor; onClose: 
                   <button type="button" className="btn secondary small" onClick={() => addVar('NUMBER')}>
                     <Plus {...ICON} /> Number
                   </button>
+                  <button type="button" className="btn secondary small" onClick={() => addVar('STRING')}>
+                    <Plus {...ICON} /> String
+                  </button>
+                  <button type="button" className="btn secondary small" onClick={() => addVar('BOOLEAN')}>
+                    <Plus {...ICON} /> Boolean
+                  </button>
                 </div>
                 <div className="vars-table-wrap">
                   <table className="vars-table">
@@ -300,6 +307,10 @@ export function VariablesDialog({ editor, onClose }: { editor: Editor; onClose: 
                                 <td key={m.id}>
                                   {v.type === 'COLOR' ? (
                                     <ColorCell value={String(value)} label={`${v.name} in ${m.name}`} onCommit={(c) => setValue(v.id, m.id, c)} />
+                                  ) : v.type === 'STRING' ? (
+                                    <BlurInput value={String(value)} label={`${v.name} in ${m.name}`} onCommit={(s) => setValue(v.id, m.id, s.slice(0, 10_000))} />
+                                  ) : v.type === 'BOOLEAN' ? (
+                                    <input type="checkbox" aria-label={`${v.name} in ${m.name}`} checked={value === true} onChange={(e) => setValue(v.id, m.id, e.target.checked)} />
                                   ) : (
                                     <NumberField label="" ariaLabel={`${v.name} in ${m.name}`} value={Number(value)} min={-1e7} max={1e7} onCommit={(n) => setValue(v.id, m.id, n)} />
                                   )}
@@ -381,6 +392,8 @@ const BIND_LABEL: Record<Bindable, string> = {
   padding: 'Padding',
   strokeWeight: 'Stroke weight',
   opacity: 'Opacity (%)',
+  characters: 'Text',
+  visible: 'Visible',
 };
 
 /** Properties of the selection that can follow variables, and the modes frames choose. */
@@ -392,6 +405,7 @@ export function VariablesSection({ editor, nodes }: { editor: Editor; nodes: Sce
   const relevant = BINDABLE.filter((p) => {
     if (p === 'radius') return nodes.every((n) => n.radii);
     if (p === 'gap' || p === 'padding') return nodes.every((n) => n.layout);
+    if (p === 'characters') return nodes.every((n) => n.type === 'TEXT');
     return true;
   });
   const frames = nodes.every((n) => n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'COMPONENT_SET');

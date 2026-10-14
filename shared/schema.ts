@@ -304,11 +304,23 @@ export const VariableSchema = z
     id,
     collectionId: id,
     name: z.string().trim().min(1).max(200),
-    type: z.enum(['COLOR', 'NUMBER']),
-    values: z.record(id, z.union([hexColor, z.number().min(-1e7).max(1e7)])),
+    type: z.enum(['COLOR', 'NUMBER', 'STRING', 'BOOLEAN']),
+    values: z.record(id, z.union([z.string().max(10_000), z.number().min(-1e7).max(1e7), z.boolean()])),
   })
   .strict()
-  .refine((v) => Object.values(v.values).every((x) => (v.type === 'COLOR' ? typeof x === 'string' : typeof x === 'number')), 'value type');
+  .refine(
+    (v) =>
+      Object.values(v.values).every((x) =>
+        v.type === 'COLOR'
+          ? typeof x === 'string' && hexColor.safeParse(x).success
+          : v.type === 'NUMBER'
+            ? typeof x === 'number'
+            : v.type === 'STRING'
+              ? typeof x === 'string'
+              : typeof x === 'boolean',
+      ),
+    'value type',
+  );
 export type Variable = z.infer<typeof VariableSchema>;
 
 export const VariablesSchema = z
@@ -334,7 +346,7 @@ export const VariablesSchema = z
 export type Variables = z.infer<typeof VariablesSchema>;
 export const EMPTY_VARIABLES: Variables = { collections: [], vars: [] };
 
-export const BINDABLE = ['fill', 'stroke', 'radius', 'gap', 'padding', 'strokeWeight', 'opacity'] as const;
+export const BINDABLE = ['fill', 'stroke', 'radius', 'gap', 'padding', 'strokeWeight', 'opacity', 'characters', 'visible'] as const;
 export type Bindable = (typeof BINDABLE)[number];
 
 export const LayoutGridSchema = z
