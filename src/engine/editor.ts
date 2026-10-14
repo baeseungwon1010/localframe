@@ -75,7 +75,10 @@ import { fitVector, scaleVector } from './vector.ts';
 
 export { fitText };
 
-export type Tool = 'move' | 'hand' | 'frame' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'text' | 'pen';
+export type Tool = 'move' | 'hand' | 'frame' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'text' | 'pen' | 'comment';
+
+/** Where a new comment goes: on the page, and inside the layer under it if there is one. */
+export type CommentSpot = { x: number; y: number; nodeId?: string; offset?: Point };
 export type Viewport = { x: number; y: number; zoom: number };
 export type Channel = 'doc' | 'selection' | 'view' | 'tool' | 'hover' | 'pages';
 
@@ -253,6 +256,8 @@ export class Editor {
   fileId: string | null = null;
   /** Asks the UI to copy images used by pasted layers from another file. */
   onPastedImages: ((sourceFile: string, imageIds: string[]) => void) | null = null;
+  /** The comment tool was clicked on the canvas. */
+  onCommentAt: ((spot: CommentSpot, screen: Point) => void) | null = null;
   /** Image layer being cropped. */
   cropping: string | null = null;
   showGrids = true;
@@ -312,6 +317,7 @@ export class Editor {
     this.selection = [];
     this.undoStack = [];
     this.redoStack = [];
+    this.cropping = null;
     this.emit('doc', 'selection', 'view', 'pages');
   }
 
@@ -418,6 +424,7 @@ export class Editor {
     if (this.pen && tool !== 'pen') this.finishPen();
     if (this.editingVector) this.exitVectorEdit();
     if (this.cropping) this.exitCrop();
+    if (tool === 'comment' && this.selection.length) this.setSelection([]);
     this.tool = tool;
     this.emit('tool', 'view');
   }
@@ -2113,6 +2120,17 @@ export class Editor {
     }
     if (e.button !== 0) return;
     if (this.tool === 'pen') return this.penDown(p, e);
+    if (this.tool === 'comment') {
+      const id = hitDeepest(this.doc, p, this.hitTolerance());
+      const spot: CommentSpot = { x: round2(p.x), y: round2(p.y) };
+      if (id) {
+        const local = apply(invert(this.doc.world(id)), p);
+        spot.nodeId = id;
+        spot.offset = { x: round2(local.x), y: round2(local.y) };
+      }
+      this.onCommentAt?.(spot, { x: e.sx, y: e.sy });
+      return;
+    }
     if (this.cropping) {
       const n = this.doc.get(this.cropping);
       const { paint } = n ? this.cropPaint(n) : { paint: null };
@@ -3309,6 +3327,9 @@ export class Editor {
       case 'KeyH':
         this.setTool('hand');
         return true;
+      case 'KeyC':
+        this.setTool('comment');
+        return true;
       case 'Delete':
       case 'Backspace':
         this.deleteSelection();
@@ -3367,7 +3388,7 @@ export class Editor {
   /** Cursor for the current state at a screen point. */
   cursorAt(sx: number, sy: number): string {
     const it = this.interaction.kind;
-    if (this.tool === 'pen') return 'crosshair';
+    if (this.tool === 'pen' || this.tool === 'comment') return 'crosshair';
     if (this.editingVector) return this.vectorPartAt(sx, sy) ? 'move' : 'default';
     if (it === 'pan') return 'grabbing';
     if (this.spaceDown || this.tool === 'hand') return 'grab';

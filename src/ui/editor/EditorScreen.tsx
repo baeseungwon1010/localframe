@@ -6,13 +6,21 @@ import { onImageLoaded, readImageSize, retryFailedImages, useImagesOf } from '..
 import { drawChildren } from '../../engine/render.ts';
 import { SyncQueue } from '../../engine/sync.ts';
 import { navigate } from '../App.tsx';
-import { type Theme, loadFonts } from '../hooks.ts';
+import { type Theme, loadFonts, useEditorRev } from '../hooks.ts';
 import { ExportFileDialog } from '../ExportFileDialog.tsx';
 import { RenameDialog } from './framePanels.tsx';
 import { CanvasView } from './CanvasView.tsx';
 import { LeftPanel } from './LeftPanel.tsx';
 import { PropertiesPanel } from './PropertiesPanel.tsx';
 import { TitleBar } from './TitleBar.tsx';
+import { VersionHistory } from './VersionHistory.tsx';
+import { type CommentStore, CommentPins, CommentsPanel, useComments } from './Comments.tsx';
+
+/** Properties, or the comment list in comment mode. */
+function RightPanel(props: { editor: Editor; fileName: string; comments: CommentStore }) {
+  useEditorRev(props.editor, 'tool');
+  return props.editor.tool === 'comment' ? <CommentsPanel editor={props.editor} store={props.comments} /> : <PropertiesPanel editor={props.editor} fileName={props.fileName} />;
+}
 import { ToolRail } from './ToolRail.tsx';
 
 const THUMB_W = 480;
@@ -57,6 +65,30 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   const [notice, setNotice] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [history, setHistory] = useState(false);
+  const comments = useComments(fileId);
+  const { setDraft, setOpen } = comments;
+  useEffect(() => {
+    editor.onCommentAt = (spot) => {
+      setOpen(null);
+      setDraft({ ...spot, pageId: editor.doc.currentPage });
+    };
+    // leaving comment mode or the page closes what was open
+    const off = editor.subscribe('tool', () => {
+      if (editor.tool !== 'comment') {
+        setDraft(null);
+        setOpen(null);
+      }
+    });
+    const offPages = editor.subscribe('pages', () => setDraft(null));
+    return () => {
+      editor.onCommentAt = null;
+      off();
+      offPages();
+    };
+  }, [editor, setDraft, setOpen]);
+  /** Bumped to load the file again from the server (after restoring a version). */
+  const [reloadKey, setReloadKey] = useState(0);
 
   /** Uploads image files and places them on the canvas (at a point, or in the middle of the view). */
   const placeImages = async (files: File[], at?: { x: number; y: number }) => {
@@ -134,7 +166,16 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
       queue?.dispose();
       if (thumbTimer.current) clearTimeout(thumbTimer.current);
     };
-  }, [editor, fileId]);
+  }, [editor, fileId, reloadKey]);
+
+  /** Waits until edits on screen are saved. */
+  const flushAll = async () => {
+    for (let i = 0; i < 50 && sync?.pending; i++) {
+      await sync.flush();
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (sync?.pending) throw new Error('Edits are still saving. Try again in a moment.');
+  };
 
   // first view: restore the last viewport, or fit the content
   const placed = useRef(false);
@@ -277,6 +318,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         theme={theme}
         setTheme={setTheme}
         onExportFile={() => setExporting(true)}
+        onHistory={() => setHistory(true)}
         onRename={async (name) => {
           const meta = await api.updateFile(fileId, { name });
           setFile(meta);
@@ -291,8 +333,10 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         onDropFiles={(files, at) => void placeImages(files, at)}
         notice={notice}
         onDismissNotice={() => setNotice(null)}
-      />
-      <PropertiesPanel editor={editor} fileName={file.name} />
+      >
+        <CommentPins editor={editor} store={comments} />
+      </CanvasView>
+      <RightPanel editor={editor} fileName={file.name} comments={comments} />
       <input
         ref={imageInput}
         type="file"
@@ -311,12 +355,19 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
           fileId={fileId}
           fileName={file.name}
           onClose={() => setExporting(false)}
-          beforeExport={async () => {
-            // export what is on screen: wait for pending saves
-            for (let i = 0; i < 50 && sync?.pending; i++) {
-              await sync.flush();
-              await new Promise((r) => setTimeout(r, 100));
-            }
+          beforeExport={flushAll}
+        />
+      )}
+      {history && (
+        <VersionHistory
+          fileId={fileId}
+          onClose={() => setHistory(false)}
+          beforeSave={flushAll}
+          onRestore={async (vid) => {
+            await flushAll();
+            await api.restoreVersion(fileId, vid);
+            setHistory(false);
+            setReloadKey((k) => k + 1);
           }}
         />
       )}

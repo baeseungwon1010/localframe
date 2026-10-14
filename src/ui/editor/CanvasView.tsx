@@ -43,6 +43,7 @@ export function CanvasView(props: {
   onDropFiles: (files: File[], at: { x: number; y: number }) => void;
   notice: string | null;
   onDismissNotice: () => void;
+  children?: React.ReactNode;
 }) {
   const { editor, onReady } = props;
   const [dragOver, setDragOver] = useState(false);
@@ -287,6 +288,7 @@ export function CanvasView(props: {
       {editor.doc.size === 0 && editor.tool === 'move' && (
         <p className="canvas-hint">Press F to draw a frame, R for a rectangle, L for a line or T for text.</p>
       )}
+      {props.children}
       {menu && <Menu label="Canvas actions" x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}
       {props.notice && (
         <div className="toast" role="alert">
