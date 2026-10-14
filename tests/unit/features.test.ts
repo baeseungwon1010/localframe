@@ -580,3 +580,75 @@ function ed0() {
   ed.pasteText('x');
   return ed.doc.get(ed.selection[0])!;
 }
+
+describe('grids, guides, snapping, presets, rename, rotation', () => {
+  it('drags a guide out of the ruler, snaps to it, and removes it on the ruler', () => {
+    const ed = setup();
+    ed.startGuideFromRuler('x');
+    ed.pointerMove(ptr(300, 200));
+    ed.pointerUp(ptr(300, 200));
+    expect(ed.currentPage.guides).toEqual([{ axis: 'x', pos: 300 }]);
+    // drawing next to it snaps the edge
+    const r = draw(ed, 'rect', [304, 100], [400, 160]);
+    expect(ed.doc.get(r)!.x).toBe(300);
+    // drag it back onto the ruler: gone
+    ed.setSelection([]);
+    ed.pointerDown(ptr(300, 400));
+    ed.pointerMove(ptr(10, 400));
+    ed.pointerUp(ptr(10, 400));
+    expect(ed.currentPage.guides).toEqual([]);
+    ed.undo();
+    expect(ed.currentPage.guides).toHaveLength(1);
+  });
+
+  it('column grids are snap targets', async () => {
+    const { gridRects } = await import('../../src/engine/editor.ts');
+    const ed = setup();
+    const f = draw(ed, 'frame', [0, 0], [400, 300]);
+    ed.updateNodes([f], (n) => ({ ...n, grids: [{ type: 'columns', count: 4, gutter: 20, margin: 20, size: 8, color: '#FF0000', opacity: 0.1, visible: true }] }));
+    const cols = gridRects(ed.doc.get(f)!, ed.doc.worldBounds(f));
+    expect(cols).toHaveLength(4);
+    expect(cols[0]).toMatchObject({ x: 20, width: 75 });
+    const r = draw(ed, 'rect', [117, 50], [180, 100]); // near column 2's left edge at 115
+    expect(ed.doc.get(r)!.x).toBe(115);
+    valid(ed);
+  });
+
+  it('resizing snaps the dragged edge to other layers', () => {
+    const ed = setup();
+    draw(ed, 'rect', [400, 100], [500, 200]);
+    const b = draw(ed, 'rect', [100, 300], [200, 400]);
+    drag(ed, [200, 350], [397, 350]); // east handle to near x=400
+    expect(ed.doc.get(b)!.width).toBe(300);
+  });
+
+  it('rotates several layers together about their common centre', () => {
+    const ed = setup();
+    const a = draw(ed, 'rect', [100, 100], [200, 200]);
+    const b = draw(ed, 'rect', [300, 100], [400, 200]);
+    ed.setSelection([a, b]);
+    // selection box 100..400 x 100..200; drag from just outside the NE corner around the centre (250,150)
+    drag(ed, [409, 91], [409, 400]);
+    const ca = ed.doc.worldBounds(a);
+    const cb = ed.doc.worldBounds(b);
+    const mid = { x: (ca.x + ca.width / 2 + cb.x + cb.width / 2) / 2, y: (ca.y + ca.height / 2 + cb.y + cb.height / 2) / 2 };
+    expect(mid.x).toBeCloseTo(250, 0);
+    expect(mid.y).toBeCloseTo(150, 0);
+    expect(ed.doc.get(a)!.rotation).not.toBe(0);
+    expect(ed.doc.get(a)!.rotation).toBeCloseTo(ed.doc.get(b)!.rotation, 3);
+  });
+
+  it('frame presets and bulk rename', () => {
+    const ed = setup();
+    ed.createFramePreset(393, 852, 'iPhone 16');
+    const f = ed.doc.get(ed.selection[0])!;
+    expect(f).toMatchObject({ type: 'FRAME', width: 393, height: 852, name: 'iPhone 16' });
+    const a = draw(ed, 'rect', [0, 1000], [10, 1010]);
+    const b = draw(ed, 'rect', [20, 1000], [30, 1010]);
+    ed.bulkRename([a, b], { pattern: 'Card $n', start: 1 });
+    expect(ed.doc.get(a)!.name).toBe('Card 1');
+    expect(ed.doc.get(b)!.name).toBe('Card 2');
+    ed.bulkRename([a, b], { find: 'Card', replace: 'Tile' });
+    expect(ed.doc.get(b)!.name).toBe('Tile 2');
+  });
+});
