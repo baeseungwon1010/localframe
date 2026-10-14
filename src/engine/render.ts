@@ -163,13 +163,45 @@ function fillShape(ctx: Ctx, n: SceneNode) {
   }
 }
 
+/** Canvas and SVG line caps and joins for a layer (vectors default to round). */
+export function capOf(n: SceneNode): 'butt' | 'round' | 'square' {
+  const c = n.strokeCap ?? (n.type === 'VECTOR' ? 'round' : 'none');
+  return c === 'none' ? 'butt' : c;
+}
+export function joinOf(n: SceneNode): 'miter' | 'round' | 'bevel' {
+  return n.strokeJoin ?? (n.type === 'VECTOR' ? 'round' : 'miter');
+}
+
+/** Bands for a per-side stroke, in the layer's own units, placed by the stroke's alignment. */
+export function sideBands(n: SceneNode): { x: number; y: number; width: number; height: number }[] {
+  const [t, r, b, l] = n.strokeSides!;
+  const at = (w: number) => (n.strokeAlign === 'inside' ? 0 : n.strokeAlign === 'center' ? -w / 2 : -w);
+  const bands = [];
+  if (t > 0) bands.push({ x: 0, y: at(t), width: n.width, height: t });
+  if (b > 0) bands.push({ x: 0, y: n.height - b - at(b), width: n.width, height: b });
+  if (l > 0) bands.push({ x: at(l), y: 0, width: l, height: n.height });
+  if (r > 0) bands.push({ x: n.width - r - at(r), y: 0, width: r, height: n.height });
+  return bands;
+}
+
 function strokeShape(ctx: Ctx, n: SceneNode) {
   const paints = n.strokes.filter((p) => p.visible);
+  if (n.strokeSides && (n.type === 'RECTANGLE' || isBox(n))) {
+    if (paints.length === 0) return;
+    ctx.save();
+    if (n.strokeAlign === 'inside') ctx.clip();
+    for (const p of paints) {
+      ctx.fillStyle = paintStyle(ctx, p, n.width, n.height);
+      for (const r of sideBands(n)) ctx.fillRect(r.x, r.y, r.width, r.height);
+    }
+    ctx.restore();
+    return;
+  }
   if (paints.length === 0 || n.strokeWeight <= 0) return;
   ctx.save();
   ctx.setLineDash(n.strokeDash);
-  ctx.lineJoin = n.type === 'VECTOR' ? 'round' : 'miter';
-  ctx.lineCap = n.type === 'VECTOR' ? 'round' : 'butt';
+  ctx.lineJoin = joinOf(n);
+  ctx.lineCap = capOf(n);
   const align = strokeAlignOf(n);
   if (align === 'center') {
     ctx.lineWidth = n.strokeWeight;
@@ -240,7 +272,7 @@ function drawLine(ctx: Ctx, n: SceneNode) {
   const len = n.width;
   ctx.save();
   ctx.lineWidth = n.strokeWeight;
-  ctx.lineCap = 'butt';
+  ctx.lineCap = capOf(n);
   ctx.lineJoin = 'round';
   ctx.setLineDash(n.strokeDash);
   for (const p of paints) {

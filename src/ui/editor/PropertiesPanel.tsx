@@ -445,7 +445,65 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
               update((n) => ({ ...n, strokeDash: v === 'dashed' ? [Math.max(4, n.strokeWeight * 3), Math.max(4, n.strokeWeight * 2)] : [] }))
             }
           />
+          {nodes.every((n) => n.type === 'LINE' || n.type === 'VECTOR') && (
+            <SelectField
+              label="Line ends"
+              value={common(nodes, (n) => n.strokeCap ?? (n.type === 'VECTOR' ? 'round' : 'none'))}
+              options={[
+                { value: 'none', label: 'Ends: flat' },
+                { value: 'round', label: 'Ends: round' },
+                { value: 'square', label: 'Ends: square' },
+              ]}
+              onChange={(v) => update((n) => ({ ...n, strokeCap: v }))}
+            />
+          )}
+          {!allLines && (
+            <SelectField
+              label="Corners"
+              value={common(nodes, (n) => n.strokeJoin ?? (n.type === 'VECTOR' ? 'round' : 'miter'))}
+              options={[
+                { value: 'miter', label: 'Join: miter' },
+                { value: 'round', label: 'Join: round' },
+                { value: 'bevel', label: 'Join: bevel' },
+              ]}
+              onChange={(v) => update((n) => ({ ...n, strokeJoin: v }))}
+            />
+          )}
         </div>
+        {nodes.every((n) => n.type === 'RECTANGLE' || n.type === 'FRAME' || n.type === 'COMPONENT') && (
+          <>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={nodes.every((n) => n.strokeSides)}
+                onChange={(e) =>
+                  update((n) => ({
+                    ...n,
+                    strokeSides: e.target.checked ? [n.strokeWeight, n.strokeWeight, n.strokeWeight, n.strokeWeight] : undefined,
+                  }))
+                }
+              />
+              Different weight per side
+            </label>
+            {nodes.every((n) => n.strokeSides) && (
+              <div className="grid2">
+                {(['Top', 'Right', 'Bottom', 'Left'] as const).map((side, i) => (
+                  <NumberField
+                    key={side}
+                    label={side[0]}
+                    ariaLabel={`${side} stroke weight`}
+                    value={common(nodes, (n) => n.strokeSides![i])}
+                    min={0}
+                    max={1000}
+                    onCommit={(v) =>
+                      update((n) => (n.strokeSides ? { ...n, strokeSides: n.strokeSides.map((w, j) => (j === i ? v : w)) as [number, number, number, number] } : n))
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
         {allLines && (
           <div className="arrow-row">
             <span className="field-caption">Arrows</span>

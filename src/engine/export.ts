@@ -5,7 +5,7 @@ import { ensureImages, imageDataUrl, imageSize } from './images.ts';
 import { instanceDoc } from './instances.ts';
 import { type Mat, type Rect, IDENTITY, localMatrix, unionRects } from './math.ts';
 import { buildPdf, type PdfPage } from './pdf.ts';
-import { arrowSize, clampRadii, drawNode, effectReach, imageRect, imagesUsed, lineShape } from './render.ts';
+import { arrowSize, capOf, clampRadii, drawNode, effectReach, imageRect, imagesUsed, joinOf, lineShape, sideBands } from './render.ts';
 import { fontStack, layoutText, lineOffset } from './text.ts';
 import { svgPathData } from './vector.ts';
 
@@ -289,6 +289,22 @@ class SvgWriter {
 
   private strokes(n: SceneNode): string {
     const paints = n.strokes.filter((p) => p.visible);
+    if (n.strokeSides && (n.type === 'RECTANGLE' || isContainer(n)) && n.type !== 'INSTANCE') {
+      if (!paints.length) return '';
+      let open = '';
+      let close = '';
+      if (n.strokeAlign === 'inside') {
+        const cid = this.id('clip');
+        this.defs.push(`<clipPath id="${cid}">${shapeElement(n, '')}</clipPath>`);
+        open = `<g clip-path="url(#${cid})">`;
+        close = '</g>';
+      }
+      const bands = sideBands(n);
+      const body = paints
+        .map((p) => bands.map((r) => `<rect x="${num(r.x)}" y="${num(r.y)}" width="${num(r.width)}" height="${num(r.height)}"${this.paint(p, 'fill', n.width, n.height)}/>`).join(''))
+        .join('');
+      return open + body + close;
+    }
     if (paints.length === 0 || n.strokeWeight <= 0) return '';
     const dash = n.strokeDash.length ? ` stroke-dasharray="${n.strokeDash.map(num).join(' ')}"` : '';
     const out: string[] = [];
@@ -296,7 +312,7 @@ class SvgWriter {
     let wrapClose = '';
     let width = n.strokeWeight;
     const align = n.type === 'VECTOR' && !n.vector?.closed ? 'center' : n.strokeAlign;
-    const caps = n.type === 'VECTOR' ? ' stroke-linecap="round" stroke-linejoin="round"' : '';
+    const caps = ` stroke-linecap="${capOf(n)}" stroke-linejoin="${joinOf(n)}"`;
     if (align === 'inside') {
       const cid = this.id('clip');
       this.defs.push(`<clipPath id="${cid}">${shapeElement(n, '')}</clipPath>`);
@@ -329,7 +345,7 @@ class SvgWriter {
     const dash = n.strokeDash.length ? ` stroke-dasharray="${n.strokeDash.map(num).join(' ')}"` : '';
     const out: string[] = [];
     for (const p of paints) {
-      out.push(`<path d="${poly(shape.points)}" fill="none" stroke-linejoin="round"${this.paint(p, 'stroke', Math.max(1, len), Math.max(1, n.strokeWeight))} stroke-width="${num(n.strokeWeight)}"${dash}/>`);
+      out.push(`<path d="${poly(shape.points)}" fill="none" stroke-linecap="${capOf(n)}" stroke-linejoin="round"${this.paint(p, 'stroke', Math.max(1, len), Math.max(1, n.strokeWeight))} stroke-width="${num(n.strokeWeight)}"${dash}/>`);
       for (const h of shape.heads) out.push(`<path d="${poly(h)}Z"${this.paint(p, 'fill', Math.max(1, len), Math.max(1, n.strokeWeight))}/>`);
     }
     return out.join('');

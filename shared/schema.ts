@@ -381,6 +381,11 @@ export const SceneNodeSchema = z
     /** Clips the layers above it in the same parent. */
     isMask: z.boolean().optional(),
     reactions: z.array(ReactionSchema).max(20).optional(),
+    /** Ends of open paths and lines; corners of paths. Defaults: round for vectors, else none and miter. */
+    strokeCap: z.enum(['none', 'round', 'square']).optional(),
+    strokeJoin: z.enum(['miter', 'round', 'bevel']).optional(),
+    /** Rectangles and frames: a separate stroke weight per side (top, right, bottom, left). */
+    strokeSides: z.tuple([z.number().min(0).max(1000), z.number().min(0).max(1000), z.number().min(0).max(1000), z.number().min(0).max(1000)]).optional(),
     /** Exports saved on the layer: format, scale and a suffix for the file name. */
     exportSettings: z
       .array(
