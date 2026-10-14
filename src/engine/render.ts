@@ -115,6 +115,11 @@ const strokeAlignOf = (n: SceneNode) => (n.type === 'VECTOR' && !n.vector?.close
 /** Where an image lands inside a w x h box for a scale mode. */
 export function imageRect(p: ImagePaint, iw: number, ih: number, w: number, h: number): Rect {
   if (p.scaleMode === 'stretch' || iw <= 0 || ih <= 0) return { x: 0, y: 0, width: w, height: h };
+  if (p.scaleMode === 'crop') {
+    const c = p.crop ?? { x: 0, y: 0, scale: 1 };
+    const s = Math.max(w / iw, h / ih) * c.scale;
+    return { x: (w - iw * s) / 2 + c.x, y: (h - ih * s) / 2 + c.y, width: iw * s, height: ih * s };
+  }
   const s = p.scaleMode === 'fill' ? Math.max(w / iw, h / ih) : Math.min(w / iw, h / ih);
   return { x: (w - iw * s) / 2, y: (h - ih * s) / 2, width: iw * s, height: ih * s };
 }

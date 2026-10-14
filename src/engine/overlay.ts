@@ -2,7 +2,8 @@ import type { SceneNode } from '../../shared/schema.ts';
 import { type Editor, gridRects } from './editor.ts';
 import { type Mat, apply, multiply } from './math.ts';
 import { instanceDoc } from './instances.ts';
-import { drawChildren } from './render.ts';
+import { drawChildren, imageRect } from './render.ts';
+import { getImage } from './images.ts';
 import { tracePath } from './vector.ts';
 
 export type OverlayColors = {
@@ -283,6 +284,24 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
       ctx.lineWidth = 1;
       ctx.stroke();
     });
+  }
+
+  // crop: the whole image faded, the layer's box outlined
+  if (editor.cropping) {
+    const n = doc.get(editor.cropping);
+    const paint = n?.fills.find((p) => p.type === 'IMAGE' && p.scaleMode === 'crop');
+    const img = paint && paint.type === 'IMAGE' ? getImage(paint.imageId) : null;
+    if (n && paint && paint.type === 'IMAGE' && img) {
+      const m = multiply(view, doc.world(n.id));
+      const r = imageRect(paint, img.naturalWidth, img.naturalHeight, n.width, n.height);
+      ctx.save();
+      ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+      ctx.globalAlpha = 0.35;
+      ctx.drawImage(img, r.x, r.y, r.width, r.height);
+      ctx.restore();
+      outlinePath(ctx, n, m);
+      haloStroke(ctx, c);
+    }
   }
 
   // vector editing: outline, handles and points

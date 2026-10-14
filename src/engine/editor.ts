@@ -136,6 +136,7 @@ type Interaction =
   | { kind: 'rotate'; start: Point; id: string; original: SceneNode; center: Point }
   | { kind: 'rotate-many'; start: Point; ids: string[]; originals: Map<string, SceneNode>; center: Point }
   | { kind: 'guide'; axis: 'x' | 'y'; index: number | null }
+  | { kind: 'crop'; id: string; start: Point; original: { x: number; y: number; scale: number } }
   | { kind: 'line-end'; id: string; end: 0 | 1; original: SceneNode }
   | { kind: 'create'; tool: Tool; start: Point; startScreen: Point; nodeId: string | null; parentId: string | null }
   | { kind: 'pen-handle' }
@@ -241,6 +242,12 @@ export class Editor {
   /** Vector layer whose points are being edited, and the selected point. */
   editingVector: string | null = null;
   vectorPoint: number | null = null;
+  /** The file being edited (set by the UI; used for copying images between files). */
+  fileId: string | null = null;
+  /** Asks the UI to copy images used by pasted layers from another file. */
+  onPastedImages: ((sourceFile: string, imageIds: string[]) => void) | null = null;
+  /** Image layer being cropped. */
+  cropping: string | null = null;
   showGrids = true;
   showRulers = false;
   /** A guide being dragged (from a ruler, or an existing one): its axis and position. */
@@ -403,6 +410,7 @@ export class Editor {
   setTool(tool: Tool) {
     if (this.pen && tool !== 'pen') this.finishPen();
     if (this.editingVector) this.exitVectorEdit();
+    if (this.cropping) this.exitCrop();
     this.tool = tool;
     this.emit('tool', 'view');
   }
@@ -1952,7 +1960,7 @@ export class Editor {
   /** Screen positions of the selection handles. */
   handlePositions(): { handle: SelectionHandle; at: Point }[] {
     const sel = this.selectedNodes();
-    if (sel.length === 0 || this.editingText || this.editingVector) return [];
+    if (sel.length === 0 || this.editingText || this.editingVector || this.cropping) return [];
     if (sel.length === 1 && sel[0].type === 'LINE') {
       const m = multiply(this.viewMatrix, this.doc.world(sel[0].id));
       return [
@@ -2023,6 +2031,16 @@ export class Editor {
     }
     if (e.button !== 0) return;
     if (this.tool === 'pen') return this.penDown(p, e);
+    if (this.cropping) {
+      const n = this.doc.get(this.cropping);
+      const { paint } = n ? this.cropPaint(n) : { paint: null };
+      if (n && paint && hitDeepest(this.doc, p, this.hitTolerance()) === n.id) {
+        this.begin();
+        this.interaction = { kind: 'crop', id: n.id, start: p, original: paint.crop ?? { x: 0, y: 0, scale: 1 } };
+        return;
+      }
+      this.exitCrop();
+    }
     if (this.editingVector) {
       const hit = this.vectorPartAt(e.sx, e.sy);
       if (hit) {
@@ -2152,6 +2170,19 @@ export class Editor {
     switch (it.kind) {
       case 'pen-handle':
         return this.penDrag(p, e);
+      case 'crop': {
+        const n = this.doc.get(it.id);
+        if (!n) return;
+        const d = applyVector(invert(this.doc.world(n.id)), { x: p.x - it.start.x, y: p.y - it.start.y });
+        const { i } = this.cropPaint(n);
+        if (i < 0) return;
+        this.put({
+          ...n,
+          fills: n.fills.map((q, j) => (j === i && q.type === 'IMAGE' ? { ...q, crop: { ...it.original, x: round2(it.original.x + d.x), y: round2(it.original.y + d.y) } } : q)),
+        });
+        this.emit('doc', 'view');
+        return;
+      }
       case 'vec-point':
         return this.dragVectorPart(it, p, e);
       case 'none': {
@@ -2266,6 +2297,11 @@ export class Editor {
       this.emit('view');
       return;
     }
+    if (it.kind === 'crop') {
+      this.end();
+      this.emit('view');
+      return;
+    }
     if (it.kind === 'vec-point') {
       const n = this.doc.get(it.id);
       if (n) this.put(fitVector(n));
@@ -2347,6 +2383,7 @@ export class Editor {
       const node = this.doc.get(sel)!;
       if (node.type === 'TEXT' && deepest === sel) return this.startTextEdit(sel);
       if (node.type === 'VECTOR' && deepest === sel) return this.startVectorEdit(sel);
+      if (deepest === sel && node.fills.some((f) => f.type === 'IMAGE')) return this.startCrop(sel);
       if (node.type === 'INSTANCE' && deepest === sel) {
         this.selectInner(sel, e.sx, e.sy);
         return;
@@ -2446,6 +2483,33 @@ export class Editor {
     this.end();
     this.tool = 'move';
     this.emit('tool', 'view', 'selection');
+  }
+
+  // ----------------------------------------------------------------- crop
+
+  /** Double-click an image layer: drag to move the image inside its shape, the panel sets the zoom. */
+  startCrop(id: string) {
+    const n = this.doc.get(id);
+    const i = n?.fills.findIndex((p) => p.type === 'IMAGE') ?? -1;
+    if (!n || i < 0 || this.doc.isEffectivelyLocked(id)) return;
+    const p = n.fills[i];
+    if (p.type === 'IMAGE' && p.scaleMode !== 'crop') {
+      this.updateNodes([id], (x) => ({ ...x, fills: x.fills.map((q, j) => (j === i && q.type === 'IMAGE' ? { ...q, scaleMode: 'crop' as const, crop: { x: 0, y: 0, scale: 1 } } : q)) }));
+    }
+    this.cropping = id;
+    this.setSelection([id]);
+    this.emit('view', 'tool');
+  }
+
+  exitCrop() {
+    if (!this.cropping) return;
+    this.cropping = null;
+    this.emit('view', 'tool');
+  }
+
+  private cropPaint(n: SceneNode) {
+    const i = n.fills.findIndex((p) => p.type === 'IMAGE' && p.scaleMode === 'crop');
+    return { i, paint: i >= 0 ? (n.fills[i] as Extract<SceneNode['fills'][number], { type: 'IMAGE' }>) : null };
   }
 
   // ------------------------------------------------------- vector editing
@@ -2991,6 +3055,10 @@ export class Editor {
     const { code, shift, alt, mod } = k;
     if (this.pen && (code === 'Enter' || code === 'Escape' || code === 'NumpadEnter')) {
       this.finishPen();
+      return true;
+    }
+    if (this.cropping && (code === 'Enter' || code === 'Escape')) {
+      this.exitCrop();
       return true;
     }
     if (this.editingVector) {

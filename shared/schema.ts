@@ -50,7 +50,9 @@ export const ImagePaintSchema = z
   .object({
     type: z.literal('IMAGE'),
     imageId: ImageIdSchema,
-    scaleMode: z.enum(['fill', 'fit', 'stretch']),
+    scaleMode: z.enum(['fill', 'fit', 'stretch', 'crop']),
+    /** Crop: zoom over "fill" and offset from the centre, in the layer's units. */
+    crop: z.object({ x: z.number().min(-1e6).max(1e6), y: z.number().min(-1e6).max(1e6), scale: z.number().min(0.05).max(50) }).strict().optional(),
     opacity: z.number().min(0).max(1),
     visible: z.boolean(),
   })

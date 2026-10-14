@@ -273,7 +273,20 @@ export function ImagePaintRow(props: { paint: ImagePaint; label: string; onChang
         <option value="fill">Fill</option>
         <option value="fit">Fit</option>
         <option value="stretch">Stretch</option>
+        <option value="crop">Crop</option>
       </select>
+      {paint.scaleMode === 'crop' && (
+        <NumberField
+          label=""
+          ariaLabel={`${label} zoom`}
+          value={Math.round((paint.crop?.scale ?? 1) * 100)}
+          min={100}
+          max={1000}
+          precision={0}
+          suffix="%"
+          onCommit={(v) => props.onChange({ ...paint, crop: { x: paint.crop?.x ?? 0, y: paint.crop?.y ?? 0, scale: v / 100 } })}
+        />
+      )}
       <NumberField
         label=""
         ariaLabel={`${label} opacity`}
