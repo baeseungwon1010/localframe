@@ -304,3 +304,91 @@ describe('slices', () => {
     valid(ed);
   });
 });
+
+describe('review fixes', () => {
+  it("a slice's SVG leaves out what lies outside it", () => {
+    const ed = setup();
+    const inside = draw(ed, 'rect', [0, 0], [40, 40]);
+    const outside = draw(ed, 'rect', [600, 600], [650, 650]);
+    ed.updateNodes([outside], (n) => ({ ...n, name: 'SECRET-OUTSIDE' }));
+    const s = draw(ed, 'slice', [0, 0], [50, 50]);
+    const t = exportTargetFor(ed.doc, ed.doc.get(s)!, null, '#FFFFFF');
+    expect(t.ids).toEqual([inside]);
+    expect(svgMarkup(ed.doc, t).svg).not.toContain('SECRET-OUTSIDE');
+  });
+
+  it('a long pencil stroke stays savable', () => {
+    const ed = setup();
+    ed.setTool('pencil');
+    ed.pointerDown(ptr(0, 0));
+    for (let i = 1; i <= 12_000; i++) ed.pointerMove(ptr(i % 2 ? 0 : 10, i * 2));
+    ed.pointerUp(ptr(0, 24_000));
+    const n = ed.doc.get(ed.selection[0])!;
+    expect(n.vector!.points.length).toBeLessThanOrEqual(10_000);
+    valid(ed);
+  });
+
+  it('updating a library component keeps instance overrides', () => {
+    const lib = setup();
+    const card = draw(lib, 'frame', [0, 0], [100, 60]);
+    const inner = draw(lib, 'rect', [10, 10], [40, 40]);
+    lib.setSelection([card]);
+    lib.createComponent();
+    const comp = lib.selection[0];
+    const ed = setup();
+    const out = ed.importLibraryComponent({ fileId: 'lib', nodes: [...lib.doc.all()] }, comp)!;
+    const inst = ed.createInstance(out.id, { x: 0, y: 0 })!;
+    const localInner = ed.doc.descendants(out.id).find((id) => ed.doc.get(id)!.type === 'RECTANGLE')!;
+    ed.updateNodes([inst], (n) => ({ ...n, overrides: { [localInner]: { fills: [{ color: '#00FF00', opacity: 1, visible: true }] } } }));
+    lib.updateNodes([inner], (n) => ({ ...n, width: 50 }));
+    ed.importLibraryComponent({ fileId: 'lib', nodes: [...lib.doc.all()] }, comp);
+    expect(ed.doc.descendants(out.id)).toContain(localInner);
+    const v = instanceDoc(ed.doc, ed.doc.get(inst)!)!;
+    const fill = [...v.all()].find((n) => n.type === 'RECTANGLE')!.fills[0] as { color: string };
+    expect(fill.color).toBe('#00FF00');
+    valid(ed);
+  });
+
+  it('smart animate brings the components that nested instances use', () => {
+    const ed = setup();
+    const dot = draw(ed, 'ellipse', [0, 0], [10, 10]);
+    ed.setSelection([dot]);
+    ed.createComponent();
+    const dotComp = ed.selection[0];
+    const box = draw(ed, 'frame', [0, 100], [60, 160]);
+    ed.createInstance(dotComp, { x: 5, y: 105 }, box);
+    ed.setSelection([box]);
+    ed.createComponent();
+    const boxComp = ed.selection[0];
+    const a = draw(ed, 'frame', [300, 0], [500, 200]);
+    const b = draw(ed, 'frame', [600, 0], [800, 200]);
+    ed.createInstance(boxComp, { x: 610, y: 10 }, b);
+    const frame = tweenScreens(ed.doc, a, ed.doc, b, 0.5);
+    expect(frame.get(dotComp)).toBeDefined();
+    expect(frame.get(boxComp)).toBeDefined();
+  });
+
+  it('refuses an instance swap that makes a component show itself', () => {
+    const ed = setup();
+    const r = draw(ed, 'rect', [0, 0], [20, 20]);
+    ed.setSelection([r]);
+    ed.createComponent();
+    const icon = ed.selection[0];
+    const f = draw(ed, 'frame', [0, 100], [100, 160]);
+    const nested = ed.createInstance(icon, { x: 5, y: 105 }, f)!;
+    ed.setSelection([f]);
+    ed.createComponent();
+    const btn = ed.selection[0];
+    ed.addComponentProp(btn, 'INSTANCE_SWAP');
+    const prop = ed.doc.get(btn)!.componentProps![0];
+    ed.linkProp(nested, 'swap', prop.id);
+    ed.updateComponentProp(btn, prop.id, { defaultValue: btn });
+    expect(ed.doc.get(btn)!.componentProps![0].defaultValue).toBe(icon);
+    const inst = ed.createInstance(btn, { x: 300, y: 300 })!;
+    ed.setPropValue(inst, prop.id, btn);
+    expect(ed.doc.get(inst)!.propValues?.[prop.id]).toBeUndefined();
+    // and a file that does it anyway is refused
+    const bad: SceneNode[] = [...ed.doc.all()].map((n) => (n.id === btn ? { ...n, componentProps: [{ ...prop, defaultValue: btn }] as SceneNode["componentProps"] } : n));
+    expect(validateTree(bad, ed.pages)).toMatch(/itself/);
+  });
+});
