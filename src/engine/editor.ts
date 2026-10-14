@@ -265,6 +265,8 @@ export class Editor {
   tool: Tool = 'move';
   selection: string[] = [];
   hover: string | null = null;
+  /** Outline mode (Ctrl/Cmd+Y): every layer drawn as a thin outline. */
+  outlineMode = false;
   /** Alt is held: hovering shows distances from the selection. */
   altDown = false;
   viewport: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -944,6 +946,11 @@ export class Editor {
   setPrototypeStart(frameId: string | null) {
     const id = this.doc.currentPage;
     this.transact(() => this.setPages(this.pages.map((p) => (p.id === id ? { ...p, prototypeStart: frameId ?? undefined } : p))));
+    this.emit('view');
+  }
+
+  toggleOutlineMode() {
+    this.outlineMode = !this.outlineMode;
     this.emit('view');
   }
 
@@ -3470,9 +3477,6 @@ export class Editor {
           if (shift) this.redo();
           else this.undo();
           return true;
-        case 'KeyY':
-          this.redo();
-          return true;
         case 'KeyD':
           this.duplicateSelection();
           return true;
@@ -3519,6 +3523,9 @@ export class Editor {
             return true;
           }
           return false;
+        case 'KeyY':
+          this.toggleOutlineMode();
+          return true;
         case 'KeyM':
           if (alt) {
             this.useAsMask();

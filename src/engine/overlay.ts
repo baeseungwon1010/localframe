@@ -154,6 +154,7 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
   ctx.setTransform(dpr * v.zoom, 0, 0, dpr * v.zoom, dpr * v.x, dpr * v.y);
   const topLeft = editor.toWorld(0, 0);
   drawChildren(ctx, doc, null, {
+    outline: editor.outlineMode,
     skip: editor.editingText ? new Set([editor.editingText]) : undefined,
     cull: { x: topLeft.x, y: topLeft.y, width: width / v.zoom, height: height / v.zoom },
   });

@@ -20,6 +20,8 @@ export type DrawOptions = {
   depth?: number;
   /** Layers inside instances that may still be drawn in this pass (shared by the whole pass). */
   budget?: { left: number };
+  /** Outline mode: every layer as a thin outline, no fills, images or effects. */
+  outline?: boolean;
 };
 
 /** Upper bound on instance content drawn per frame, whatever the file says. */
@@ -299,6 +301,46 @@ function drawContainer(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions)
   ctx.restore();
   shapePath(ctx, n);
   strokeShape(ctx, n);
+}
+
+const OUTLINE_INK = '#6E7177';
+
+/** Outline mode: the layer's shape as a one-pixel line; text stays readable; containers show their content. */
+function drawOutline(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions, root: SceneDoc) {
+  const t = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
+  const px = t ? 1 / Math.max(1e-6, Math.hypot(t.a, t.b)) : 1;
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.lineWidth = px;
+  ctx.setLineDash([]);
+  ctx.strokeStyle = OUTLINE_INK;
+  switch (n.type) {
+    case 'GROUP':
+    case 'BOOLEAN':
+      drawChildren(ctx, doc, n.id, { ...opts, root });
+      return;
+    case 'INSTANCE': {
+      const depth = opts.depth ?? 0;
+      const v = depth < MAX_INSTANCE_DEPTH && (opts.budget?.left ?? 1) > 0 ? instanceDoc(root, n) : null;
+      shapePath(ctx, n);
+      ctx.stroke();
+      if (v) drawChildren(ctx, v, n.id, { ...opts, root, depth: depth + 1 });
+      return;
+    }
+    case 'TEXT':
+      drawText(ctx, { ...n, fills: [{ color: OUTLINE_INK, opacity: 1, visible: true }] });
+      return;
+    case 'LINE': {
+      ctx.beginPath();
+      linePoints(n).forEach((q, i) => (i === 0 ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y)));
+      ctx.stroke();
+      return;
+    }
+    default:
+      shapePath(ctx, n);
+      ctx.stroke();
+      if (isBox(n)) drawChildren(ctx, doc, n.id, { ...opts, root });
+  }
 }
 
 function drawMissingComponent(ctx: Ctx, n: SceneNode) {
@@ -616,6 +658,11 @@ export function drawNode(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOption
   ctx.save();
   const m = localMatrix(n.x, n.y, n.rotation);
   ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+  if (opts.outline) {
+    drawOutline(ctx, doc, n, opts, root);
+    ctx.restore();
+    return;
+  }
   ctx.globalAlpha *= n.opacity;
   if (n.blendMode && n.blendMode !== 'normal') ctx.globalCompositeOperation = n.blendMode;
   const effects = (n.effects ?? []).filter((e) => e.visible);
@@ -629,7 +676,7 @@ export function drawChildren(ctx: Ctx, doc: SceneDoc, parentId: string | null, o
   let masked = false;
   for (const id of doc.children(parentId)) {
     const n = doc.get(id)!;
-    if (n.isMask && n.visible && typeof ctx.getTransform === 'function') {
+    if (n.isMask && n.visible && !o.outline && typeof ctx.getTransform === 'function') {
       // a mask clips the layers above it, up to the next mask; the mask itself isn't drawn
       if (masked) ctx.restore();
       ctx.save();
