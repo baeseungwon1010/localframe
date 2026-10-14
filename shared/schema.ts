@@ -143,6 +143,12 @@ export const TextRunSchema = z
     color: hexColor.optional(),
     italic: z.boolean().optional(),
     decoration: z.enum(['none', 'underline', 'strikethrough']).optional(),
+    /** A web or mail link; nothing else (no javascript: or data: URLs). */
+    link: z
+      .string()
+      .max(2000)
+      .regex(/^(https?:\/\/|mailto:)[^\s"<>]+$/)
+      .optional(),
   })
   .strict()
   .refine((r) => r.end > r.start, 'empty run');
@@ -162,6 +168,13 @@ export const TextStyleSchema = z
     decoration: z.enum(['none', 'underline', 'strikethrough']).optional(),
     /** Ranges of the text with their own style (character offsets, end exclusive). */
     runs: z.array(TextRunSchema).max(2000).optional(),
+    /** Extra space after each paragraph, px. */
+    paragraphSpacing: z.number().min(0).max(10_000).optional(),
+    textCase: z.enum(['upper', 'lower', 'title']).optional(),
+    /** Lines shown before the text ends with an ellipsis. */
+    maxLines: z.number().int().min(1).max(10_000).optional(),
+    /** Per paragraph: a bulleted or numbered list item, or plain. */
+    lists: z.array(z.enum(['bullet', 'number']).nullable()).max(100_000).optional(),
   })
   .strict();
 export type TextStyle = z.infer<typeof TextStyleSchema>;

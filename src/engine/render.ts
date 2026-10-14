@@ -412,7 +412,18 @@ function drawText(ctx: Ctx, n: SceneNode) {
   ctx.textBaseline = 'alphabetic';
   const fills = n.fills.filter((p) => p.visible && p.type !== 'IMAGE');
   for (const line of layout.lines) {
-    const x0 = lineOffset(t.align, n.width, line.width);
+    const x0 = line.indent + lineOffset(t.align, n.width - line.indent, line.width);
+    if (line.marker) {
+      // list marker, right-aligned in the indent
+      const st = line.segments[0]?.style ?? { fontFamily: t.fontFamily, fontWeight: t.fontWeight, fontSize: t.fontSize, italic: false };
+      ctx.font = fontString({ ...st, italic: false });
+      const mw = ctx.measureText(line.marker).width;
+      for (const p of fills) {
+        if (p.type === 'IMAGE') continue;
+        ctx.fillStyle = paintStyle(ctx, p, n.width, n.height);
+        ctx.fillText(line.marker, line.indent - mw - st.fontSize * 0.4, line.baseline);
+      }
+    }
     for (const seg of line.segments) {
       ctx.font = fontString(seg.style);
       const x = x0 + seg.x;
@@ -422,10 +433,12 @@ function drawText(ctx: Ctx, n: SceneNode) {
         if (p.type === 'IMAGE') continue;
         ctx.fillStyle = paintStyle(ctx, p, n.width, n.height);
         ctx.fillText(seg.text, x, line.baseline);
-        if (seg.style.decoration !== 'none') {
+        // links are underlined unless they have their own decoration
+        const deco = seg.style.decoration !== 'none' ? seg.style.decoration : seg.style.link ? 'underline' : 'none';
+        if (deco !== 'none') {
           const size = seg.style.fontSize;
           const thick = Math.max(1, size / 14);
-          const y = seg.style.decoration === 'underline' ? line.baseline + size * 0.12 : line.baseline - size * 0.3;
+          const y = deco === 'underline' ? line.baseline + size * 0.12 : line.baseline - size * 0.3;
           ctx.fillRect(x, y - thick / 2, seg.width, thick);
         }
       }

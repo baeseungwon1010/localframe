@@ -409,8 +409,12 @@ class SvgWriter {
       .map((_, fi) => {
         const spans = layout.lines
           .map((line) => {
-            const x0 = lineOffset(t.align, n.width, line.width);
-            return line.segments
+            const x0 = line.indent + lineOffset(t.align, n.width - line.indent, line.width);
+            // the marker sits in the indent; its exact width isn't known here, so it is right-aligned
+            const marker = line.marker
+              ? `<tspan x="${num(line.indent - t.fontSize * 0.4)}" y="${num(line.baseline)}" text-anchor="end">${escapeXml(line.marker)}</tspan>`
+              : '';
+            return marker + line.segments
               .map((seg) => {
                 const st = seg.style;
                 const attrs =
@@ -418,9 +422,11 @@ class SvgWriter {
                   (st.fontWeight !== t.fontWeight ? ` font-weight="${num(st.fontWeight)}"` : '') +
                   (st.fontSize !== t.fontSize ? ` font-size="${num(st.fontSize)}"` : '') +
                   (st.italic ? ' font-style="italic"' : '') +
-                  (st.decoration === 'underline' ? ' text-decoration="underline"' : st.decoration === 'strikethrough' ? ' text-decoration="line-through"' : '') +
+                  (st.decoration === 'underline' || (st.decoration === 'none' && st.link) ? ' text-decoration="underline"' : st.decoration === 'strikethrough' ? ' text-decoration="line-through"' : '') +
                   (st.color ? ` fill="${escapeXml(st.color)}"` : '');
-                return `<tspan x="${num(x0 + seg.x)}" y="${num(line.baseline)}"${attrs}>${escapeXml(seg.text)}</tspan>`;
+                const span = `<tspan x="${num(x0 + seg.x)}" y="${num(line.baseline)}"${attrs}>${escapeXml(seg.text)}</tspan>`;
+                // links are http(s) or mailto only (checked by the schema)
+                return st.link ? `<a href="${escapeXml(st.link)}">${span}</a>` : span;
               })
               .join('');
           })

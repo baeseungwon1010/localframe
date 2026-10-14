@@ -30,6 +30,8 @@ import {
   TextAlignCenter,
   TextAlignEnd,
   TextAlignStart,
+  List,
+  ListOrdered,
 } from 'lucide-react';
 import { type Constraints, type Layout, type LayoutChild, type Paint, type SceneNode, type TextStyle, BLEND_MODES } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
@@ -40,7 +42,7 @@ import { exportLayers } from '../layerExport.ts';
 import { CodePanel } from './CodePanel.tsx';
 import { overridableTexts } from '../../engine/instances.ts';
 import { DEFAULT_LAYOUT } from '../../engine/layout.ts';
-import { solid, TYPE_LABEL } from '../../engine/nodes.ts';
+import { fitText, solid, TYPE_LABEL } from '../../engine/nodes.ts';
 import { FONT_FAMILIES, FONT_WEIGHTS, fontStack } from '../../engine/text.ts';
 import { IconButton, MOD } from '../components.tsx';
 import { type RunProps, adjustRuns, rangeValue } from '../../engine/textRuns.ts';
@@ -601,12 +603,7 @@ function TextSection({ editor, nodes, update }: { editor: Editor; nodes: SceneNo
   const deco = value('decoration', (n) => t(n).decoration ?? 'none');
   return (
     <Section title={sel ? 'Text (selected)' : 'Text'} action={<StylePicker editor={editor} nodes={nodes} field="text" />}>
-      <SelectField
-        label="Font"
-        value={value('fontFamily', (n) => t(n).fontFamily) as typeof MIXED | string}
-        options={FONT_FAMILIES.map((f) => ({ value: f, label: f, style: { fontFamily: fontStack(f) } }))}
-        onChange={(v) => editor.styleText({ fontFamily: v })}
-      />
+      <FontPicker value={value('fontFamily', (n) => t(n).fontFamily) as typeof MIXED | string} onChange={(v) => editor.styleText({ fontFamily: v })} />
       <div className="grid2">
         <SelectField
           label="Font weight"
@@ -661,8 +658,43 @@ function TextSection({ editor, nodes, update }: { editor: Editor; nodes: SceneNo
           ]}
           onChange={(v) => setText({ autoResize: v })}
         />
+        <NumberField
+          label="Para"
+          ariaLabel="Paragraph spacing"
+          value={common(nodes, (n) => t(n).paragraphSpacing ?? 0)}
+          min={0}
+          max={10_000}
+          onCommit={(v) => update((n) => fitText({ ...n, text: { ...n.text!, paragraphSpacing: v > 0 ? v : undefined } }))}
+        />
+        <NumberField
+          label="Lines"
+          ariaLabel="Maximum lines (0 for no limit)"
+          value={common(nodes, (n) => t(n).maxLines ?? 0)}
+          min={0}
+          max={10_000}
+          precision={0}
+          onCommit={(v) => update((n) => fitText({ ...n, text: { ...n.text!, maxLines: v >= 1 ? Math.round(v) : undefined } }))}
+        />
+        <SelectField
+          label="Text case"
+          value={common(nodes, (n) => t(n).textCase ?? 'none')}
+          options={[
+            { value: 'none', label: 'As typed' },
+            { value: 'upper', label: 'UPPER CASE' },
+            { value: 'lower', label: 'lower case' },
+            { value: 'title', label: 'Title Case' },
+          ]}
+          onChange={(v) => update((n) => fitText({ ...n, text: { ...n.text!, textCase: v === 'none' ? undefined : v } }))}
+        />
       </div>
+      <LinkField editor={editor} current={value('link', () => undefined)} />
       <div className="text-toggles" role="toolbar" aria-label="Text decoration">
+        <IconButton label="Bulleted list" onClick={() => editor.setTextList('bullet')}>
+          <List {...ICON} />
+        </IconButton>
+        <IconButton label="Numbered list" onClick={() => editor.setTextList('number')}>
+          <ListOrdered {...ICON} />
+        </IconButton>
         <IconButton label="Bold" shortcut={`${MOD}B`} pressed={weight === 700} onClick={() => editor.styleText({ fontWeight: weight === 700 ? 400 : 700 })}>
           <Bold {...ICON} />
         </IconButton>
@@ -691,6 +723,90 @@ function TextSection({ editor, nodes, update }: { editor: Editor; nodes: SceneNo
         )}
       </div>
     </Section>
+  );
+}
+
+const LINK_RE = /^(https?:\/\/|mailto:)[^\s"<>]+$/;
+
+/** A link on the selected text (or the whole layer): web and mail addresses only. */
+function LinkField({ editor, current }: { editor: Editor; current: string | undefined | typeof MIXED | 'mixed' }) {
+  const shown = typeof current === 'string' && current !== 'mixed' ? current : '';
+  const [error, setError] = useState(false);
+  return (
+    <label className="dialog-field">
+      <span>Link</span>
+      <input
+        className={`hex-input override-input ${error ? 'invalid' : ''}`}
+        key={shown}
+        defaultValue={shown}
+        placeholder={current === MIXED || current === 'mixed' ? 'Mixed' : 'https://…'}
+        maxLength={2000}
+        aria-label="Link"
+        aria-invalid={error}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        }}
+        onBlur={(e) => {
+          let v = e.target.value.trim();
+          if (v && !/^[a-z]+:/i.test(v)) v = `https://${v}`;
+          if (v && !LINK_RE.test(v)) return setError(true);
+          setError(false);
+          if (v !== shown) editor.styleText({ link: v });
+        }}
+      />
+    </label>
+  );
+}
+
+/** Font family: the bundled fonts, fonts on this computer (where the browser can list them), or any name. */
+function FontPicker({ value, onChange }: { value: string | typeof MIXED; onChange: (v: string) => void }) {
+  const [local, setLocal] = useState<string[]>([]);
+  const canList = typeof window !== 'undefined' && 'queryLocalFonts' in window;
+  const families = [...new Set([...FONT_FAMILIES, ...local])];
+  return (
+    <div className="font-picker">
+      <input
+        className="hex-input override-input"
+        list="font-families"
+        aria-label="Font"
+        key={String(value)}
+        defaultValue={value === MIXED ? '' : value}
+        placeholder={value === MIXED ? 'Mixed' : 'Font'}
+        maxLength={100}
+        style={value === MIXED ? undefined : { fontFamily: fontStack(value) }}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        }}
+        onBlur={(e) => {
+          const v = e.target.value.replace(/["\\]/g, '').trim().slice(0, 100);
+          if (v && v !== value) onChange(v);
+        }}
+      />
+      <datalist id="font-families">
+        {families.map((f) => (
+          <option key={f} value={f} />
+        ))}
+      </datalist>
+      {canList && local.length === 0 && (
+        <button
+          type="button"
+          className="mini-btn wide"
+          title="Lists the fonts installed on this computer (the browser asks first)"
+          onClick={async () => {
+            try {
+              const fonts = await (window as unknown as { queryLocalFonts: () => Promise<{ family: string }[]> }).queryLocalFonts();
+              setLocal([...new Set(fonts.map((f) => f.family))].sort().slice(0, 2000));
+            } catch {
+              /* refused: the bundled fonts and typed names still work */
+            }
+          }}
+        >
+          Local fonts
+        </button>
+      )}
+    </div>
   );
 }
 

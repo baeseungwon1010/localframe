@@ -1978,3 +1978,17 @@ button:disabled {
   gap: var(--space-2);
   margin-top: var(--space-2);
 }
+
+.font-picker {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.font-picker input {
+  flex: 1;
+  min-width: 0;
+}
+
+.override-input.invalid {
+  outline: 1px solid var(--color-danger);
+}

@@ -1,7 +1,7 @@
 import type { TextRun, TextStyle } from '../../shared/schema.ts';
 
 export type RunProps = Omit<TextRun, 'start' | 'end'>;
-const KEYS: (keyof RunProps)[] = ['fontFamily', 'fontWeight', 'fontSize', 'color', 'italic', 'decoration'];
+const KEYS: (keyof RunProps)[] = ['fontFamily', 'fontWeight', 'fontSize', 'color', 'italic', 'decoration', 'link'];
 
 /** One props object per character (shared objects for equal stretches). */
 function explode(runs: TextRun[] | undefined, length: number): RunProps[] {
@@ -38,7 +38,7 @@ function prune(t: TextStyle, chars: RunProps[]): RunProps[] {
     let changed = false;
     const next: RunProps = { ...c };
     for (const k of KEYS) {
-      if (k !== 'color' && next[k] !== undefined && next[k] === base[k]) {
+      if (k !== 'color' && k !== 'link' && next[k] !== undefined && next[k] === base[k]) {
         delete next[k];
         changed = true;
       }
@@ -56,21 +56,23 @@ export function styleRange(t: TextStyle, start: number, end: number, patch: RunP
     // whole text: the layer's style changes, and runs stop overriding what was set
     const base: TextStyle = { ...t };
     for (const k of KEYS) {
-      if (patch[k] === undefined || k === 'color') continue;
+      if (patch[k] === undefined || k === 'color' || k === 'link') continue;
       (base as Record<string, unknown>)[k] = patch[k];
     }
     let chars = explode(t.runs, len).map((c) => {
       const next = { ...c };
-      for (const k of KEYS) if (patch[k] !== undefined && k !== 'color') delete next[k];
+      for (const k of KEYS) if (patch[k] !== undefined && k !== 'color' && k !== 'link') delete next[k];
       return next;
     });
+    // colour and links live on runs only; an empty link removes it
     if (patch.color !== undefined) chars = chars.map((c) => ({ ...c, color: patch.color }));
+    if (patch.link !== undefined) chars = chars.map((c) => ({ ...c, link: patch.link || undefined }));
     const runs = implode(prune(base, chars));
     return { ...base, runs: runs.length ? runs : undefined };
   }
   if (b <= a) return t;
   const chars = explode(t.runs, len);
-  for (let i = a; i < b; i++) chars[i] = { ...chars[i], ...patch };
+  for (let i = a; i < b; i++) chars[i] = { ...chars[i], ...patch, ...(patch.link === '' ? { link: undefined } : {}) };
   const runs = implode(prune(t, chars));
   return { ...t, runs: runs.length ? runs : undefined };
 }
@@ -88,14 +90,34 @@ export function rangeValue<K extends keyof RunProps>(t: TextStyle, start: number
   return value;
 }
 
+/**
+ * Keeps list markers on the same paragraphs when the text is edited between `p` (common prefix) and
+ * `s` (common suffix): new paragraphs take the list of the paragraph they were typed in.
+ */
+function adjustLists(t: TextStyle, old: string, next: string, p: number, s: number): TextStyle {
+  if (!t.lists?.length) return t;
+  const count = (str: string) => (str.match(/\n/g) ?? []).length;
+  const at = count(old.slice(0, p));
+  const removed = count(old.slice(p, old.length - s));
+  const added = count(next.slice(p, next.length - s));
+  const lists = [...t.lists];
+  const kind = lists[at] ?? null;
+  lists.splice(at + 1, removed, ...new Array(added).fill(kind));
+  const paragraphs = count(next) + 1;
+  const trimmed = lists.slice(0, paragraphs);
+  return { ...t, lists: trimmed.some((x) => x) ? trimmed : undefined };
+}
+
 /** Keeps runs on the same characters when the text is edited (typed text takes the style before it). */
 export function adjustRuns(t: TextStyle, next: string): TextStyle {
-  if (!t.runs?.length || t.characters === next) return { ...t, characters: next };
+  if (t.characters === next) return t;
   const old = t.characters;
   let p = 0;
   while (p < old.length && p < next.length && old[p] === next[p]) p++;
   let s = 0;
   while (s < old.length - p && s < next.length - p && old[old.length - 1 - s] === next[next.length - 1 - s]) s++;
+  t = adjustLists(t, old, next, p, s);
+  if (!t.runs?.length) return { ...t, characters: next };
   const chars = explode(t.runs, old.length);
   const inserted = next.length - p - s;
   const fill = chars[p - 1] ?? chars[p] ?? {};

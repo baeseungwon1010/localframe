@@ -3,7 +3,8 @@ import { RotateCcw, X } from 'lucide-react';
 import type { Reaction, SceneNode } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
 import { exportBounds, renderCanvas } from '../../engine/export.ts';
-import type { Rect } from '../../engine/math.ts';
+import { type Rect, apply } from '../../engine/math.ts';
+import { layoutText, lineOffset } from '../../engine/text.ts';
 import { IconButton } from '../components.tsx';
 
 type Screen = { id: string; canvas: HTMLCanvasElement; bounds: Rect; fit: number };
@@ -189,6 +190,21 @@ export function Presenter({ editor, startId, onClose }: { editor: Editor; startI
     setTimeout(() => setHint(false), 500);
   };
 
+  const links = (screen: Screen) =>
+    linkSpots(editor, screen).map((l) => (
+      // only http(s) and mailto links get here (the schema allows nothing else)
+      <a
+        key={l.key}
+        className="hotspot"
+        href={l.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={`Open ${l.href}`}
+        style={{ left: l.rect.x, top: l.rect.y, width: l.rect.width, height: l.rect.height }}
+        onClick={(e) => e.stopPropagation()}
+      />
+    ));
+
   const spots = (screen: Screen) =>
     hotspots(editor, screen).map((h) => {
       const click = h.reactions.find((r) => r.trigger === 'click');
@@ -246,6 +262,7 @@ export function Presenter({ editor, startId, onClose }: { editor: Editor; startI
         <div className="present-screen" style={current ? { width: current.bounds.width * current.fit, height: current.bounds.height * current.fit } : undefined}>
           <div className="present-host" ref={curHost} />
           {current && spots(current)}
+          {current && links(current)}
         </div>
         {overlay && (
           <div
@@ -265,6 +282,7 @@ export function Presenter({ editor, startId, onClose }: { editor: Editor; startI
             >
               <div className="present-host" ref={overlayHost} />
               {spots(overlay)}
+              {links(overlay)}
             </div>
           </div>
         )}
@@ -275,6 +293,37 @@ export function Presenter({ editor, startId, onClose }: { editor: Editor; startI
 
 function frameHasFill(n: SceneNode) {
   return n.fills.some((p) => p.visible && p.opacity > 0);
+}
+
+/** Linked text inside a screen, in screen pixels: each opens its address in a new tab. */
+function linkSpots(editor: Editor, screen: Screen): { key: string; href: string; rect: Rect }[] {
+  const doc = editor.doc;
+  const out: { key: string; href: string; rect: Rect }[] = [];
+  for (const id of [screen.id, ...doc.descendants(screen.id)]) {
+    const n = doc.get(id);
+    if (n?.type !== 'TEXT' || !n.text?.runs?.some((r) => r.link) || !doc.isEffectivelyVisible(id)) continue;
+    const t = n.text;
+    const layout = layoutText(t, t.autoResize === 'width' ? null : n.width);
+    const m = doc.world(id);
+    layout.lines.forEach((line, li) => {
+      const x0 = line.indent + lineOffset(t.align, n.width - line.indent, line.width);
+      line.segments.forEach((seg, si) => {
+        if (!seg.style.link) return;
+        const p = apply(m, { x: x0 + seg.x, y: line.top });
+        out.push({
+          key: `${id}:${li}:${si}`,
+          href: seg.style.link,
+          rect: {
+            x: (p.x - screen.bounds.x) * screen.fit,
+            y: (p.y - screen.bounds.y) * screen.fit,
+            width: seg.width * screen.fit,
+            height: line.height * screen.fit,
+          },
+        });
+      });
+    });
+  }
+  return out;
 }
 
 /** Layers with interactions inside a screen, in screen pixels (later ones sit on top). */

@@ -13,6 +13,7 @@ import {
   type Page,
   type SceneNode,
   type Style,
+  type TextStyle,
   type Variables,
   EMPTY_VARIABLES,
   MAX_COORD,
@@ -2097,6 +2098,35 @@ export class Editor {
     if (JSON.stringify(next) === JSON.stringify(this.textSelection)) return;
     this.textSelection = next;
     this.emit('selection');
+  }
+
+  /**
+   * Makes paragraphs list items (or plain again): the paragraphs the text selection touches while
+   * editing, otherwise every paragraph of the selected text layers. Toggles off when all already are.
+   */
+  setTextList(kind: 'bullet' | 'number') {
+    const apply = (t: TextStyle, from: number, to: number): TextStyle => {
+      const count = t.characters.split('\n').length;
+      const first = t.characters.slice(0, from).split('\n').length - 1;
+      const last = t.characters.slice(0, to).split('\n').length - 1;
+      const lists = Array.from({ length: count }, (_, i) => t.lists?.[i] ?? null);
+      const on = !lists.slice(first, last + 1).every((x) => x === kind);
+      for (let i = first; i <= last; i++) lists[i] = on ? kind : null;
+      return { ...t, lists: lists.some((x) => x) ? lists : undefined };
+    };
+    const editing = this.editingText ? this.doc.get(this.editingText) : undefined;
+    if (editing?.text) {
+      const draft = this.textDraft ?? editing.text.characters;
+      const sel = this.textSelection ?? { start: draft.length, end: draft.length };
+      this.transact(() => {
+        const t = adjustRuns(editing.text!, draft);
+        this.put(fitText({ ...editing, text: apply(t, sel.start, sel.end) }));
+      });
+      this.emit('view');
+      return;
+    }
+    const ids = this.selection.filter((id) => this.doc.get(id)?.type === 'TEXT');
+    this.updateNodes(ids, (n) => fitText({ ...n, text: apply(n.text!, 0, n.text!.characters.length) }));
   }
 
   /**

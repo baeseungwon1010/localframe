@@ -23,6 +23,8 @@ export type ResolvedStyle = {
   decoration: 'none' | 'underline' | 'strikethrough';
   /** Run colour, or null for the layer's fill. */
   color: string | null;
+  /** A link on this stretch (drawn underlined). */
+  link: string | null;
 };
 
 export function fontString(t: { fontWeight: number; fontSize: number; fontFamily: string; italic?: boolean }): string {
@@ -45,6 +47,10 @@ export type TextLine = {
   height: number;
   /** Alphabetic baseline, from the top of the box. */
   baseline: number;
+  /** Space on the left for a list marker (the line is aligned in what is left). */
+  indent: number;
+  /** "•" or "3." on the first line of a list item. */
+  marker?: string;
 };
 export type TextLayout = { lines: TextLine[]; width: number; height: number; lineHeight: number };
 
@@ -75,6 +81,7 @@ function resolveStyles(t: TextStyle): { styles: ResolvedStyle[]; at: Uint16Array
     italic: !!t.italic,
     decoration: t.decoration ?? 'none',
     color: null,
+    link: null,
   };
   const runs = (t.runs ?? []).filter((r) => r.end > r.start && r.start < t.characters.length);
   if (runs.length === 0) return { styles: [base], at: null };
@@ -101,6 +108,7 @@ function resolveStyles(t: TextStyle): { styles: ResolvedStyle[]; at: Uint16Array
           italic: r.italic ?? st.italic,
           decoration: r.decoration ?? st.decoration,
           color: r.color ?? st.color,
+          link: r.link ?? st.link,
         };
       }
     }
@@ -123,8 +131,23 @@ function resolveStyles(t: TextStyle): { styles: ResolvedStyle[]; at: Uint16Array
  * Lays text out into lines of styled segments. `maxWidth` null means auto width (only hard line
  * breaks). The renderer, the SVG exporter and auto-resize all use this, so they agree.
  */
+/** The text as shown: upper, lower or title case, one character for one (so offsets still match). */
+export function displayText(t: TextStyle): string {
+  if (!t.textCase) return t.characters;
+  // per UTF-16 unit, keeping the length: a character whose case change would change the length stays as is
+  const out: string[] = [];
+  let prev = ' ';
+  for (const c of t.characters) {
+    let next = t.textCase === 'upper' ? c.toUpperCase() : t.textCase === 'lower' ? c.toLowerCase() : /\s/.test(prev) ? c.toUpperCase() : c;
+    if (next.length !== c.length) next = c;
+    out.push(next);
+    prev = c;
+  }
+  return out.join('');
+}
+
 export function layoutText(t: TextStyle, maxWidth: number | null, measure: Measure = canvasMeasure): TextLayout {
-  const text = t.characters;
+  const text = displayText(t);
   const { styles, at } = resolveStyles(t);
   const styleOf = (i: number) => styles[at ? at[i] : 0];
   const fonts = styles.map((st) => fontString(st));
@@ -151,17 +174,28 @@ export function layoutText(t: TextStyle, maxWidth: number | null, measure: Measu
     return b;
   };
 
+  // each range remembers its paragraph, for list markers and paragraph spacing
   const ranges: [number, number][] = [];
+  const rangePara: number[] = [];
   let paraStart = 0;
   const paras = text.split('\n');
-  for (const para of paras) {
+  const listIndent = t.fontSize * 1.6;
+  paras.forEach((para, pi) => {
+    const from = ranges.length;
+    layoutPara(para, pi);
+    for (let i = from; i < ranges.length; i++) rangePara.push(pi);
+  });
+  function layoutPara(para: string, pi: number) {
     const p0 = paraStart;
     const p1 = p0 + para.length;
     paraStart = p1 + 1;
-    if (maxWidth === null) {
+    const indent = t.lists?.[pi] ? listIndent : 0;
+    const maxW = maxWidth === null ? null : Math.max(1, maxWidth - indent);
+    if (maxW === null) {
       ranges.push([p0, p1]);
-      continue;
+      return;
     }
+    const maxWidthHere = maxW;
     // Greedy wrap by words; words wider than the box break between characters.
     const tokens: [number, number][] = [];
     const re = /\S+\s*|\s+/g;
@@ -169,17 +203,17 @@ export function layoutText(t: TextStyle, maxWidth: number | null, measure: Measu
     while ((m = re.exec(para))) tokens.push([p0 + m.index, p0 + m.index + m[0].length]);
     if (tokens.length === 0) {
       ranges.push([p0, p0]);
-      continue;
+      return;
     }
     let ls0 = -1; // current line start (-1 = empty line)
     let le = p0;
     for (const [a, b] of tokens) {
       if (ls0 < 0) {
-        if (rangeWidth(a, trimEnd(a, b)) > maxWidth) {
+        if (rangeWidth(a, trimEnd(a, b)) > maxWidthHere) {
           // break a long word between characters
           let c0 = a;
           for (let i = a; i < b; i++) {
-            if (i > c0 && rangeWidth(c0, trimEnd(c0, i + 1)) > maxWidth) {
+            if (i > c0 && rangeWidth(c0, trimEnd(c0, i + 1)) > maxWidthHere) {
               ranges.push([c0, trimEnd(c0, i)]);
               c0 = i;
             }
@@ -190,17 +224,17 @@ export function layoutText(t: TextStyle, maxWidth: number | null, measure: Measu
           ls0 = a;
           le = b;
         }
-      } else if (rangeWidth(ls0, trimEnd(ls0, b)) <= maxWidth) {
+      } else if (rangeWidth(ls0, trimEnd(ls0, b)) <= maxWidthHere) {
         le = b;
       } else {
         ranges.push([ls0, trimEnd(ls0, le)]);
         if (/^\s+$/.test(text.slice(a, b))) {
           ls0 = -1;
           le = b;
-        } else if (rangeWidth(a, trimEnd(a, b)) > maxWidth) {
+        } else if (rangeWidth(a, trimEnd(a, b)) > maxWidthHere) {
           let c0 = a;
           for (let i = a; i < b; i++) {
-            if (i > c0 && rangeWidth(c0, trimEnd(c0, i + 1)) > maxWidth) {
+            if (i > c0 && rangeWidth(c0, trimEnd(c0, i + 1)) > maxWidthHere) {
               ranges.push([c0, trimEnd(c0, i)]);
               c0 = i;
             }
@@ -216,10 +250,36 @@ export function layoutText(t: TextStyle, maxWidth: number | null, measure: Measu
     ranges.push(ls0 < 0 ? [le, le] : [ls0, trimEnd(ls0, le)]);
   }
 
+  // too many lines: keep maxLines, the last one ending in an ellipsis that fits
+  if (t.maxLines && ranges.length > t.maxLines) {
+    ranges.length = t.maxLines;
+    rangePara.length = t.maxLines;
+  }
+  const truncated = !!t.maxLines && text.length > 0 && ranges.length === t.maxLines && ranges[ranges.length - 1][1] < trimEnd(0, text.length);
+  if (truncated && maxWidth !== null) {
+    const last = ranges[ranges.length - 1];
+    const indent = t.lists?.[rangePara[rangePara.length - 1]] ? listIndent : 0;
+    const ell = measure('…', fonts[at ? at[Math.max(0, last[1] - 1)] : 0]);
+    while (last[1] > last[0] && rangeWidth(last[0], last[1]) + ell > maxWidth - indent) last[1]--;
+    last[1] = trimEnd(last[0], last[1]);
+  }
+
   const baseLh = lineHeightPx(t);
   const lines: TextLine[] = [];
   let top = 0;
-  for (const [a, b] of ranges) {
+  // list numbers count up through consecutive numbered paragraphs
+  const numbers = new Map<number, number>();
+  let counter = 0;
+  paras.forEach((_, pi) => {
+    if (t.lists?.[pi] === 'number') numbers.set(pi, ++counter);
+    else counter = 0;
+  });
+  for (let ri = 0; ri < ranges.length; ri++) {
+    const [a, b] = ranges[ri];
+    const pi = rangePara[ri];
+    const firstOfPara = ri === 0 || rangePara[ri - 1] !== pi;
+    const lastOfPara = ri === ranges.length - 1 || rangePara[ri + 1] !== pi;
+    const kind = t.lists?.[pi] ?? null;
     const segments: TextSegment[] = [];
     let x = 0;
     let maxSize = 0;
@@ -234,12 +294,30 @@ export function layoutText(t: TextStyle, maxWidth: number | null, measure: Measu
       x += w;
       i = j;
     }
+    if (truncated && ri === ranges.length - 1) {
+      const st = styles[at ? at[Math.max(0, b - 1)] : 0];
+      const w = measure('…', fontString(st));
+      segments.push({ text: '…', x, width: w, style: st });
+      x += w;
+    }
     if (maxSize === 0) maxSize = (a < text.length ? styleOf(a) : styles[0]).fontSize;
     const height = t.lineHeight ?? Math.round(maxSize * 1.2 * 100) / 100;
-    lines.push({ text: text.slice(a, b), width: x, start: a, end: b, segments, top, height, baseline: top + height / 2 + maxSize * 0.35 });
+    lines.push({
+      text: text.slice(a, b),
+      width: x,
+      start: a,
+      end: b,
+      segments,
+      top,
+      height,
+      baseline: top + height / 2 + maxSize * 0.35,
+      indent: kind ? listIndent : 0,
+      ...(kind && firstOfPara ? { marker: kind === 'bullet' ? '•' : `${numbers.get(pi)}.` } : {}),
+    });
     top += height;
+    if (lastOfPara && ri < ranges.length - 1) top += t.paragraphSpacing ?? 0;
   }
-  const contentWidth = Math.max(0, ...lines.map((l) => l.width));
+  const contentWidth = Math.max(0, ...lines.map((l) => l.width + l.indent));
   return {
     lines,
     width: maxWidth === null ? Math.ceil(contentWidth) : maxWidth,
