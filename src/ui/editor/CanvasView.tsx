@@ -202,8 +202,14 @@ export function CanvasView(props: {
     {
       label: 'Flatten',
       shortcut: `${MOD}E`,
-      disabled: !sel.some((n) => n.type === 'RECTANGLE' || n.type === 'ELLIPSE' || n.type === 'LINE' || (n.type === 'VECTOR' && n.shape)),
+      disabled: !sel.some((n) => n.type === 'RECTANGLE' || n.type === 'ELLIPSE' || n.type === 'LINE' || n.type === 'BOOLEAN' || (n.type === 'VECTOR' && n.shape)),
       onSelect: () => editor.flattenSelection(),
+    },
+    {
+      label: 'Outline stroke',
+      shortcut: `${MOD}${SHIFT}O`,
+      disabled: !sel.some((n) => ['RECTANGLE', 'ELLIPSE', 'VECTOR', 'LINE'].includes(n.type) && n.strokes.some((p) => p.visible) && n.strokeWeight > 0),
+      onSelect: () => editor.outlineStroke(),
     },
     { label: 'Select matching layers', shortcut: `${MOD}${ALT}A`, disabled: !hasSel, onSelect: () => editor.selectMatching() },
     { label: 'Delete', shortcut: 'Del', disabled: !hasSel, onSelect: () => editor.deleteSelection() },

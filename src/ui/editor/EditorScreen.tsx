@@ -163,6 +163,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
     const offImages = onImageLoaded(() => editor.emit('view'));
     editor.onRequestImage = () => imageInput.current?.click();
     editor.onRequestRename = () => setRenaming(true);
+    editor.onNotice = (text) => setNotice(text);
     editor.onRequestPresent = () => setPresenting({ start: presentFrom(editor) });
     editor.fileId = fileId;
     editor.onPastedImages = (from, ids) => {
@@ -180,6 +181,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
       offImages();
       editor.onRequestImage = null;
       editor.onRequestRename = null;
+      editor.onNotice = null;
       editor.onRequestPresent = null;
       queue?.flushOnExit();
       queue?.dispose();

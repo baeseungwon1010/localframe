@@ -74,6 +74,7 @@ import { canHaveChildren, createNode, fitText, keyAt, keyOnTop, keysAbove, keysO
 import { canvasMeasure } from './text.ts';
 import { type RunProps, adjustRuns, styleRange } from './textRuns.ts';
 import { fitVector, outlineVector, scaleVector, shapeVector, simplifyPoints, smoothPath } from './vector.ts';
+import { areaToVector, booleanArea, strokeArea } from './pathOps.ts';
 
 export { fitText };
 
@@ -974,13 +975,92 @@ export class Editor {
     this.emit('view');
   }
 
-  /** Ctrl/Cmd+E: rectangles, ellipses, polygons, stars and lines become editable vectors that look the same. */
-  flattenSelection() {
+  /** Tells the person something the canvas can't show (shown as a notice by the UI). */
+  onNotice: ((text: string) => void) | null = null;
+
+  /**
+   * Ctrl/Cmd+Shift+O: a layer's stroke becomes a filled vector of the same look. A layer without a
+   * fill turns into that vector; one with a fill keeps it and gets the outlined stroke above it.
+   */
+  outlineStroke() {
     const ids = this.selection.filter((id) => !this.doc.isEffectivelyLocked(id));
-    const changed: string[] = [];
+    const made: string[] = [];
+    let failed = '';
     this.transact(() => {
       for (const id of ids) {
         const n = this.doc.get(id)!;
+        if (!['RECTANGLE', 'ELLIPSE', 'VECTOR', 'LINE'].includes(n.type) || !n.strokes.some((p) => p.visible) || n.strokeWeight <= 0) continue;
+        let vector: Vector | null;
+        try {
+          vector = areaToVector(strokeArea(n));
+        } catch (e) {
+          failed = e instanceof Error ? e.message : 'This stroke could not be outlined.';
+          continue;
+        }
+        if (!vector) continue;
+        const keepFill = n.type !== 'LINE' && n.fills.some((p) => p.visible);
+        const base = {
+          ...n,
+          type: 'VECTOR' as const,
+          vector,
+          fills: n.strokes as SceneNode['fills'],
+          strokes: [],
+          strokeSides: undefined,
+          strokeDash: [],
+          radii: undefined,
+          shape: undefined,
+          arrowStart: undefined,
+          arrowEnd: undefined,
+          startBind: undefined,
+          endBind: undefined,
+          elbow: undefined,
+          route: undefined,
+          fillStyleId: n.strokeStyleId,
+          strokeStyleId: undefined,
+        };
+        if (keepFill) {
+          const sibs = this.doc.children(n.parentId);
+          const above = sibs.indexOf(id) + 1;
+          const out = fitVector({ ...base, id: newId(), name: `${n.name} stroke`, order: keyAt(this.doc, sibs, above), bindings: undefined });
+          this.put({ ...n, strokes: [], strokeStyleId: undefined });
+          this.put(out);
+          made.push(out.id);
+        } else {
+          this.put(fitVector(base));
+          made.push(id);
+        }
+      }
+    });
+    if (failed) this.onNotice?.(failed);
+    if (made.length) this.setSelection(made);
+  }
+
+  /** Ctrl/Cmd+E: rectangles, ellipses, polygons, stars, lines and boolean groups become editable vectors that look the same. */
+  flattenSelection() {
+    const ids = this.selection.filter((id) => !this.doc.isEffectivelyLocked(id));
+    const changed: string[] = [];
+    let skipped = false;
+    this.transact(() => {
+      for (const id of ids) {
+        const n = this.doc.get(id)!;
+        if (n.type === 'BOOLEAN') {
+          let vector: Vector | null = null;
+          try {
+            const area = booleanArea(this.doc, n);
+            vector = area && areaToVector(area);
+          } catch {
+            vector = null;
+          }
+          if (!vector) {
+            skipped = true;
+            continue;
+          }
+          for (const d of this.doc.descendants(id)) this.drop(d);
+          const { booleanOp: _op, ...rest } = n;
+          this.put(fitVector({ ...rest, type: 'VECTOR', vector, strokes: n.strokes }));
+          changed.push(id);
+          continue;
+        }
         if (n.type === 'VECTOR') {
           if (n.shape) {
             this.put({ ...n, shape: undefined });
@@ -1007,6 +1087,7 @@ export class Editor {
         changed.push(id);
       }
     });
+    if (skipped) this.onNotice?.("Some boolean groups couldn't be flattened: text, groups and images inside them can't be, and very complex shapes may fail.");
     if (changed.length) this.emit('selection', 'view');
   }
 
@@ -3843,6 +3924,10 @@ export class Editor {
         case 'KeyE':
           if (shift) return false;
           this.flattenSelection();
+          return true;
+        case 'KeyO':
+          if (!shift) return false;
+          this.outlineStroke();
           return true;
         case 'KeyM':
           if (alt) {
