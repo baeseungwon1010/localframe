@@ -68,14 +68,14 @@ import {
   round2,
   unionRects,
 } from './math.ts';
-import { canHaveChildren, createNode, fitText, keyAt, keyOnTop, keysAbove, keysOnTop, newId, nextName } from './nodes.ts';
+import { canHaveChildren, createNode, fitText, keyAt, keyOnTop, keysAbove, keysOnTop, newId, nextName, solid } from './nodes.ts';
 import { canvasMeasure } from './text.ts';
 import { type RunProps, adjustRuns, styleRange } from './textRuns.ts';
-import { fitVector, scaleVector } from './vector.ts';
+import { fitVector, scaleVector, shapeVector } from './vector.ts';
 
 export { fitText };
 
-export type Tool = 'move' | 'hand' | 'frame' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'text' | 'pen' | 'comment';
+export type Tool = 'move' | 'hand' | 'frame' | 'rect' | 'ellipse' | 'polygon' | 'star' | 'line' | 'arrow' | 'text' | 'pen' | 'comment';
 
 /** Where a new comment goes: on the page, and inside the layer under it if there is one. */
 export type CommentSpot = { x: number; y: number; nodeId?: string; offset?: Point };
@@ -160,6 +160,8 @@ const TOOL_TYPE: Partial<Record<Tool, NodeType>> = {
   ellipse: 'ELLIPSE',
   line: 'LINE',
   arrow: 'LINE',
+  polygon: 'VECTOR',
+  star: 'VECTOR',
   text: 'TEXT',
 };
 
@@ -481,6 +483,11 @@ export class Editor {
     // a vector's points follow its box when it is resized (not when its points were edited)
     if (n.type === 'VECTOR' && prev?.vector && n.vector === prev.vector && (n.width !== prev.width || n.height !== prev.height)) {
       n = { ...n, vector: scaleVector(prev.vector, prev.width > 0 ? n.width / prev.width : 1, prev.height > 0 ? n.height / prev.height : 1) };
+    }
+    // polygons and stars are rebuilt from their settings; editing their points makes them plain vectors
+    if (n.type === 'VECTOR' && n.shape) {
+      if (!prev || prev.shape !== n.shape || n.width !== prev.width || n.height !== prev.height) n = { ...n, vector: shapeVector(n.shape, n.width, n.height) };
+      else if (n.vector !== prev.vector) n = { ...n, shape: undefined };
     }
     if (n.parentId === null && n.pageId === undefined) n = { ...n, pageId: this.doc.currentPage };
     else if (n.parentId !== null && n.pageId !== undefined) {
@@ -3252,7 +3259,7 @@ export class Editor {
       this.begin();
       const node = createNode(this.doc, type, it.parentId, { x: 0, y: 0, width: 1, height: 1 });
       const withArrow = it.tool === 'arrow' ? { ...node, arrowEnd: true, name: nextName(this.doc, 'Arrow') } : node;
-      this.put(withArrow);
+      this.put(this.asShape(withArrow, it.tool));
       it.nodeId = node.id;
       this.selection = [node.id];
       this.emit('selection');
@@ -3299,6 +3306,20 @@ export class Editor {
     this.emit('doc', 'view');
   }
 
+  /** A new vector set up as a polygon or star for those tools. */
+  private asShape(node: SceneNode, tool: Tool): SceneNode {
+    if (tool !== 'polygon' && tool !== 'star') return node;
+    return {
+      ...node,
+      name: nextName(this.doc, tool === 'star' ? 'Star' : 'Polygon'),
+      fills: [solid('#D9D9D9')],
+      strokes: [],
+      strokeWeight: 1,
+      strokeAlign: 'inside',
+      shape: { kind: tool, count: tool === 'star' ? 5 : 3, ratio: 0.38 },
+    };
+  }
+
   private finishCreate(it: Extract<Interaction, { kind: 'create' }>, e: PointerInput) {
     const type = TOOL_TYPE[it.tool]!;
     if (!it.nodeId) {
@@ -3313,6 +3334,7 @@ export class Editor {
         height: type === 'LINE' ? 0 : 100,
       });
       if (it.tool === 'arrow') node = { ...node, arrowEnd: true, name: nextName(this.doc, 'Arrow') };
+      node = this.asShape(node, it.tool);
       if (type === 'TEXT') node = fitText({ ...node, y: round2(at.y - 10) });
       this.put(node);
       it.nodeId = node.id;

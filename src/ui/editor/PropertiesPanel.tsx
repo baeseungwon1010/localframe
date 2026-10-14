@@ -150,7 +150,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
   const parent = (n: SceneNode) => (n.parentId ? editor.doc.get(n.parentId) : undefined);
   const inAutoLayout = nodes.every((n) => parent(n)?.layout);
   const constrained = !inAutoLayout && nodes.every((n) => { const p = parent(n); return p && isBox(p) && !p.layout; });
-  const title = single ? TYPE_LABEL[single.type] : `${nodes.length} layers`;
+  const title = single?.shape ? (single.shape.kind === 'star' ? 'Star' : 'Polygon') : single ? TYPE_LABEL[single.type] : `${nodes.length} layers`;
   const canAlign = nodes.length > 1 || (single !== null && single.parentId !== null);
 
   return (
@@ -337,6 +337,8 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
           </label>
         </Section>
       )}
+
+      {single?.type === 'VECTOR' && single.shape && <ShapeSection node={single} update={update} />}
 
       {constrained && <ConstraintsSection nodes={nodes} update={update} />}
 
@@ -955,6 +957,31 @@ function AutoLayoutSection(props: { editor: Editor; nodes: SceneNode[]; update: 
           <SizeLimits nodes={nodes} update={update} />
         </>
       )}
+    </Section>
+  );
+}
+
+/** Polygon sides, or star points and how deep its inner corners go. */
+function ShapeSection({ node, update }: { node: SceneNode; update: (fn: (n: SceneNode) => SceneNode) => void }) {
+  const shape = node.shape!;
+  const set = (patch: Partial<typeof shape>) => update((n) => (n.shape ? { ...n, shape: { ...n.shape, ...patch } } : n));
+  return (
+    <Section title={shape.kind === 'star' ? 'Star' : 'Polygon'}>
+      <div className="grid2">
+        <NumberField
+          label={shape.kind === 'star' ? 'Points' : 'Sides'}
+          ariaLabel={shape.kind === 'star' ? 'Star points' : 'Polygon sides'}
+          value={shape.count}
+          min={3}
+          max={60}
+          precision={0}
+          onCommit={(v) => set({ count: Math.round(v) })}
+        />
+        {shape.kind === 'star' && (
+          <NumberField label="Ratio" ariaLabel="Inner radius ratio" value={Math.round(shape.ratio * 100)} min={1} max={100} precision={0} suffix="%" onCommit={(v) => set({ ratio: v / 100 })} />
+        )}
+      </div>
+      <p className="field-caption">Editing its points turns it into a plain vector.</p>
     </Section>
   );
 }

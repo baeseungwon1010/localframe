@@ -1,4 +1,4 @@
-import { Circle, Frame, Hand, ImagePlus, MessageCircle, Minus, MousePointer2, MoveUpRight, PenTool, Square, Type } from 'lucide-react';
+import { Circle, Frame, Hand, ImagePlus, MessageCircle, Minus, Star, Triangle, MousePointer2, MoveUpRight, PenTool, Square, Type } from 'lucide-react';
 import type { Editor, Tool } from '../../engine/editor.ts';
 import { IconButton, MOD, SHIFT } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
@@ -8,6 +8,8 @@ const TOOLS: { tool: Tool; label: string; key: string; Icon: typeof Square }[] =
   { tool: 'frame', label: 'Frame', key: 'F', Icon: Frame },
   { tool: 'rect', label: 'Rectangle', key: 'R', Icon: Square },
   { tool: 'ellipse', label: 'Ellipse', key: 'O', Icon: Circle },
+  { tool: 'polygon', label: 'Polygon', key: '', Icon: Triangle },
+  { tool: 'star', label: 'Star', key: '', Icon: Star },
   { tool: 'line', label: 'Line', key: 'L', Icon: Minus },
   { tool: 'arrow', label: 'Arrow', key: `${SHIFT}L`, Icon: MoveUpRight },
   { tool: 'pen', label: 'Pen', key: 'P', Icon: PenTool },
@@ -32,7 +34,7 @@ export function ToolRail({ editor }: { editor: Editor }) {
         <IconButton
           key={tool}
           label={label}
-          shortcut={key}
+          shortcut={key || undefined}
           tooltipSide="right"
           className="tool-btn"
           pressed={editor.tool === tool}

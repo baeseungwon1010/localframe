@@ -56,6 +56,25 @@ export function vectorBounds(v: Vector): Rect {
   return boundsOfPoints(pts);
 }
 
+/** Points of a polygon or star filling a w × h box, first point at the top. */
+export function shapeVector(shape: { kind: 'polygon' | 'star'; count: number; ratio: number }, w: number, h: number): Vector {
+  const n = shape.kind === 'star' ? shape.count * 2 : shape.count;
+  const unit: Point[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
+    const r = shape.kind === 'star' && i % 2 === 1 ? shape.ratio : 1;
+    unit.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
+  }
+  // stretch so the outer points touch every side of the box
+  const xs = unit.map((p) => p.x);
+  const ys = unit.map((p) => p.y);
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  return {
+    closed: true,
+    points: unit.map((p) => ({ x: round2(((p.x - x0) / (x1 - x0 || 1)) * w), y: round2(((p.y - y0) / (y1 - y0 || 1)) * h) })),
+  };
+}
+
 export function scaleVector(v: Vector, sx: number, sy: number): Vector {
   const s = (p: Point) => ({ x: round2(p.x * sx), y: round2(p.y * sy) });
   return {
