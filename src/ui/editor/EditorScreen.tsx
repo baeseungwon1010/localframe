@@ -16,6 +16,7 @@ import { TitleBar } from './TitleBar.tsx';
 import { VersionHistory } from './VersionHistory.tsx';
 import { Presenter } from './Presenter.tsx';
 import { FindReplace } from './FindReplace.tsx';
+import { QuickActions } from './QuickActions.tsx';
 import { type CommentStore, CommentPins, CommentsPanel, useComments } from './Comments.tsx';
 
 /** Properties, or the comment list in comment mode. */
@@ -81,6 +82,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   const [renaming, setRenaming] = useState(false);
   const [history, setHistory] = useState(false);
   const [finding, setFinding] = useState(false);
+  const [palette, setPalette] = useState(false);
   const [presenting, setPresenting] = useState<{ start: string | null } | null>(null);
   const present = () => setPresenting({ start: presentFrom(editor) });
   const comments = useComments(fileId);
@@ -238,6 +240,11 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
       if (isTypingTarget(e.target) || e.isComposing) return;
       const mod = e.ctrlKey || e.metaKey;
       if (mod && (e.code === 'KeyC' || e.code === 'KeyX' || e.code === 'KeyV')) return; // handled by clipboard events
+      if (mod && !e.shiftKey && !e.altKey && (e.code === 'Slash' || e.code === 'KeyK')) {
+        e.preventDefault();
+        setPalette(true);
+        return;
+      }
       if (mod && !e.shiftKey && !e.altKey && e.code === 'KeyF') {
         e.preventDefault();
         setFinding(true);
@@ -349,6 +356,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         onExportFile={() => setExporting(true)}
         onHistory={() => setHistory(true)}
         onPresent={present}
+        onQuickActions={() => setPalette(true)}
         onRename={async (name) => {
           const meta = await api.updateFile(fileId, { name });
           setFile(meta);
@@ -386,6 +394,20 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
           fileName={file.name}
           onClose={() => setExporting(false)}
           beforeExport={flushAll}
+        />
+      )}
+      {palette && (
+        <QuickActions
+          editor={editor}
+          onClose={() => setPalette(false)}
+          screen={{
+            exportFile: () => setExporting(true),
+            present,
+            history: () => setHistory(true),
+            find: () => setFinding(true),
+            placeImage: () => imageInput.current?.click(),
+            rename: () => setRenaming(true),
+          }}
         />
       )}
       {finding && <FindReplace editor={editor} onClose={() => setFinding(false)} />}

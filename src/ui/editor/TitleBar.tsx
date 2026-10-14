@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronLeft, Download, History, Play, Redo2, Undo2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, Download, History, Play, Redo2, Search, Undo2 } from 'lucide-react';
 import type { FileMeta } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
 import type { SaveStatus } from '../../engine/sync.ts';
@@ -26,6 +26,7 @@ export function TitleBar(props: {
   onExportFile: () => void;
   onHistory: () => void;
   onPresent: () => void;
+  onQuickActions: () => void;
 }) {
   const { editor, file, saveStatus, saveError } = props;
   useEditorRev(editor, 'view', 'doc');
@@ -67,6 +68,11 @@ export function TitleBar(props: {
         </span>
       </div>
       <div className="titlebar-right">
+        <button type="button" className="quick-btn" onClick={props.onQuickActions} aria-label="Quick actions" data-tip={`Quick actions  ${MOD}/`} data-tip-side="bottom">
+          <Search size={14} strokeWidth={1.5} aria-hidden="true" />
+          <span>Search commands</span>
+          <kbd>{MOD}/</kbd>
+        </button>
         <IconButton label="Undo" shortcut={`${MOD}Z`} disabled={!editor.canUndo} onClick={() => editor.undo()}>
           <Undo2 size={16} strokeWidth={1.5} />
         </IconButton>
