@@ -765,3 +765,27 @@ describe('paste between files', () => {
     expect(asked).toHaveLength(1);
   });
 });
+
+describe('prototyping', () => {
+  it('orders frames for presenting, keeps interactions valid, and sets the starting frame with undo', () => {
+    const ed = setup();
+    const f2 = draw(ed, 'frame', [500, 100], [700, 300]);
+    const f1 = draw(ed, 'frame', [100, 110], [300, 300]);
+    const f3 = draw(ed, 'frame', [100, 500], [300, 700]);
+    expect(ed.topFrames().map((f) => f.id)).toEqual([f1, f2, f3]);
+
+    const r = draw(ed, 'rect', [120, 130], [180, 170]);
+    ed.updateNodes([r], (n) => ({
+      ...n,
+      reactions: [{ trigger: 'click', action: 'navigate', destinationId: f2, transition: 'push', direction: 'left', duration: 300, easing: 'ease-out' }],
+    }));
+    valid(ed);
+    expect(SceneNodeSchema.safeParse({ ...ed.doc.get(r)!, reactions: [{ trigger: 'click', action: 'teleport', transition: 'instant', duration: 0, easing: 'linear' }] }).success).toBe(false);
+    expect(SceneNodeSchema.safeParse({ ...ed.doc.get(r)!, reactions: [{ trigger: 'after-delay', delay: 1e9, action: 'back', transition: 'instant', duration: 0, easing: 'linear' }] }).success).toBe(false);
+
+    ed.setPrototypeStart(f2);
+    expect(ed.currentPage.prototypeStart).toBe(f2);
+    ed.undo();
+    expect(ed.currentPage.prototypeStart).toBeUndefined();
+  });
+});

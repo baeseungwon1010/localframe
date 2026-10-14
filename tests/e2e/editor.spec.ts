@@ -340,3 +340,36 @@ test('version history: save a version, change the file, restore it', async ({ pa
   await expect(page.getByRole('treeitem', { name: /^Rectangle 2/ })).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test('prototype: link a button to another frame and click through the presentation', async ({ page }) => {
+  const errors = await newFile(page);
+  const { drag } = await canvasHelpers(page);
+  await page.keyboard.press('f');
+  await drag([60, 60], [260, 360]);
+  await page.keyboard.press('f');
+  await drag([400, 60], [600, 360]);
+  await page.keyboard.press('r');
+  await drag([100, 100], [200, 140]);
+
+  await page.getByRole('tab', { name: 'Prototype' }).click();
+  await page.getByRole('button', { name: 'Add interaction' }).click();
+  const group = page.getByRole('group', { name: 'Interaction 1' });
+  await group.getByLabel('Destination').selectOption({ label: 'Frame 2' });
+  await group.getByLabel('Animation').selectOption('dissolve');
+  await page.screenshot({ path: 'test-results/prototype-panel.png' });
+  await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
+
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Present' }).click();
+  const show = page.getByRole('dialog', { name: 'Presentation' });
+  await expect(show).toContainText('Frame 1');
+  await show.getByRole('button', { name: 'Rectangle 1' }).click();
+  await expect(show).toContainText('Frame 2');
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: 'test-results/presentation.png' });
+  await page.keyboard.press('ArrowLeft');
+  await expect(show).toContainText('Frame 1');
+  await page.keyboard.press('Escape');
+  await expect(show).toBeHidden();
+  expect(errors).toEqual([]);
+});
