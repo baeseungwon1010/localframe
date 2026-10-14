@@ -14,12 +14,25 @@ import { LeftPanel } from './LeftPanel.tsx';
 import { PropertiesPanel } from './PropertiesPanel.tsx';
 import { TitleBar } from './TitleBar.tsx';
 import { VersionHistory } from './VersionHistory.tsx';
+import { Presenter } from './Presenter.tsx';
 import { type CommentStore, CommentPins, CommentsPanel, useComments } from './Comments.tsx';
 
 /** Properties, or the comment list in comment mode. */
-function RightPanel(props: { editor: Editor; fileName: string; comments: CommentStore }) {
+function RightPanel(props: { editor: Editor; fileName: string; comments: CommentStore; onPresent: () => void }) {
   useEditorRev(props.editor, 'tool');
-  return props.editor.tool === 'comment' ? <CommentsPanel editor={props.editor} store={props.comments} /> : <PropertiesPanel editor={props.editor} fileName={props.fileName} />;
+  return props.editor.tool === 'comment' ? (
+    <CommentsPanel editor={props.editor} store={props.comments} />
+  ) : (
+    <PropertiesPanel editor={props.editor} fileName={props.fileName} onPresent={props.onPresent} />
+  );
+}
+
+/** Where a presentation starts: the frame holding the selection, else the page's starting frame. */
+function presentFrom(editor: Editor): string | null {
+  const sel = editor.selection[0];
+  let cur = sel ? editor.doc.get(sel) : undefined;
+  for (let guard = 0; cur?.parentId && guard < 200; guard++) cur = editor.doc.get(cur.parentId);
+  return cur?.id ?? editor.currentPage.prototypeStart ?? null;
 }
 import { ToolRail } from './ToolRail.tsx';
 
@@ -66,6 +79,8 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   const [exporting, setExporting] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [history, setHistory] = useState(false);
+  const [presenting, setPresenting] = useState<{ start: string | null } | null>(null);
+  const present = () => setPresenting({ start: presentFrom(editor) });
   const comments = useComments(fileId);
   const { setDraft, setOpen } = comments;
   useEffect(() => {
@@ -146,6 +161,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
     const offImages = onImageLoaded(() => editor.emit('view'));
     editor.onRequestImage = () => imageInput.current?.click();
     editor.onRequestRename = () => setRenaming(true);
+    editor.onRequestPresent = () => setPresenting({ start: presentFrom(editor) });
     editor.fileId = fileId;
     editor.onPastedImages = (from, ids) => {
       void api
@@ -162,6 +178,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
       offImages();
       editor.onRequestImage = null;
       editor.onRequestRename = null;
+      editor.onRequestPresent = null;
       queue?.flushOnExit();
       queue?.dispose();
       if (thumbTimer.current) clearTimeout(thumbTimer.current);
@@ -319,6 +336,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         setTheme={setTheme}
         onExportFile={() => setExporting(true)}
         onHistory={() => setHistory(true)}
+        onPresent={present}
         onRename={async (name) => {
           const meta = await api.updateFile(fileId, { name });
           setFile(meta);
@@ -336,7 +354,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
       >
         <CommentPins editor={editor} store={comments} />
       </CanvasView>
-      <RightPanel editor={editor} fileName={file.name} comments={comments} />
+      <RightPanel editor={editor} fileName={file.name} comments={comments} onPresent={present} />
       <input
         ref={imageInput}
         type="file"
@@ -358,6 +376,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
           beforeExport={flushAll}
         />
       )}
+      {presenting && <Presenter editor={editor} startId={presenting.start} onClose={() => setPresenting(null)} />}
       {history && (
         <VersionHistory
           fileId={fileId}

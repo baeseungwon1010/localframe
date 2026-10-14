@@ -1748,3 +1748,135 @@ button:disabled {
   -webkit-line-clamp: 2;
   overflow-wrap: anywhere;
 }
+
+/* --------------------------------------------------------------- prototyping */
+
+.reaction {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.reaction:first-of-type {
+  border-top: 0;
+}
+
+.reaction-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.reaction-row .select-field {
+  flex: 1;
+}
+
+.present-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: var(--space-3);
+}
+
+.presenter {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  /* a neutral dark surround keeps attention on the screen being shown, in either theme */
+  background: #1E1F22;
+  color: #E8E9EB;
+}
+
+.present-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--titlebar-h);
+  padding: 0 var(--space-5);
+}
+
+.present-bar .icon-btn {
+  color: inherit;
+}
+
+.present-title {
+  flex: 1;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.present-title .file-time {
+  color: #A3A6AD;
+  font-weight: 400;
+}
+
+.present-stage {
+  position: relative;
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  place-items: center;
+  overflow: hidden;
+}
+
+.present-stage > * {
+  grid-area: 1 / 1;
+}
+
+.present-screen {
+  position: relative;
+}
+
+.present-screen.prev {
+  z-index: 0;
+}
+
+.present-screen:not(.prev) {
+  z-index: 1;
+}
+
+.present-canvas {
+  display: block;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+.hotspot {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
+}
+
+.hotspot:focus-visible,
+.presenter.hint .hotspot {
+  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+  box-shadow: inset 0 0 0 2px var(--color-accent);
+}
+
+.present-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.present-empty {
+  color: #A3A6AD;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hotspot {
+    transition: none;
+  }
+}

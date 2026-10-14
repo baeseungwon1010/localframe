@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronLeft, Download, History, Redo2, Undo2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, Download, History, Play, Redo2, Undo2 } from 'lucide-react';
 import type { FileMeta } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
 import type { SaveStatus } from '../../engine/sync.ts';
 import { navigate } from '../App.tsx';
-import { IconButton, MOD, Menu, SHIFT, ThemeToggle } from '../components.tsx';
+import { ALT, IconButton, MOD, Menu, SHIFT, ThemeToggle } from '../components.tsx';
 import { type Theme, useEditorRev } from '../hooks.ts';
 
 const STATUS_TEXT: Record<SaveStatus, string> = {
@@ -25,6 +25,7 @@ export function TitleBar(props: {
   onRename: (name: string) => Promise<void>;
   onExportFile: () => void;
   onHistory: () => void;
+  onPresent: () => void;
 }) {
   const { editor, file, saveStatus, saveError } = props;
   useEditorRev(editor, 'view', 'doc');
@@ -92,6 +93,9 @@ export function TitleBar(props: {
           <Download size={16} strokeWidth={1.5} />
         </IconButton>
         <ThemeToggle theme={props.theme} setTheme={props.setTheme} />
+        <button type="button" className="btn primary small present-btn" onClick={props.onPresent} title={`Present (${MOD}${ALT}Enter)`}>
+          <Play size={12} strokeWidth={2} /> Present
+        </button>
       </div>
       {zoomMenu && (
         <Menu

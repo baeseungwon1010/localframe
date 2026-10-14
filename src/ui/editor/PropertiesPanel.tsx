@@ -34,6 +34,7 @@ import type { Constraints, Layout, LayoutChild, Paint, SceneNode, TextStyle } fr
 import type { Editor } from '../../engine/editor.ts';
 import { type ExportFormat, exportBounds, exportImage, exportPdf, exportSvg } from '../../engine/export.ts';
 import { printSvgPages } from '../print.ts';
+import { PrototypePanel } from './PrototypePanel.tsx';
 import { overridableTexts } from '../../engine/instances.ts';
 import { DEFAULT_LAYOUT } from '../../engine/layout.ts';
 import { solid, TYPE_LABEL } from '../../engine/nodes.ts';
@@ -56,14 +57,25 @@ function uniformRadius(nodes: SceneNode[]) {
   return r.every((v) => v === r[0]) ? r[0] : MIXED;
 }
 
-export function PropertiesPanel(props: { editor: Editor; fileName: string }) {
+export function PropertiesPanel(props: { editor: Editor; fileName: string; onPresent: () => void }) {
   const { editor } = props;
   useEditorRev(editor, 'doc', 'selection', 'pages', 'view', 'tool');
   const sel = editor.selectedNodes();
+  const proto = editor.prototypeView;
 
   return (
     <aside className="props" aria-label="Properties">
-      {sel.length === 0 && editor.tool === 'frame' ? (
+      <div className="tabs" role="tablist" aria-label="Right panel">
+        <button type="button" role="tab" aria-selected={!proto} className={proto ? '' : 'on'} onClick={() => editor.setPrototypeView(false)}>
+          Design
+        </button>
+        <button type="button" role="tab" aria-selected={proto} className={proto ? 'on' : ''} onClick={() => editor.setPrototypeView(true)}>
+          Prototype
+        </button>
+      </div>
+      {proto ? (
+        <PrototypePanel editor={editor} nodes={sel} onPresent={props.onPresent} />
+      ) : sel.length === 0 && editor.tool === 'frame' ? (
         <FramePresets editor={editor} />
       ) : sel.length === 0 ? (
         <PageProps key={editor.currentPage.id} editor={editor} fileName={props.fileName} />

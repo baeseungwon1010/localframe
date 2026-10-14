@@ -67,6 +67,73 @@ function haloStroke(ctx: CanvasRenderingContext2D, c: OverlayColors, width = 1) 
   ctx.stroke();
 }
 
+/** Prototype mode: an arrow from each interactive layer to where it goes, and the starting frame's flag. */
+function drawPrototype(ctx: CanvasRenderingContext2D, editor: Editor, c: OverlayColors) {
+  const doc = editor.doc;
+  const page = doc.currentPage;
+  const selected = new Set(editor.selection);
+  const screenBox = (id: string) => {
+    const b = doc.worldBounds(id);
+    const a = editor.toScreen({ x: b.x, y: b.y });
+    return { x: a.x, y: a.y, width: b.width * editor.viewport.zoom, height: b.height * editor.viewport.zoom };
+  };
+  ctx.save();
+  ctx.font = `600 ${LABEL_FONT_SIZE}px ${c.font}`;
+  for (const n of doc.all()) {
+    if (!n.reactions?.length || doc.pageOf(n.id) !== page || !doc.isEffectivelyVisible(n.id)) continue;
+    const from = screenBox(n.id);
+    const strong = selected.has(n.id);
+    for (const r of n.reactions) {
+      const dest = r.destinationId ? doc.get(r.destinationId) : undefined;
+      if (!dest || dest.parentId !== null || doc.pageOf(dest.id) !== page) continue;
+      const to = screenBox(dest.id);
+      const a = { x: from.x + from.width, y: from.y + from.height / 2 };
+      // into the destination's nearer side
+      const left = a.x <= to.x + to.width / 2;
+      const b = { x: left ? to.x : to.x + to.width, y: to.y + Math.min(to.height / 2, 40) };
+      const bend = Math.max(40, Math.abs(b.x - a.x) / 2);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.bezierCurveTo(a.x + bend, a.y, left ? b.x - bend : b.x + bend, b.y, b.x, b.y);
+      ctx.strokeStyle = c.accent;
+      ctx.globalAlpha = strong ? 1 : 0.55;
+      ctx.lineWidth = strong ? 2 : 1.5;
+      ctx.stroke();
+      // arrowhead pointing into the frame
+      const dir = left ? 1 : -1;
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y);
+      ctx.lineTo(b.x - 8 * dir, b.y - 5);
+      ctx.lineTo(b.x - 8 * dir, b.y + 5);
+      ctx.closePath();
+      ctx.fillStyle = c.accent;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = c.handleFill;
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+  const start = editor.currentPage.prototypeStart;
+  const s = start ? doc.get(start) : undefined;
+  if (s && s.parentId === null && doc.pageOf(s.id) === page) {
+    const box = screenBox(s.id);
+    const label = 'Start';
+    const w = ctx.measureText(label).width + 12;
+    const y = box.y - 24;
+    ctx.fillStyle = c.accent;
+    ctx.beginPath();
+    ctx.roundRect(box.x, y, w, 18, 3);
+    ctx.fill();
+    ctx.fillStyle = c.onAccent;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, box.x + 6, y + 9);
+  }
+  ctx.restore();
+}
+
 function crisp(v: number) {
   return Math.round(v) + 0.5;
 }
@@ -287,6 +354,8 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
       ctx.stroke();
     });
   }
+
+  if (editor.prototypeView) drawPrototype(ctx, editor, c);
 
   // crop: the whole image faded, the layer's box outlined
   if (editor.cropping) {

@@ -258,6 +258,10 @@ export class Editor {
   onPastedImages: ((sourceFile: string, imageIds: string[]) => void) | null = null;
   /** The comment tool was clicked on the canvas. */
   onCommentAt: ((spot: CommentSpot, screen: Point) => void) | null = null;
+  /** The Prototype tab is open: the canvas shows where interactions go. */
+  prototypeView = false;
+  /** Asks the UI to start a presentation (Ctrl+Alt+Enter). */
+  onRequestPresent: (() => void) | null = null;
   /** Image layer being cropped. */
   cropping: string | null = null;
   showGrids = true;
@@ -887,6 +891,27 @@ export class Editor {
     const trimmed = name.trim().slice(0, 200);
     if (!trimmed) return;
     this.transact(() => this.setPages(this.pages.map((p) => (p.id === id ? { ...p, name: trimmed } : p))));
+  }
+
+  /** Top-level frames of the current page, in reading order (rows top to bottom, then left to right). */
+  topFrames(): SceneNode[] {
+    const frames = this.doc
+      .children(null)
+      .map((id) => this.doc.get(id)!)
+      .filter((n) => n.visible && (n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'INSTANCE'));
+    return frames.sort((a, b) => (Math.abs(a.y - b.y) > Math.min(a.height, b.height) / 2 ? a.y - b.y : a.x - b.x));
+  }
+
+  setPrototypeStart(frameId: string | null) {
+    const id = this.doc.currentPage;
+    this.transact(() => this.setPages(this.pages.map((p) => (p.id === id ? { ...p, prototypeStart: frameId ?? undefined } : p))));
+    this.emit('view');
+  }
+
+  setPrototypeView(on: boolean) {
+    if (this.prototypeView === on) return;
+    this.prototypeView = on;
+    this.emit('view');
   }
 
   setPageBackground(id: string, background: string) {
@@ -3240,6 +3265,13 @@ export class Editor {
         case 'KeyR':
           if (this.selection.length && this.onRequestRename) {
             this.onRequestRename();
+            return true;
+          }
+          return false;
+        case 'Enter':
+        case 'NumpadEnter':
+          if (alt && this.onRequestPresent) {
+            this.onRequestPresent();
             return true;
           }
           return false;

@@ -289,6 +289,31 @@ export type LayoutGrid = z.infer<typeof LayoutGridSchema>;
 export const GuideSchema = z.object({ axis: z.enum(['x', 'y']), pos: z.number().min(-1e8).max(1e8) }).strict();
 export type PageGuide = z.infer<typeof GuideSchema>;
 
+// ------------------------------------------------------------- prototyping
+
+export const TRIGGERS = ['click', 'mouse-enter', 'after-delay'] as const;
+export const ACTIONS = ['navigate', 'back', 'overlay', 'close-overlay'] as const;
+export const TRANSITIONS = ['instant', 'dissolve', 'move-in', 'push', 'slide-in'] as const;
+export const DIRECTIONS = ['left', 'right', 'up', 'down'] as const;
+export const EASINGS = ['linear', 'ease-in', 'ease-out', 'ease-in-out'] as const;
+
+/** What happens in a presentation when a layer is clicked, hovered, or a frame has been shown a while. */
+export const ReactionSchema = z
+  .object({
+    trigger: z.enum(TRIGGERS),
+    /** after-delay: milliseconds */
+    delay: z.number().int().min(0).max(60_000).optional(),
+    action: z.enum(ACTIONS),
+    /** navigate and overlay: a top-level frame */
+    destinationId: id.optional(),
+    transition: z.enum(TRANSITIONS),
+    direction: z.enum(DIRECTIONS).optional(),
+    duration: z.number().int().min(0).max(10_000),
+    easing: z.enum(EASINGS),
+  })
+  .strict();
+export type Reaction = z.infer<typeof ReactionSchema>;
+
 export const SceneNodeSchema = z
   .object({
     id,
@@ -331,6 +356,7 @@ export const SceneNodeSchema = z
     booleanOp: z.enum(BOOLEAN_OPS).optional(),
     /** Clips the layers above it in the same parent. */
     isMask: z.boolean().optional(),
+    reactions: z.array(ReactionSchema).max(20).optional(),
     fillStyleId: id.optional(),
     strokeStyleId: id.optional(),
     textStyleId: id.optional(),
@@ -402,6 +428,8 @@ export const PageSchema = z
     name: z.string().trim().min(1).max(200),
     background: hexColor,
     guides: z.array(GuideSchema).max(200).optional(),
+    /** The frame a presentation of this page starts on. */
+    prototypeStart: id.optional(),
   })
   .strict();
 export type Page = z.infer<typeof PageSchema>;
