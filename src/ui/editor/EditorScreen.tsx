@@ -274,7 +274,10 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         e.preventDefault();
       }
     };
-    const onBlur = () => editor.keyUp({ code: 'Space' });
+    const onBlur = () => {
+      editor.keyUp({ code: 'Space' });
+      editor.keyUp({ code: 'Blur' });
+    };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);

@@ -262,6 +262,8 @@ export class Editor {
   tool: Tool = 'move';
   selection: string[] = [];
   hover: string | null = null;
+  /** Alt is held: hovering shows distances from the selection. */
+  altDown = false;
   viewport: Viewport = { x: 0, y: 0, zoom: 1 };
   viewSize = { width: 800, height: 600 };
   editingText: string | null = null;
@@ -2648,6 +2650,52 @@ export class Editor {
     this.emit('tool', 'view', 'selection');
   }
 
+  /**
+   * Alt measurement: distances from the selection's box to the hovered layer's box (or, with nothing
+   * hovered, to the selection's parent frame). Each line is in world units with its length.
+   */
+  measurements(): { a: Point; b: Point; length: number }[] {
+    if (!this.altDown || this.selection.length === 0 || this.isInteracting || this.editingText) return [];
+    const s = this.selectionBounds();
+    if (!s) return [];
+    let target = this.hover && !this.selection.includes(this.hover) ? this.hover : null;
+    if (!target) {
+      const parents = new Set(this.selection.map((id) => this.doc.get(id)?.parentId ?? null));
+      target = parents.size === 1 ? [...parents][0] : null;
+    }
+    if (!target || !this.doc.has(target)) return [];
+    const t = this.doc.worldBounds(target);
+    const out: { a: Point; b: Point; length: number }[] = [];
+    const line = (a: Point, b: Point) => {
+      const length = round2(Math.hypot(b.x - a.x, b.y - a.y));
+      if (length > 0.005) out.push({ a, b, length });
+    };
+    const inside = (o: Rect, i: Rect) => i.x >= o.x && i.y >= o.y && i.x + i.width <= o.x + o.width && i.y + i.height <= o.y + o.height;
+    if (inside(t, s) || inside(s, t)) {
+      // insets on all four sides, measured through the inner box's middle
+      const [o, i] = inside(t, s) ? [t, s] : [s, t];
+      const icx = i.x + i.width / 2;
+      const icy = i.y + i.height / 2;
+      line({ x: o.x, y: icy }, { x: i.x, y: icy });
+      line({ x: i.x + i.width, y: icy }, { x: o.x + o.width, y: icy });
+      line({ x: icx, y: o.y }, { x: icx, y: i.y });
+      line({ x: icx, y: i.y + i.height }, { x: icx, y: o.y + o.height });
+      return out;
+    }
+    // gaps between separate boxes, through their overlap when there is one
+    const sr = s.x + s.width;
+    const sb = s.y + s.height;
+    const tr = t.x + t.width;
+    const tb = t.y + t.height;
+    const oy = Math.max(s.y, t.y) < Math.min(sb, tb) ? (Math.max(s.y, t.y) + Math.min(sb, tb)) / 2 : s.y + s.height / 2;
+    const ox = Math.max(s.x, t.x) < Math.min(sr, tr) ? (Math.max(s.x, t.x) + Math.min(sr, tr)) / 2 : s.x + s.width / 2;
+    if (sr <= t.x) line({ x: sr, y: oy }, { x: t.x, y: oy });
+    else if (tr <= s.x) line({ x: tr, y: oy }, { x: s.x, y: oy });
+    if (sb <= t.y) line({ x: ox, y: sb }, { x: ox, y: t.y });
+    else if (tb <= s.y) line({ x: ox, y: tb }, { x: ox, y: s.y });
+    return out;
+  }
+
   // ----------------------------------------------------------------- crop
 
   /** Double-click an image layer: drag to move the image inside its shape, the panel sets the zoom. */
@@ -3216,6 +3264,14 @@ export class Editor {
   keyDown(k: KeyInput): boolean {
     if (this.editingText) return false;
     const { code, shift, alt, mod } = k;
+    if (code === 'AltLeft' || code === 'AltRight') {
+      if (!this.altDown) {
+        this.altDown = true;
+        this.emit('view');
+      }
+      // keeps the browser from focusing its menu bar on Alt
+      return true;
+    }
     if (this.pen && (code === 'Enter' || code === 'Escape' || code === 'NumpadEnter')) {
       this.finishPen();
       return true;
@@ -3449,6 +3505,10 @@ export class Editor {
   }
 
   keyUp(k: { code: string }) {
+    if ((k.code === 'AltLeft' || k.code === 'AltRight' || k.code === 'Blur') && this.altDown) {
+      this.altDown = false;
+      this.emit('view');
+    }
     if (k.code === 'Space' && this.spaceDown) {
       this.spaceDown = false;
       this.emit('view');

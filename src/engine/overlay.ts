@@ -357,6 +357,35 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
 
   if (editor.prototypeView) drawPrototype(ctx, editor, c);
 
+  // Alt: distances from the selection
+  const measures = editor.measurements();
+  if (measures.length) {
+    ctx.save();
+    ctx.strokeStyle = c.guide;
+    ctx.lineWidth = 1;
+    ctx.font = `600 ${LABEL_FONT_SIZE}px ${c.font}`;
+    ctx.textBaseline = 'middle';
+    for (const m of measures) {
+      const a = editor.toScreen(m.a);
+      const b = editor.toScreen(m.b);
+      ctx.beginPath();
+      ctx.moveTo(crisp(a.x), crisp(a.y));
+      ctx.lineTo(crisp(b.x), crisp(b.y));
+      ctx.stroke();
+      const label = String(m.length);
+      const w = ctx.measureText(label).width + 8;
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      ctx.fillStyle = c.guide;
+      ctx.beginPath();
+      ctx.roundRect(Math.round(mx - w / 2), Math.round(my - 8), w, 16, 3);
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(label, Math.round(mx - w / 2 + 4), Math.round(my));
+    }
+    ctx.restore();
+  }
+
   // crop: the whole image faded, the layer's box outlined
   if (editor.cropping) {
     const n = doc.get(editor.cropping);
