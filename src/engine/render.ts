@@ -617,6 +617,7 @@ export function drawNode(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOption
   const m = localMatrix(n.x, n.y, n.rotation);
   ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
   ctx.globalAlpha *= n.opacity;
+  if (n.blendMode && n.blendMode !== 'normal') ctx.globalCompositeOperation = n.blendMode;
   const effects = (n.effects ?? []).filter((e) => e.visible);
   if (effects.length && typeof ctx.getTransform === 'function') drawWithEffects(ctx, doc, n, effects, opts, root);
   else drawBody(ctx, doc, n, opts, root);

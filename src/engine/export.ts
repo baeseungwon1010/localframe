@@ -461,7 +461,9 @@ class SvgWriter {
     if (!n.visible) return '';
     if (++this.elements > SVG_MAX_ELEMENTS) throw new Error('This selection is too large to export as SVG. Try PNG or PDF.');
     const m = localMatrix(n.x, n.y, n.rotation);
-    const opacity = n.opacity < 1 ? ` opacity="${num(n.opacity)}"` : '';
+    // blend mode names come from a fixed list (schema), so they are safe in the attribute
+    const opacity =
+      (n.opacity < 1 ? ` opacity="${num(n.opacity)}"` : '') + (n.blendMode && n.blendMode !== 'normal' ? ` style="mix-blend-mode:${n.blendMode}"` : '');
     const name = ` data-name="${escapeXml(n.name)}"`;
     let body = '';
     switch (n.type) {

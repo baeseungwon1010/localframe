@@ -185,6 +185,26 @@ export const VectorSchema = z
 export type Vector = z.infer<typeof VectorSchema>;
 export type VectorPoint = Vector['points'][number];
 
+export const BLEND_MODES = [
+  'normal',
+  'multiply',
+  'screen',
+  'overlay',
+  'darken',
+  'lighten',
+  'color-dodge',
+  'color-burn',
+  'hard-light',
+  'soft-light',
+  'difference',
+  'exclusion',
+  'hue',
+  'saturation',
+  'color',
+  'luminosity',
+] as const;
+export type BlendMode = (typeof BLEND_MODES)[number];
+
 export const BOOLEAN_OPS = ['union', 'subtract', 'intersect', 'exclude'] as const;
 export type BooleanOp = (typeof BOOLEAN_OPS)[number];
 
@@ -357,6 +377,8 @@ export const SceneNodeSchema = z
     /** Clips the layers above it in the same parent. */
     isMask: z.boolean().optional(),
     reactions: z.array(ReactionSchema).max(20).optional(),
+    /** How the layer mixes with what is below it (CSS blend mode names). */
+    blendMode: z.enum(BLEND_MODES).optional(),
     fillStyleId: id.optional(),
     strokeStyleId: id.optional(),
     textStyleId: id.optional(),

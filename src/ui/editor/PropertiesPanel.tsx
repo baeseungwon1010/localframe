@@ -30,7 +30,7 @@ import {
   TextAlignEnd,
   TextAlignStart,
 } from 'lucide-react';
-import type { Constraints, Layout, LayoutChild, Paint, SceneNode, TextStyle } from '../../../shared/schema.ts';
+import { type Constraints, type Layout, type LayoutChild, type Paint, type SceneNode, type TextStyle, BLEND_MODES } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
 import { type ExportFormat, exportBounds, exportImage, exportPdf, exportSvg } from '../../engine/export.ts';
 import { printSvgPages } from '../print.ts';
@@ -352,6 +352,14 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
             suffix="%"
             onCommit={(v) => update((n) => ({ ...n, opacity: v / 100 }))}
           />
+          <SelectField
+            label="Blend mode"
+            value={common(nodes, (n) => n.blendMode ?? 'normal')}
+            options={BLEND_MODES.map((m) => ({ value: m, label: m === 'normal' ? 'Normal' : m[0].toUpperCase() + m.slice(1).replace('-', ' ') }))}
+            onChange={(v) => update((n) => ({ ...n, blendMode: v === 'normal' ? undefined : v }))}
+          />
+        </div>
+        <div className="grid2">
           {single && (
             <label className="check-row">
               <input type="checkbox" checked={!!single.isMask} onChange={() => editor.useAsMask()} />
