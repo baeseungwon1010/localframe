@@ -4,6 +4,7 @@ import { type Mat, apply, multiply } from './math.ts';
 import { instanceDoc } from './instances.ts';
 import { drawChildren, imageRect } from './render.ts';
 import { getImage } from './images.ts';
+import { isScreen } from './prototype.ts';
 import { tracePath } from './vector.ts';
 import { linePoints } from './geometry.ts';
 
@@ -85,7 +86,7 @@ function drawPrototype(ctx: CanvasRenderingContext2D, editor: Editor, c: Overlay
     const strong = selected.has(n.id);
     for (const r of n.reactions) {
       const dest = r.destinationId ? doc.get(r.destinationId) : undefined;
-      if (!dest || dest.parentId !== null || doc.pageOf(dest.id) !== page) continue;
+      if (!dest || !isScreen(doc, dest.id) || doc.pageOf(dest.id) !== page) continue;
       const to = screenBox(dest.id);
       const a = { x: from.x + from.width, y: from.y + from.height / 2 };
       // into the destination's nearer side
@@ -150,15 +151,54 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
   ctx.fillRect(0, 0, width, height);
 
   // document
-  ctx.save();
-  ctx.setTransform(dpr * v.zoom, 0, 0, dpr * v.zoom, dpr * v.x, dpr * v.y);
   const topLeft = editor.toWorld(0, 0);
-  drawChildren(ctx, doc, null, {
+  const drawOpts = {
     outline: editor.outlineMode,
     skip: editor.editingText ? new Set([editor.editingText]) : undefined,
     cull: { x: topLeft.x, y: topLeft.y, width: width / v.zoom, height: height / v.zoom },
-  });
-  ctx.restore();
+  };
+  if (editor.pixelPreview && v.zoom > 1 && typeof OffscreenCanvas !== 'undefined') {
+    // pixel preview: draw at one pixel per unit, then blow it up without smoothing
+    const ow = Math.ceil(width / v.zoom) + 2;
+    const oh = Math.ceil(height / v.zoom) + 2;
+    const off = new OffscreenCanvas(ow, oh);
+    const oc = off.getContext('2d')!;
+    const ox = Math.floor(topLeft.x);
+    const oy = Math.floor(topLeft.y);
+    oc.setTransform(1, 0, 0, 1, -ox, -oy);
+    drawChildren(oc as unknown as CanvasRenderingContext2D, doc, null, drawOpts);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.setTransform(dpr * v.zoom, 0, 0, dpr * v.zoom, dpr * v.x, dpr * v.y);
+    ctx.drawImage(off, ox, oy);
+    ctx.restore();
+  } else {
+    ctx.save();
+    ctx.setTransform(dpr * v.zoom, 0, 0, dpr * v.zoom, dpr * v.x, dpr * v.y);
+    drawChildren(ctx, doc, null, drawOpts);
+    ctx.restore();
+  }
+
+  // pixel grid when zoomed in far
+  if (editor.showPixelGrid && v.zoom >= 8) {
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.strokeStyle = 'rgba(128, 128, 128, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = Math.floor(topLeft.x); x <= topLeft.x + width / v.zoom; x++) {
+      const sx = Math.round(x * v.zoom + v.x) + 0.5;
+      ctx.moveTo(sx, 0);
+      ctx.lineTo(sx, height);
+    }
+    for (let y = Math.floor(topLeft.y); y <= topLeft.y + height / v.zoom; y++) {
+      const sy = Math.round(y * v.zoom + v.y) + 0.5;
+      ctx.moveTo(0, sy);
+      ctx.lineTo(width, sy);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const view = editor.viewMatrix;

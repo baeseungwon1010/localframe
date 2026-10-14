@@ -300,6 +300,12 @@ export class Editor {
   /** Image layer being cropped. */
   cropping: string | null = null;
   showGrids = true;
+  /** Pixel grid lines from 800% zoom. */
+  showPixelGrid = true;
+  /** Moving, resizing and drawing land on whole pixels. */
+  snapToPixels = false;
+  /** Draws the canvas at one device pixel per unit, scaled up without smoothing. */
+  pixelPreview = false;
   showRulers = false;
   /** A guide being dragged (from a ruler, or an existing one): its axis and position. */
   guideDrag: { axis: 'x' | 'y'; pos: number; index: number | null; remove: boolean } | null = null;
@@ -486,6 +492,13 @@ export class Editor {
   put(node: SceneNode) {
     const prev = this.doc.get(node.id);
     let n = sanitize(node, prev);
+    // snap to pixels: what the pointer moves, resizes or draws lands on whole pixels
+    const k = this.interaction.kind;
+    if (this.snapToPixels && n.rotation === 0 && n.type !== 'LINE' && (k === 'move' || k === 'resize' || k === 'create')) {
+      const r = (v: number) => Math.round(v);
+      if (n.x !== r(n.x) || n.y !== r(n.y) || n.width !== Math.max(1, r(n.width)) || n.height !== Math.max(1, r(n.height)))
+        n = { ...n, x: r(n.x), y: r(n.y), width: Math.max(1, r(n.width)), height: n.type === 'TEXT' ? n.height : Math.max(1, r(n.height)) };
+    }
     // a vector's points follow its box when it is resized (not when its points were edited)
     if (n.type === 'VECTOR' && prev?.vector && n.vector === prev.vector && (n.width !== prev.width || n.height !== prev.height)) {
       n = { ...n, vector: scaleVector(prev.vector, prev.width > 0 ? n.width / prev.width : 1, prev.height > 0 ? n.height / prev.height : 1) };
@@ -3150,6 +3163,11 @@ export class Editor {
 
   // ---------------------------------------------------------- guides, grids
 
+  toggleView(flag: 'showPixelGrid' | 'snapToPixels' | 'pixelPreview') {
+    this[flag] = !this[flag];
+    this.emit('view');
+  }
+
   toggleGrids() {
     this.showGrids = !this.showGrids;
     this.emit('view', 'tool');
@@ -3294,7 +3312,8 @@ export class Editor {
   private snapPoint(p: Point, exclude: Set<string>): Point {
     const s = snapRect({ x: p.x, y: p.y, width: 0, height: 0 }, this.snapCandidates(exclude), 6 / this.viewport.zoom);
     this.guides = s.guides;
-    return { x: p.x + s.dx, y: p.y + s.dy };
+    const q = { x: p.x + s.dx, y: p.y + s.dy };
+    return this.snapToPixels ? { x: Math.round(q.x), y: Math.round(q.y) } : q;
   }
 
   private updateMove(it: Extract<Interaction, { kind: 'move' }>, p: Point, e: PointerInput) {
