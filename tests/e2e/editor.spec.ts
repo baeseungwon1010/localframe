@@ -170,7 +170,7 @@ test('pages, images, components, connectors and PDF export', async ({ page }) =>
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
     'base64',
   );
-  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Place image' }).click()]);
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.keyboard.press('Control+Shift+K')]);
   await chooser.setFiles({ name: 'dot.png', mimeType: 'image/png', buffer: png });
   await expect(page.getByRole('treeitem', { name: 'dot' })).toBeVisible();
 
@@ -229,7 +229,7 @@ test('crop an image and print a vector PDF', async ({ page }) => {
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
     'base64',
   );
-  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Place image' }).click()]);
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.keyboard.press('Control+Shift+K')]);
   await chooser.setFiles({ name: 'dot.png', mimeType: 'image/png', buffer: png });
   await expect(page.getByRole('treeitem', { name: 'dot' })).toBeVisible();
   for (const [label, v] of [['Width', '300'], ['Height', '200']]) {
@@ -379,7 +379,9 @@ test('sections, polygons, layer search, find and replace, and Alt distances', as
   const { at, drag } = await canvasHelpers(page);
   await page.keyboard.press('f');
   await drag([100, 100], [300, 300]);
-  await page.getByRole('button', { name: 'Polygon' }).click();
+  // polygon lives in the shape tools menu
+  await page.getByRole('button', { name: 'More shape tools' }).click();
+  await page.getByRole('menuitem', { name: /Polygon/ }).click();
   await drag([140, 140], [200, 200]);
   await page.keyboard.press('t');
   await page.mouse.click(...at(140, 240));
