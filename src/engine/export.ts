@@ -5,7 +5,7 @@ import { ensureImages, imageDataUrl, imageSize } from './images.ts';
 import { instanceDoc } from './instances.ts';
 import { type Mat, type Rect, IDENTITY, localMatrix, unionRects } from './math.ts';
 import { buildPdf, type PdfPage } from './pdf.ts';
-import { arrowSize, capOf, clampRadii, gradientRaster, drawNode, effectReach, imageRect, imagesUsed, joinOf, lineShape, sideBands } from './render.ts';
+import { arrowSize, capOf, clampRadii, gradientRaster, imageFilter, drawNode, effectReach, imageRect, imagesUsed, joinOf, lineShape, sideBands } from './render.ts';
 import { fontStack, layoutText, lineOffset } from './text.ts';
 import { svgPathData } from './vector.ts';
 
@@ -288,10 +288,20 @@ class SvgWriter {
     }
     const cid = this.id('clip');
     this.defs.push(`<clipPath id="${cid}">${shapeElement(n, '')}</clipPath>`);
+    // the filter is built from numbers only, so it is safe in the attribute
+    const filter = imageFilter(p);
+    const opacity = (p.opacity < 1 ? ` opacity="${num(p.opacity)}"` : '') + (filter ? ` style="filter:${filter}"` : '');
+    if (p.scaleMode === 'tile') {
+      const pid = this.id('tile');
+      const s = p.tileScale ?? 1;
+      this.defs.push(
+        `<pattern id="${pid}" patternUnits="userSpaceOnUse" width="${num(img.width * s)}" height="${num(img.height * s)}"><use href="#${ref}" transform="scale(${num(s)})"/></pattern>`,
+      );
+      return `<g clip-path="url(#${cid})"${opacity}><rect width="${num(n.width)}" height="${num(n.height)}" fill="url(#${pid})"/></g>`;
+    }
     const r = imageRect(p, img.width, img.height, n.width, n.height);
     const sx = r.width / Math.max(1, img.width);
     const sy = r.height / Math.max(1, img.height);
-    const opacity = p.opacity < 1 ? ` opacity="${num(p.opacity)}"` : '';
     return `<g clip-path="url(#${cid})"${opacity}><use href="#${ref}" transform="matrix(${num(sx)} 0 0 ${num(sy)} ${num(r.x)} ${num(r.y)})"/></g>`;
   }
 

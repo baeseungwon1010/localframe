@@ -81,7 +81,26 @@ export function PaintEditor(props: { paint: Paint; label: string; allowImage: bo
     <div className="paint-editor">
       <KindSelect value={kind} allowImage={props.allowImage || kind === 'IMAGE'} label={label} onChange={change} />
       {paint.type === 'IMAGE' ? (
-        <ImagePaintRow paint={paint} label={`${label} image`} onChange={props.onChange} onRemove={props.onRemove} />
+        <>
+          <ImagePaintRow paint={paint} label={`${label} image`} onChange={props.onChange} onRemove={props.onRemove} />
+          <div className="image-adjust" role="group" aria-label={`${label} image adjustments`}>
+            {(['exposure', 'contrast', 'saturation'] as const).map((k) => (
+              <NumberField
+                key={k}
+                label={k === 'exposure' ? 'Exp' : k === 'contrast' ? 'Con' : 'Sat'}
+                ariaLabel={`${label} ${k}`}
+                value={paint.adjust?.[k] ?? 0}
+                min={-100}
+                max={100}
+                precision={0}
+                onCommit={(v) => {
+                  const next = { exposure: 0, contrast: 0, saturation: 0, ...paint.adjust, [k]: Math.round(v) };
+                  props.onChange({ ...paint, adjust: next.exposure || next.contrast || next.saturation ? next : undefined });
+                }}
+              />
+            ))}
+          </div>
+        </>
       ) : isGradientPaint(paint) ? (
         <GradientEditor paint={paint} label={label} onChange={props.onChange} onRemove={props.onRemove} />
       ) : (

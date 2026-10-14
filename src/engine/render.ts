@@ -215,6 +215,14 @@ export function imageRect(p: ImagePaint, iw: number, ih: number, w: number, h: n
   return { x: (w - iw * s) / 2, y: (h - ih * s) / 2, width: iw * s, height: ih * s };
 }
 
+/** CSS filter for an image's adjustments (canvas and SVG both take it), or '' when there are none. */
+export function imageFilter(p: ImagePaint): string {
+  const a = p.adjust;
+  if (!a || (!a.exposure && !a.contrast && !a.saturation)) return '';
+  const k = (v: number) => Math.round((1 + v / 100) * 1000) / 1000;
+  return `brightness(${k(a.exposure)}) contrast(${k(a.contrast)}) saturate(${k(a.saturation)})`;
+}
+
 function fillImage(ctx: Ctx, n: SceneNode, p: ImagePaint) {
   const img = getImage(p.imageId);
   ctx.save();
@@ -224,10 +232,22 @@ function fillImage(ctx: Ctx, n: SceneNode, p: ImagePaint) {
     ctx.fillStyle = 'rgba(128, 128, 128, 0.18)';
     ctx.fillRect(0, 0, n.width, n.height);
   } else {
-    const r = imageRect(p, img.naturalWidth, img.naturalHeight, n.width, n.height);
     ctx.globalAlpha *= p.opacity;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, r.x, r.y, r.width, r.height);
+    const filter = imageFilter(p);
+    if (filter) ctx.filter = filter;
+    if (p.scaleMode === 'tile') {
+      const pattern = ctx.createPattern(img, 'repeat');
+      if (pattern) {
+        const s = p.tileScale ?? 1;
+        pattern.setTransform(new DOMMatrix().scale(s, s));
+        ctx.fillStyle = pattern;
+        ctx.fillRect(0, 0, n.width, n.height);
+      }
+    } else {
+      const r = imageRect(p, img.naturalWidth, img.naturalHeight, n.width, n.height);
+      ctx.drawImage(img, r.x, r.y, r.width, r.height);
+    }
   }
   ctx.restore();
 }

@@ -50,7 +50,14 @@ export const ImagePaintSchema = z
   .object({
     type: z.literal('IMAGE'),
     imageId: ImageIdSchema,
-    scaleMode: z.enum(['fill', 'fit', 'stretch', 'crop']),
+    scaleMode: z.enum(['fill', 'fit', 'stretch', 'crop', 'tile']),
+    /** Tile: size of one tile relative to the image's own size. */
+    tileScale: z.number().min(0.01).max(100).optional(),
+    /** −100..100 each; 0 leaves the image as it is. */
+    adjust: z
+      .object({ exposure: z.number().min(-100).max(100), contrast: z.number().min(-100).max(100), saturation: z.number().min(-100).max(100) })
+      .strict()
+      .optional(),
     /** Crop: zoom over "fill" and offset from the centre, in the layer's units. */
     crop: z.object({ x: z.number().min(-1e6).max(1e6), y: z.number().min(-1e6).max(1e6), scale: z.number().min(0.05).max(50) }).strict().optional(),
     opacity: z.number().min(0).max(1),
