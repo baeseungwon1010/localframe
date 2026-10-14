@@ -2651,6 +2651,31 @@ export class Editor {
   }
 
   /**
+   * Selects every layer on the page that looks like the selected ones: same type, paints, stroke,
+   * corners and font, or the same main component for instances.
+   */
+  selectMatching() {
+    const sel = this.selectedNodes();
+    if (sel.length === 0) return;
+    const key = (n: SceneNode) =>
+      JSON.stringify([
+        n.type,
+        n.type === 'INSTANCE' ? n.componentId : null,
+        n.fills,
+        n.strokes,
+        n.strokeWeight,
+        n.radii ?? null,
+        n.text ? [n.text.fontFamily, n.text.fontWeight, n.text.fontSize, n.text.italic ?? false] : null,
+      ]);
+    const wanted = new Set(sel.map(key));
+    const page = this.doc.currentPage;
+    const ids = [...this.doc.all()]
+      .filter((n) => this.doc.pageOf(n.id) === page && this.doc.isEffectivelyVisible(n.id) && !this.doc.isEffectivelyLocked(n.id) && wanted.has(key(n)))
+      .map((n) => n.id);
+    this.setSelection(ids);
+  }
+
+  /**
    * Alt measurement: distances from the selection's box to the hovered layer's box (or, with nothing
    * hovered, to the selection's parent frame). Each line is in world units with its length.
    */
@@ -3328,7 +3353,8 @@ export class Editor {
           this.duplicateSelection();
           return true;
         case 'KeyA':
-          this.selectAll();
+          if (alt) this.selectMatching();
+          else this.selectAll();
           return true;
         case 'KeyG':
           // Ctrl/Cmd+G groups, Ctrl/Cmd+Alt+G wraps in a frame, Ctrl/Cmd+Shift+G ungroups or removes the frame

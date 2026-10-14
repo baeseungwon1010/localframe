@@ -199,6 +199,7 @@ export function CanvasView(props: {
       },
     },
     { label: 'Duplicate', shortcut: `${MOD}D`, disabled: !hasSel, onSelect: () => editor.duplicateSelection() },
+    { label: 'Select matching layers', shortcut: `${MOD}${ALT}A`, disabled: !hasSel, onSelect: () => editor.selectMatching() },
     { label: 'Delete', shortcut: 'Del', disabled: !hasSel, onSelect: () => editor.deleteSelection() },
     'separator',
     { label: 'Bring to front', shortcut: `${MOD}${SHIFT}]`, disabled: !hasSel, onSelect: () => editor.reorder('front') },

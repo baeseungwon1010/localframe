@@ -1880,3 +1880,35 @@ button:disabled {
     transition: none;
   }
 }
+
+/* -------------------------------------------------------------- layer search */
+
+.layer-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 var(--space-3) var(--space-2);
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+}
+
+.layer-search:hover {
+  border-color: var(--color-border);
+}
+
+.layer-search:focus-within {
+  border-color: var(--color-accent);
+}
+
+.layer-search input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  outline: none;
+}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Circle, Component, Diamond, Eye, EyeOff, Frame, Group, Image, LayoutGrid, Lock, LockOpen, Minus, MoveUpRight, PenTool, Scissors, Square, SquaresExclude, SquaresIntersect, SquaresSubtract, SquaresUnite, Type } from 'lucide-react';
+import { ChevronDown, ChevronRight, Circle, Search, Component, Diamond, Eye, EyeOff, Frame, Group, Image, LayoutGrid, Lock, LockOpen, Minus, MoveUpRight, PenTool, Scissors, Square, SquaresExclude, SquaresIntersect, SquaresSubtract, SquaresUnite, Type } from 'lucide-react';
 import { type SceneNode, isContainerType } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
 import { useEditorRev } from '../hooks.ts';
@@ -50,6 +50,7 @@ export function LayersPanel({ editor }: { editor: Editor }) {
   useEditorRev(editor, 'doc', 'selection', 'hover');
   const doc = editor.doc;
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState('');
   const [renaming, setRenaming] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ ids: string[]; startY: number; active: boolean; drop: Drop | null } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -68,14 +69,28 @@ export function LayersPanel({ editor }: { editor: Editor }) {
     }
   }, [editor.selection, doc, collapsed]);
 
+  // searching: layers whose name matches, with their ancestors (all expanded)
+  const q = query.trim().toLocaleLowerCase();
+  let shown: Set<string> | null = null;
+  if (q) {
+    shown = new Set();
+    const page = doc.currentPage;
+    for (const n of doc.all()) {
+      if (doc.pageOf(n.id) !== page || !n.name.toLocaleLowerCase().includes(q)) continue;
+      shown.add(n.id);
+      for (const a of doc.ancestors(n.id)) shown.add(a);
+    }
+  }
+
   // rows: top of the stack first, like the canvas reads
   const rows: Row[] = [];
   const walk = (parentId: string | null, depth: number) => {
     const kids = doc.children(parentId);
     for (let i = kids.length - 1; i >= 0; i--) {
       const id = kids[i];
+      if (shown && !shown.has(id)) continue;
       rows.push({ id, depth });
-      if (isContainerType(doc.get(id)!.type) && !collapsed.has(id)) walk(id, depth + 1);
+      if (isContainerType(doc.get(id)!.type) && (shown || !collapsed.has(id))) walk(id, depth + 1);
     }
   };
   walk(null, 0);
@@ -142,7 +157,8 @@ export function LayersPanel({ editor }: { editor: Editor }) {
   };
 
   const onRowPointerDown = (e: React.PointerEvent, id: string) => {
-    if (e.button !== 0 || renaming) return;
+    // the filtered list has gaps, so reordering waits until the search is cleared
+    if (e.button !== 0 || renaming || q) return;
     const ids = editor.selection.includes(id) ? editor.selection : [id];
     setDrag({ ids, startY: e.clientY, active: false, drop: null });
   };
@@ -206,10 +222,29 @@ export function LayersPanel({ editor }: { editor: Editor }) {
     }
   };
 
+  const empty = doc.children(null).length === 0;
   return (
     <div className="layers-body">
-      {rows.length === 0 ? (
+      {!empty && (
+        <div className="layer-search">
+          <Search size={14} strokeWidth={1.5} aria-hidden="true" />
+          <input
+            type="search"
+            value={query}
+            placeholder="Find layers"
+            aria-label="Find layers"
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Escape') setQuery('');
+            }}
+          />
+        </div>
+      )}
+      {empty ? (
         <p className="panel-empty">Draw a frame or shape to see it here. Press F for a frame, R for a rectangle.</p>
+      ) : rows.length === 0 ? (
+        <p className="panel-empty">No layers on this page are called “{query.trim()}”.</p>
       ) : (
         <div
           ref={listRef}
