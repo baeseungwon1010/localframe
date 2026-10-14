@@ -421,3 +421,102 @@ test('sections, polygons, layer search, find and replace, and Alt distances', as
   await expect(page.getByRole('treeitem', { name: 'Section 1' })).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test('code tab, outline mode, pencil and saved export settings', async ({ page }) => {
+  const errors = await newFile(page);
+  const { drag } = await canvasHelpers(page);
+  await page.keyboard.press('r');
+  await drag([100, 100], [220, 180]);
+  await page.getByRole('tab', { name: 'Code' }).click();
+  await expect(page.getByLabel('CSS for the selected layer')).toContainText('width: 120px;');
+  await page.getByRole('tab', { name: 'Design' }).click();
+
+  // a saved export setting, exported by name
+  await page.getByRole('button', { name: 'Add export setting' }).click();
+  const [file] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export Rectangle 1' }).click()]);
+  expect(file.suggestedFilename()).toBe('Rectangle 1.png');
+
+  await page.keyboard.press('Control+y');
+  await page.keyboard.press('Shift+P');
+  await page.mouse.move(400, 400);
+  await page.mouse.down();
+  for (let i = 1; i <= 20; i++) await page.mouse.move(400 + i * 8, 400 + Math.sin(i / 2) * 30);
+  await page.mouse.up();
+  await expect(page.getByRole('treeitem', { name: 'Drawing 1' })).toBeVisible();
+  await page.keyboard.press('Control+y');
+  expect(errors).toEqual([]);
+});
+
+test('libraries: insert a component from another file and keep it up to date', async ({ page }) => {
+  const errors = await newFile(page);
+  const { drag } = await canvasHelpers(page);
+  await page.keyboard.press('f');
+  await drag([100, 100], [200, 160]);
+  await page.keyboard.press('Control+Alt+k');
+  await page.getByRole('button', { name: /File name/ }).click();
+  await page.getByLabel('File name').fill('Kit');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
+
+  await page.getByRole('button', { name: 'Back to files' }).click();
+  await page.getByRole('button', { name: 'New file' }).first().click();
+  await expect(page.getByText('Press F to draw a frame')).toBeVisible();
+  await page.getByRole('tab', { name: 'Assets' }).click();
+  await page.getByLabel('Library file').selectOption({ label: 'Kit' });
+  const lib = page.getByRole('list', { name: 'Library components' });
+  await expect(lib).toContainText('Not in this file yet');
+  await lib.getByRole('button', { name: 'Insert' }).click();
+  await expect(lib).toContainText('Up to date here');
+  await expect(page.getByRole('option', { name: 'Library components' })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('presenting: smart animate and a scrolling screen', async ({ page }) => {
+  const errors = await newFile(page);
+  const { drag } = await canvasHelpers(page);
+  await page.keyboard.press('f');
+  await drag([60, 60], [260, 260]);
+  await page.keyboard.press('r');
+  await drag([80, 80], [140, 120]);
+  await page.keyboard.press('f');
+  await drag([400, 60], [600, 260]);
+  await page.keyboard.press('r');
+  await drag([480, 180], [560, 240]);
+
+  // the second screen scrolls: content below its bottom edge
+  await page.getByRole('treeitem', { name: 'Frame 2' }).click();
+  await page.getByRole('tab', { name: 'Prototype' }).click();
+  await page.getByLabel('Scroll direction').selectOption('vertical');
+  await page.getByRole('tab', { name: 'Design' }).click();
+  await page.getByLabel('Clip content').uncheck();
+  await page.getByRole('treeitem', { name: /^Rectangle 2/ }).click();
+  const y = page.getByLabel('Y', { exact: true });
+  await y.fill('400');
+  await y.press('Enter');
+
+  // both rectangles share a name, so smart animate moves one into the other
+  for (const name of ['Rectangle 1', 'Rectangle 2']) {
+    await page.getByRole('treeitem', { name: new RegExp(`^${name}`) }).dblclick();
+    await page.getByLabel('Layer name').fill('Card');
+    await page.keyboard.press('Enter');
+  }
+  await page.getByRole('treeitem', { name: 'Frame 1' }).click();
+  await page.getByRole('tab', { name: 'Prototype' }).click();
+  await page.getByRole('button', { name: 'Add interaction' }).click();
+  const group = page.getByRole('group', { name: 'Interaction 1' });
+  await group.getByLabel('Destination').selectOption({ label: 'Frame 2' });
+  await group.getByLabel('Animation').selectOption('smart-animate');
+  await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
+
+  await page.getByRole('button', { name: 'Present' }).click();
+  const show = page.getByRole('dialog', { name: 'Presentation' });
+  await expect(show).toContainText('Frame 1');
+  await show.getByRole('button', { name: 'Frame 1' }).click();
+  await expect(show).toContainText('Frame 2');
+  await page.waitForTimeout(500);
+  const scroll = show.locator('.present-scroll');
+  const [sh, ch] = await scroll.evaluate((el) => [el.scrollHeight, el.clientHeight]);
+  expect(sh).toBeGreaterThan(ch);
+  await page.keyboard.press('Escape');
+  expect(errors).toEqual([]);
+});
