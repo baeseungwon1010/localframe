@@ -756,6 +756,10 @@ describe('paste between files', () => {
     expect(asked).toEqual([['file-a', ['b'.repeat(64)]]]);
     valid(b);
 
+    // clipboard text naming a file nobody copied from doesn't pull its images
+    b.pasteText(text.replace('"sourceFile":"file-a"', '"sourceFile":"file-z"'));
+    expect(asked).toHaveLength(1);
+
     // pasting in the same file keeps it an instance and copies nothing
     const before = a.doc.size;
     a.onPastedImages = () => asked.push(['same', []]);

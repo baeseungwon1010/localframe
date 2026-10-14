@@ -10,6 +10,8 @@ type Screen = { id: string; canvas: HTMLCanvasElement; bounds: Rect; fit: number
 type Hotspot = { id: string; name: string; rect: Rect; reactions: Reaction[] };
 
 const PAD = 48;
+const MIN_DELAY = 50;
+const MAX_HISTORY = 200;
 const MAX_SCALE = 4;
 
 /**
@@ -62,7 +64,10 @@ export function Presenter({ editor, startId, onClose }: { editor: Editor; startI
         const next = await render(id, room());
         if (!next) return;
         setOverlay(null);
-        if (shown.current && push) history.current.push(shown.current);
+        if (shown.current && push) {
+          history.current.push(shown.current);
+          if (history.current.length > MAX_HISTORY) history.current.shift();
+        }
         shown.current = id;
         pending.current = how;
         setCurrent(next);
@@ -129,7 +134,9 @@ export function Presenter({ editor, startId, onClose }: { editor: Editor; startI
       }
       const dest = r.destinationId ? editor.doc.get(r.destinationId) : undefined;
       if (!dest || dest.parentId !== null || editor.doc.pageOf(dest.id) !== editor.doc.currentPage) return;
-      if (r.action === 'navigate') await show(dest.id, r);
+      if (r.action === 'navigate') {
+        if (dest.id !== shown.current) await show(dest.id, r);
+      }
       else {
         const o = await render(dest.id, room());
         if (o) setOverlay(o);
@@ -145,7 +152,7 @@ export function Presenter({ editor, startId, onClose }: { editor: Editor; startI
     const timers = hotspots(editor, screen)
       .flatMap((h) => h.reactions)
       .filter((r) => r.trigger === 'after-delay')
-      .map((r) => setTimeout(() => void run(r), r.delay ?? 800));
+      .map((r) => setTimeout(() => void run(r), Math.max(MIN_DELAY, r.delay ?? 800)));
     return () => timers.forEach(clearTimeout);
   }, [current, overlay, editor, run]);
 

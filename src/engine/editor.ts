@@ -164,6 +164,31 @@ const TOOL_TYPE: Partial<Record<Tool, NodeType>> = {
 };
 
 const CLIP_PREFIX = 'localframe-clipboard:';
+const COPIED_FROM_KEY = 'localframe.copiedFrom';
+
+/** Copied from in this tab (also kept when storage is unavailable). */
+const copiedHere = new Set<string>();
+
+/** Files this browser copied layers from (shared between tabs), newest first. */
+function copiedFrom(): string[] {
+  let stored: string[] = [];
+  try {
+    const v: unknown = JSON.parse(globalThis.localStorage?.getItem(COPIED_FROM_KEY) ?? '[]');
+    if (Array.isArray(v)) stored = v.filter((x): x is string => typeof x === 'string');
+  } catch {
+    /* ignore */
+  }
+  return [...copiedHere, ...stored];
+}
+
+function rememberCopiedFrom(fileId: string) {
+  copiedHere.add(fileId);
+  try {
+    globalThis.localStorage?.setItem(COPIED_FROM_KEY, JSON.stringify([fileId, ...copiedFrom().filter((x) => x !== fileId)].slice(0, 20)));
+  } catch {
+    /* storage unavailable: images just won't be copied */
+  }
+}
 const ClipboardSchema = z
   .object({
     roots: z.array(z.string().max(64)).max(10_000),
@@ -1586,6 +1611,7 @@ export class Editor {
         if (n.type === 'INSTANCE' && n.componentId) queue.push(n.componentId);
       }
     }
+    if (this.fileId) rememberCopiedFrom(this.fileId);
     return CLIP_PREFIX + JSON.stringify({ roots, nodes, sourceFile: this.fileId ?? undefined, components });
   }
 
@@ -1612,11 +1638,12 @@ export class Editor {
       if (this.doc.size + parsed.data.nodes.length > MAX_NODES_PER_FILE) return;
       const carried = parsed.data.components ?? [];
       const nodes = this.rebuildMissingInstances(parsed.data.nodes, carried.length && !validateTree(carried) ? carried : []);
-      if (this.doc.size + nodes.length > MAX_NODES_PER_FILE) return;
+      if (!nodes || this.doc.size + nodes.length > MAX_NODES_PER_FILE) return;
       this.pasteNodes(roots, nodes);
       // images come from the file they were copied from
+      // only from a file this browser copied from: clipboard text alone can't pull images out of other files
       const src = parsed.data.sourceFile;
-      if (src && src !== this.fileId && this.onPastedImages) {
+      if (src && src !== this.fileId && this.onPastedImages && copiedFrom().includes(src)) {
         const ids = new Set<string>();
         for (const n of nodes) for (const p of n.fills) if (p.type === 'IMAGE') ids.add(p.imageId);
         if (ids.size) this.onPastedImages(src, [...ids]);
@@ -1640,14 +1667,25 @@ export class Editor {
    * Instances whose main component isn't in this file become frames holding a copy of their
    * content, built from the components carried on the clipboard.
    */
-  private rebuildMissingInstances(nodes: SceneNode[], components: SceneNode[]): SceneNode[] {
-    const missing = nodes.filter((n) => n.type === 'INSTANCE' && n.componentId && !this.doc.get(n.componentId));
-    if (missing.length === 0) return nodes;
+  private rebuildMissingInstances(nodes: SceneNode[], components: SceneNode[]): SceneNode[] | null {
+    const missing = new Set(nodes.filter((n) => n.type === 'INSTANCE' && n.componentId && !this.doc.get(n.componentId)));
+    if (missing.size === 0) return nodes;
+    const ids = new Set(nodes.map((n) => n.id));
     const temp = new SceneDoc();
-    temp.load([...components.filter((c) => !nodes.some((n) => n.id === c.id)), ...nodes]);
+    temp.load([...components.filter((c) => !ids.has(c.id)), ...nodes]);
+    // what the copies will add, before building any of them: stop if it can't fit in the file
+    const room = MAX_NODES_PER_FILE - this.doc.size;
+    const sizes = new Map<string, number>();
+    let total = nodes.length;
+    for (const n of missing) {
+      const cid = n.componentId!;
+      if (!sizes.has(cid)) sizes.set(cid, temp.has(cid) ? temp.descendants(cid).length : 0);
+      total += sizes.get(cid)!;
+      if (total > room) return null;
+    }
     const out: SceneNode[] = [];
     for (const n of nodes) {
-      if (!missing.includes(n)) {
+      if (!missing.has(n)) {
         out.push(n);
         continue;
       }
