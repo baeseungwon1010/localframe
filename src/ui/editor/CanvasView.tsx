@@ -8,6 +8,7 @@ import { paintCss } from '../../engine/render.ts';
 import { fontStack, layoutText, lineHeightPx } from '../../engine/text.ts';
 import { adjustRuns, rangeValue } from '../../engine/textRuns.ts';
 import { ALT, MOD, Menu, type MenuItem, SHIFT } from '../components.tsx';
+import { Rulers } from './Rulers.tsx';
 import { useEditorRev } from '../hooks.ts';
 
 function readColors(): OverlayColors {
@@ -282,6 +283,7 @@ export function CanvasView(props: {
         onPointerLeave={() => !editor.isInteracting && editor.setHover(null)}
       />
       {editor.editingText && <TextEditor key={editor.editingText} editor={editor} id={editor.editingText} />}
+      {editor.showRulers && <Rulers editor={editor} canvasRect={rect} />}
       {editor.doc.size === 0 && editor.tool === 'move' && (
         <p className="canvas-hint">Press F to draw a frame, R for a rectangle, L for a line or T for text.</p>
       )}
