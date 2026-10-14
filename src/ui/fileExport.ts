@@ -7,11 +7,13 @@ import { buildZip, uniqueName } from '../engine/zip.ts';
 import { safeFileName } from './download.ts';
 import { loadFonts } from './hooks.ts';
 import { printSvgPages } from './print.ts';
+import { exportLayers } from './layerExport.ts';
 
-export type FileExportFormat = 'localframe' | 'pdf' | 'print' | 'png' | 'jpg' | 'webp' | 'svg';
+export type FileExportFormat = 'localframe' | 'settings' | 'pdf' | 'print' | 'png' | 'jpg' | 'webp' | 'svg';
 
 export const FILE_EXPORT_FORMATS: { value: FileExportFormat; label: string; detail: string }[] = [
   { value: 'localframe', label: 'localframe file (.localframe.json)', detail: 'Everything, editable. Import it on any machine.' },
+  { value: 'settings', label: "Layers' export settings", detail: 'Every layer with saved export settings, in each of its formats and sizes. A ZIP with a folder per page.' },
   { value: 'pdf', label: 'PDF (.pdf)', detail: 'Every frame becomes a page, in page order. Layers outside frames get a page of their own.' },
   { value: 'print', label: 'Vector PDF (print)', detail: 'Opens the print dialog; choose Save as PDF. Text and shapes stay sharp at any zoom.' },
   { value: 'png', label: 'PNG images', detail: 'One image per frame. Several frames come in a .zip.' },
@@ -82,6 +84,19 @@ export async function exportWholeFile(fileId: string, format: FileExportFormat, 
   const base = safeFileName(file.name, 'file');
   const previous = useImagesOf(fileId);
   try {
+    if (format === 'settings') {
+      const nodes = [...doc.all()].filter((n) => n.exportSettings?.length && doc.isEffectivelyVisible(n.id));
+      const pageOf = (n: SceneNode) => file.pages.find((p) => p.id === doc.pageOf(n.id));
+      const out = await exportLayers(
+        doc,
+        nodes,
+        (n) => (n.parentId === null && !n.fills.length ? (pageOf(n)?.background ?? null) : null),
+        `${base}-export`,
+        file.pages.length > 1 ? (n) => safeFileName(pageOf(n)?.name ?? 'Page', 'Page') : undefined,
+      );
+      if (!out) throw new Error('No layer in this file has export settings. Add them in the Export section.');
+      return out;
+    }
     const items = collectItems(doc, file.pages);
     if (items.length === 0) throw new Error('This file is empty');
     if (format === 'pdf') {

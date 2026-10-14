@@ -381,6 +381,19 @@ export const SceneNodeSchema = z
     /** Clips the layers above it in the same parent. */
     isMask: z.boolean().optional(),
     reactions: z.array(ReactionSchema).max(20).optional(),
+    /** Exports saved on the layer: format, scale and a suffix for the file name. */
+    exportSettings: z
+      .array(
+        z
+          .object({
+            format: z.enum(['png', 'jpg', 'webp', 'svg', 'pdf']),
+            scale: z.number().min(0.5).max(4),
+            suffix: z.string().max(40).regex(/^[A-Za-z0-9 @._-]*$/),
+          })
+          .strict(),
+      )
+      .max(10)
+      .optional(),
     /** A frame used as a section: a labelled area on the page that holds frames. Top level only. */
     section: z.boolean().optional(),
     /** A vector drawn as a polygon or star: its points are rebuilt from these when it changes size. */

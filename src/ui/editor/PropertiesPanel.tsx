@@ -16,6 +16,7 @@ import {
   ArrowLeft,
   ArrowRight,
   CornerDownRight,
+  Minus,
   Component,
   Link2,
   Link2Off,
@@ -35,6 +36,7 @@ import type { Editor } from '../../engine/editor.ts';
 import { type ExportFormat, exportBounds, exportImage, exportPdf, exportSvg } from '../../engine/export.ts';
 import { printSvgPages } from '../print.ts';
 import { PrototypePanel } from './PrototypePanel.tsx';
+import { exportLayers } from '../layerExport.ts';
 import { CodePanel } from './CodePanel.tsx';
 import { overridableTexts } from '../../engine/instances.ts';
 import { DEFAULT_LAYOUT } from '../../engine/layout.ts';
@@ -727,6 +729,89 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const empty = ids.length === 0;
+  const nodes = ids.map((id) => editor.doc.get(id)).filter((n): n is SceneNode => !!n);
+  const single = nodes.length === 1 ? nodes[0] : null;
+  const settings = single?.exportSettings ?? [];
+  const withSettings = nodes.filter((n) => n.exportSettings?.length);
+  const setSettings = (next: NonNullable<SceneNode['exportSettings']>) =>
+    single && editor.updateNodes([single.id], (n) => ({ ...n, exportSettings: next.length ? next : undefined }));
+
+  /** Every saved export setting of the selected layers. */
+  const runSettings = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const out = await exportLayers(editor.doc, withSettings, (n) => (n.parentId === null && !n.fills.length ? editor.background : null), props.name);
+      if (!out) throw new Error('Nothing to export');
+      downloadBlob(out.blob, out.filename);
+      setMessage(`Exported ${out.filename}`);
+    } catch (e) {
+      setMessage(`Couldn't export: ${e instanceof Error ? e.message : 'unknown error'}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (withSettings.length) {
+    return (
+      <Section
+        title="Export"
+        action={
+          single && settings.length < 10 ? (
+            <IconButton label="Add export setting" onClick={() => setSettings([...settings, { format: 'png', scale: 2, suffix: '@2x' }])}>
+              <Plus {...ICON} />
+            </IconButton>
+          ) : undefined
+        }
+      >
+        {single &&
+          settings.map((s, i) => (
+            <div className="export-row" key={i} role="group" aria-label={`Export setting ${i + 1}`}>
+              <SelectField
+                label="Scale"
+                value={s.scale}
+                options={[0.5, 1, 1.5, 2, 3, 4].map((v) => ({ value: v, label: `${v}x` }))}
+                onChange={(v) => setSettings(settings.map((x, j) => (j === i ? { ...x, scale: v } : x)))}
+              />
+              <input
+                className="hex-input override-input"
+                aria-label="File name suffix"
+                placeholder="Suffix"
+                maxLength={40}
+                defaultValue={s.suffix}
+                key={`${i}-${s.suffix}`}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                }}
+                onBlur={(e) => {
+                  const suffix = e.target.value.replace(/[^A-Za-z0-9 @._-]/g, '').slice(0, 40);
+                  if (suffix !== s.suffix) setSettings(settings.map((x, j) => (j === i ? { ...x, suffix } : x)));
+                }}
+              />
+              <SelectField
+                label="Format"
+                value={s.format}
+                options={EXPORT_FORMATS.filter((f) => f.value !== 'print') as { value: ExportFormat; label: string }[]}
+                onChange={(v) => setSettings(settings.map((x, j) => (j === i ? { ...x, format: v } : x)))}
+              />
+              <IconButton label={`Remove export setting ${i + 1}`} onClick={() => setSettings(settings.filter((_, j) => j !== i))}>
+                <Minus {...ICON} />
+              </IconButton>
+            </div>
+          ))}
+        {!single && <p className="field-caption">{withSettings.length} of the selected layers have export settings.</p>}
+        <button type="button" className="btn secondary full" disabled={busy} onClick={runSettings}>
+          {busy ? 'Exporting…' : `Export ${props.name}`}
+        </button>
+        {message && (
+          <p className="field-caption" role="status">
+            {message}
+          </p>
+        )}
+      </Section>
+    );
+  }
 
   const run = async () => {
     setBusy(true);
@@ -763,7 +848,16 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
   };
 
   return (
-    <Section title="Export">
+    <Section
+      title="Export"
+      action={
+        single ? (
+          <IconButton label="Add export setting" onClick={() => setSettings([{ format: 'png', scale: 1, suffix: '' }])}>
+            <Plus {...ICON} />
+          </IconButton>
+        ) : undefined
+      }
+    >
       <div className="grid2">
         <SelectField
           label="Export scale"

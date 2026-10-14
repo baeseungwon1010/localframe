@@ -1964,3 +1964,10 @@ button:disabled {
   white-space: pre;
   user-select: text;
 }
+
+.export-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 72px 24px;
+  align-items: center;
+  gap: var(--space-2);
+}
