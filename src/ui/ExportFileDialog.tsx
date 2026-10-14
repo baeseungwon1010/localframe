@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { downloadBlob } from './download.ts';
-import { FILE_EXPORT_FORMATS, type FileExportFormat, exportWholeFile } from './fileExport.ts';
+import { FILE_EXPORT_FORMATS, type FileExportFormat, exportWholeFile, printWholeFile } from './fileExport.ts';
 
 /** Picks a format and exports the whole file. */
 export function ExportFileDialog(props: { fileId: string; fileName: string; onClose: () => void; beforeExport?: () => Promise<void> }) {
@@ -27,6 +27,11 @@ export function ExportFileDialog(props: { fileId: string; fileName: string; onCl
     setMessage(null);
     try {
       await props.beforeExport?.();
+      if (format === 'print') {
+        await printWholeFile(props.fileId);
+        setMessage({ text: 'Sent to the print dialog', error: false });
+        return;
+      }
       const { blob, filename } = await exportWholeFile(props.fileId, format, scale);
       downloadBlob(blob, filename);
       setMessage({ text: `Exported ${filename}`, error: false });

@@ -31,7 +31,8 @@ import {
 } from 'lucide-react';
 import type { Constraints, Layout, LayoutChild, Paint, SceneNode, TextStyle } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
-import { type ExportFormat, exportImage, exportPdf, exportSvg } from '../../engine/export.ts';
+import { type ExportFormat, exportBounds, exportImage, exportPdf, exportSvg } from '../../engine/export.ts';
+import { printSvgPages } from '../print.ts';
 import { overridableTexts } from '../../engine/instances.ts';
 import { DEFAULT_LAYOUT } from '../../engine/layout.ts';
 import { solid, TYPE_LABEL } from '../../engine/nodes.ts';
@@ -661,17 +662,18 @@ function EffectsSection({ editor, nodes, update }: { editor: Editor; nodes: Scen
   );
 }
 
-const EXPORT_FORMATS: { value: ExportFormat; label: string }[] = [
+const EXPORT_FORMATS: { value: ExportFormat | 'print'; label: string }[] = [
   { value: 'png', label: 'PNG' },
   { value: 'jpg', label: 'JPG' },
   { value: 'webp', label: 'WebP' },
   { value: 'svg', label: 'SVG' },
   { value: 'pdf', label: 'PDF' },
+  { value: 'print', label: 'Vector PDF (print)' },
 ];
 
 function ExportSection(props: { editor: Editor; ids: string[]; name: string; pageBackground: boolean }) {
   const { editor, ids } = props;
-  const [format, setFormat] = useState<ExportFormat>('png');
+  const [format, setFormat] = useState<ExportFormat | 'print'>('png');
   const [scale, setScale] = useState(2);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -685,6 +687,14 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
       const base = safeFileName(props.name);
       const suffix = scale === 1 ? '' : `@${scale}x`;
       let filename: string;
+      if (format === 'print') {
+        const b = exportBounds(editor.doc, ids);
+        if (!b) throw new Error('Nothing to export');
+        const bg = target.background ?? editor.background;
+        await printSvgPages([{ svg: await exportSvg(editor.doc, { ...target, background: bg }), width: b.width, height: b.height }], props.name);
+        setMessage('Sent to the print dialog');
+        return;
+      }
       if (format === 'svg') {
         filename = `${base}.svg`;
         downloadBlob(new Blob([await exportSvg(editor.doc, target)], { type: 'image/svg+xml' }), filename);

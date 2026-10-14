@@ -1,17 +1,19 @@
 import type { SceneNode } from '../../shared/schema.ts';
 import { api } from '../api.ts';
 import { SceneDoc } from '../engine/doc.ts';
-import { type ExportTarget, exportImage, exportPdf, exportSvg } from '../engine/export.ts';
+import { type ExportTarget, exportBounds, exportImage, exportPdf, exportSvg } from '../engine/export.ts';
 import { useImagesOf } from '../engine/images.ts';
 import { buildZip, uniqueName } from '../engine/zip.ts';
 import { safeFileName } from './download.ts';
 import { loadFonts } from './hooks.ts';
+import { printSvgPages } from './print.ts';
 
-export type FileExportFormat = 'localframe' | 'pdf' | 'png' | 'jpg' | 'webp' | 'svg';
+export type FileExportFormat = 'localframe' | 'pdf' | 'print' | 'png' | 'jpg' | 'webp' | 'svg';
 
 export const FILE_EXPORT_FORMATS: { value: FileExportFormat; label: string; detail: string }[] = [
   { value: 'localframe', label: 'localframe file (.localframe.json)', detail: 'Everything, editable. Import it on any machine.' },
   { value: 'pdf', label: 'PDF (.pdf)', detail: 'Every frame becomes a page, in page order. Layers outside frames get a page of their own.' },
+  { value: 'print', label: 'Vector PDF (print)', detail: 'Opens the print dialog; choose Save as PDF. Text and shapes stay sharp at any zoom.' },
   { value: 'png', label: 'PNG images', detail: 'One image per frame. Several frames come in a .zip.' },
   { value: 'jpg', label: 'JPG images', detail: 'Smaller files, no transparency. Several frames come in a .zip.' },
   { value: 'webp', label: 'WebP images', detail: 'Small files with transparency. Several frames come in a .zip.' },
@@ -38,8 +40,30 @@ function collectItems(doc: SceneDoc, pages: { id: string; name: string; backgrou
   return items;
 }
 
+/** Every frame as an SVG page, sent to the browser's print dialog. */
+export async function printWholeFile(fileId: string): Promise<void> {
+  const [{ file, nodes }] = await Promise.all([api.getFile(fileId), loadFonts()]);
+  const doc = new SceneDoc();
+  doc.load(nodes, file.pages[0].id);
+  const previous = useImagesOf(fileId);
+  try {
+    const items = collectItems(doc, file.pages);
+    if (items.length === 0) throw new Error('This file is empty');
+    const pages = [];
+    for (const it of items) {
+      const target = { ...it.target, background: it.target.background ?? pageBackground(file.pages, it.page) };
+      const b = exportBounds(doc, target.ids);
+      if (b) pages.push({ svg: await exportSvg(doc, target), width: b.width, height: b.height });
+    }
+    await printSvgPages(pages, file.name);
+  } finally {
+    useImagesOf(previous);
+  }
+}
+
 /** Exports a whole file. Returns the file to download. */
 export async function exportWholeFile(fileId: string, format: FileExportFormat, scale: number): Promise<{ blob: Blob; filename: string }> {
+  if (format === 'print') throw new Error('Vector PDF goes through the print dialog');
   if (format === 'localframe') {
     const data = await api.exportFile(fileId);
     return {
