@@ -102,6 +102,10 @@ export function TitleBar(props: {
             { label: 'Zoom to fit', shortcut: `${SHIFT}1`, onSelect: () => editor.zoomToFit() },
             { label: 'Zoom to selection', shortcut: `${SHIFT}2`, onSelect: () => editor.zoomToSelection(), disabled: editor.selection.length === 0 },
             { label: 'Zoom to 100%', shortcut: `${SHIFT}0`, onSelect: () => editor.zoomTo(1) },
+            'separator',
+            { label: editor.showRulers ? 'Hide rulers' : 'Show rulers', shortcut: `${SHIFT}R`, onSelect: () => editor.toggleRulers() },
+            { label: editor.showGrids ? 'Hide layout grids' : 'Show layout grids', shortcut: `${MOD}${SHIFT}4`, onSelect: () => editor.toggleGrids() },
+            { label: 'Remove guides on this page', disabled: !(editor.currentPage.guides ?? []).length, onSelect: () => editor.clearGuides() },
           ]}
         />
       )}

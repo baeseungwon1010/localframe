@@ -197,6 +197,9 @@ export function LayersPanel({ editor }: { editor: Editor }) {
     } else if (e.key === 'Enter' && current) {
       handled();
       setRenaming(current);
+    } else if ((e.ctrlKey || e.metaKey) && e.code === 'KeyR') {
+      handled();
+      editor.onRequestRename?.();
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
       handled();
       editor.deleteSelection();

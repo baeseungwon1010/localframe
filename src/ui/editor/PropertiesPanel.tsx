@@ -44,6 +44,7 @@ import { MIXED, NumberField, Section, Segmented, SelectField, common, normalizeH
 import { DEFAULT_SHADOW, EffectEditor, PaintEditor } from './paints.tsx';
 import { ComponentSetSection, InnerLayerSection, InstanceProps, LinkProps, PropDefinitions, VariantValues } from './componentPanels.tsx';
 import { StylePicker, VariablesSection } from './assetsPanels.tsx';
+import { FramePresets, GridsSection } from './framePanels.tsx';
 
 const ICON = { size: 14, strokeWidth: 1.5 };
 
@@ -55,12 +56,14 @@ function uniformRadius(nodes: SceneNode[]) {
 
 export function PropertiesPanel(props: { editor: Editor; fileName: string }) {
   const { editor } = props;
-  useEditorRev(editor, 'doc', 'selection', 'pages', 'view');
+  useEditorRev(editor, 'doc', 'selection', 'pages', 'view', 'tool');
   const sel = editor.selectedNodes();
 
   return (
     <aside className="props" aria-label="Properties">
-      {sel.length === 0 ? (
+      {sel.length === 0 && editor.tool === 'frame' ? (
+        <FramePresets editor={editor} />
+      ) : sel.length === 0 ? (
         <PageProps key={editor.currentPage.id} editor={editor} fileName={props.fileName} />
       ) : (
         <SelectionProps editor={editor} nodes={sel} />
@@ -304,6 +307,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
       )}
 
       {allFrames && <AutoLayoutSection editor={editor} nodes={nodes} update={update} />}
+      {allFrames && <GridsSection nodes={nodes} update={update} />}
       {inAutoLayout && <LayoutChildSection nodes={nodes} update={update} />}
       {single?.type === 'LINE' && (single.startBind || single.endBind) && <ConnectorSection editor={editor} line={single} />}
 

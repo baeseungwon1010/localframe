@@ -8,6 +8,7 @@ import { SyncQueue } from '../../engine/sync.ts';
 import { navigate } from '../App.tsx';
 import { type Theme, loadFonts } from '../hooks.ts';
 import { ExportFileDialog } from '../ExportFileDialog.tsx';
+import { RenameDialog } from './framePanels.tsx';
 import { CanvasView } from './CanvasView.tsx';
 import { LeftPanel } from './LeftPanel.tsx';
 import { PropertiesPanel } from './PropertiesPanel.tsx';
@@ -55,6 +56,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   const imageInput = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [renaming, setRenaming] = useState(false);
 
   /** Uploads image files and places them on the canvas (at a point, or in the middle of the view). */
   const placeImages = async (files: File[], at?: { x: number; y: number }) => {
@@ -111,10 +113,12 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
     })();
     const offImages = onImageLoaded(() => editor.emit('view'));
     editor.onRequestImage = () => imageInput.current?.click();
+    editor.onRequestRename = () => setRenaming(true);
     return () => {
       cancelled = true;
       offImages();
       editor.onRequestImage = null;
+      editor.onRequestRename = null;
       queue?.flushOnExit();
       queue?.dispose();
       if (thumbTimer.current) clearTimeout(thumbTimer.current);
@@ -290,6 +294,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
           e.target.value = '';
         }}
       />
+      {renaming && <RenameDialog editor={editor} onClose={() => setRenaming(false)} />}
       {exporting && (
         <ExportFileDialog
           fileId={fileId}
