@@ -1,14 +1,12 @@
 import type { Changes, Comment, ExportedFile, FileMeta, SceneNode, VersionMeta } from '../shared/schema.ts';
+import { ApiError } from './apiError.ts';
+import { BrowserStore } from './browserStore.ts';
 
-export class ApiError extends Error {
-  readonly status: number;
-  readonly body: unknown;
-  constructor(status: number, message: string, body: unknown) {
-    super(message);
-    this.status = status;
-    this.body = body;
-  }
-}
+export { ApiError };
+
+/** The web build keeps files in the browser; the local app talks to its own server. */
+export const BROWSER_STORAGE = import.meta.env.VITE_STORAGE === 'browser';
+
 
 async function request<T>(method: string, path: string, body?: unknown, init: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
@@ -34,7 +32,7 @@ async function request<T>(method: string, path: string, body?: unknown, init: Re
   return data as T;
 }
 
-export const api = {
+const httpApi = {
   listFiles: () => request<FileMeta[]>('GET', '/api/files'),
   createFile: (name?: string) => request<FileMeta>('POST', '/api/files', name ? { name } : {}),
   getFile: (id: string) => request<{ file: FileMeta; nodes: SceneNode[] }>('GET', `/api/files/${encodeURIComponent(id)}`),
@@ -81,4 +79,42 @@ export const api = {
   },
   thumbnailUrl: (id: string, updatedAt: string) =>
     `/api/files/${encodeURIComponent(id)}/thumbnail?v=${encodeURIComponent(updatedAt)}`,
+  imageUrl: async (file: string, id: string): Promise<string | null> => `/api/files/${encodeURIComponent(file)}/images/${id}`,
 };
+
+export type Api = typeof httpApi;
+
+function browserApi(): Api {
+  const store = new BrowserStore();
+  return {
+    listFiles: () => store.listFiles(),
+    createFile: (name) => store.createFile(name),
+    getFile: (id) => store.getFile(id),
+    updateFile: (id, patch) => store.updateFile(id, patch),
+    deleteFile: (id) => store.deleteFile(id),
+    saveChanges: (id, changes) => store.saveChanges(id, changes),
+    putThumbnail: (id, dataUrl) => store.putThumbnail(id, dataUrl),
+    exportFile: (id) => store.exportFile(id),
+    importFile: (data) => store.importFile(data),
+    listVersions: (id) => store.listVersions(id),
+    saveVersion: (id, name) => store.saveVersion(id, name),
+    renameVersion: (id, vid, name) => store.renameVersion(id, vid, name),
+    deleteVersion: (id, vid) => store.deleteVersion(id, vid),
+    restoreVersion: (id, vid) => store.restoreVersion(id, vid),
+    listComments: (id) => store.listComments(id),
+    addComment: (id, c) => store.addComment(id, c),
+    updateComment: (id, cid, patch) => store.updateComment(id, cid, patch),
+    deleteComment: (id, cid) => store.deleteComment(id, cid),
+    copyImages: (id, from, ids) => store.copyImages(id, from, ids),
+    uploadImage: (id, file) => store.uploadImage(id, file),
+    thumbnailUrl: (id) => store.thumbnailUrl(id),
+    imageUrl: (file, id) => store.imageUrl(file, id),
+  };
+}
+
+/** What to tell the user when storage can't be reached. */
+export const STORAGE_DOWN = BROWSER_STORAGE
+  ? "Couldn't open this browser's storage. It may be turned off (private window or blocked site data)."
+  : "Couldn't reach the local server. Start it with npm run dev (or npm start) and reload.";
+
+export const api: Api = BROWSER_STORAGE ? browserApi() : httpApi;

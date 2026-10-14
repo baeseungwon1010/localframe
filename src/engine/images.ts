@@ -1,4 +1,5 @@
 /** Loads and caches the images of the open file for the canvas, exports and thumbnails. */
+import { api } from '../api.ts';
 
 type Entry = {
   img: HTMLImageElement | null;
@@ -11,7 +12,6 @@ let fileId: string | null = null;
 const cache = new Map<string, Entry>();
 const listeners = new Set<() => void>();
 
-export const imageUrl = (file: string, id: string) => `/api/files/${encodeURIComponent(file)}/images/${id}`;
 
 /** Images are per file; the editor and exporters say which file they draw. Returns the previous one. */
 export function useImagesOf(file: string | null): string | null {
@@ -38,18 +38,27 @@ function load(id: string): Entry | null {
   const img = new Image();
   img.decoding = 'async';
   const entry: Entry = { img, ready: false, failed: false, promise: Promise.resolve() };
-  entry.promise = new Promise<void>((resolve) => {
-    img.onload = () => {
-      entry.ready = true;
-      listeners.forEach((fn) => fn());
-      resolve();
-    };
-    img.onerror = () => {
+  const file = fileId;
+  entry.promise = (async () => {
+    // a server URL, or an object URL from browser storage
+    const url = await api.imageUrl(file, id).catch(() => null);
+    if (!url) {
       entry.failed = true;
-      resolve();
-    };
-  });
-  img.src = imageUrl(fileId, id);
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      img.onload = () => {
+        entry.ready = true;
+        listeners.forEach((fn) => fn());
+        resolve();
+      };
+      img.onerror = () => {
+        entry.failed = true;
+        resolve();
+      };
+      img.src = url;
+    });
+  })();
   cache.set(key, entry);
   e = entry;
   return e;
@@ -74,7 +83,9 @@ export async function ensureImages(ids: Iterable<string>): Promise<void> {
 /** Image bytes as a data URL, for embedding in SVG. */
 export async function imageDataUrl(id: string): Promise<string | null> {
   if (!fileId) return null;
-  const res = await fetch(imageUrl(fileId, id));
+  const url = await api.imageUrl(fileId, id).catch(() => null);
+  if (!url) return null;
+  const res = await fetch(url);
   if (!res.ok) return null;
   const blob = await res.blob();
   return new Promise((resolve) => {

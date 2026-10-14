@@ -1945,3 +1945,9 @@ button:disabled {
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-5);
 }
+
+.browser-note {
+  max-width: 64ch;
+  margin: 0 0 var(--space-6);
+  color: var(--color-text-muted);
+}

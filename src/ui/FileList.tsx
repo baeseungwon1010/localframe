@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FilePlus2, MoreHorizontal, Upload } from 'lucide-react';
 import type { FileMeta } from '../../shared/schema.ts';
-import { ApiError, api } from '../api.ts';
+import { ApiError, api, BROWSER_STORAGE, STORAGE_DOWN } from '../api.ts';
 import { navigate } from './App.tsx';
 import { ExportFileDialog } from './ExportFileDialog.tsx';
 import { IconButton, Menu, type MenuItem, ThemeToggle, relativeTime } from './components.tsx';
@@ -23,7 +23,7 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
       setFiles(await api.listFiles());
       setError(null);
     } catch {
-      setError("Couldn't reach the local server. Start it with npm run dev (or npm start) and reload.");
+      setError(STORAGE_DOWN);
     }
   }, []);
 
@@ -37,7 +37,7 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
       const f = await api.createFile('Untitled');
       navigate(`#/file/${f.id}`);
     } catch (e) {
-      setError(e instanceof ApiError ? `Couldn't create a file: ${e.message}` : "Couldn't reach the local server.");
+      setError(e instanceof ApiError ? `Couldn't create a file: ${e.message}` : STORAGE_DOWN);
     }
   };
 
@@ -116,6 +116,12 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
 
       <main className="files-main">
         <h1>Files</h1>
+        {BROWSER_STORAGE && (
+          <p className="browser-note">
+            Files are saved in this browser only, on this device. Nothing is uploaded. Clearing site data removes them, so use
+            Export to keep a copy.
+          </p>
+        )}
         {error && (
           <p className="status-line error" role="alert">
             {error}

@@ -1,5 +1,5 @@
 import { SceneNodeSchema } from '../../shared/schema.ts';
-import { ApiError, api } from '../api.ts';
+import { ApiError, BROWSER_STORAGE, api } from '../api.ts';
 import type { CommitInfo, Editor } from './editor.ts';
 
 export type SaveStatus = 'saved' | 'saving' | 'offline' | 'conflict' | 'error';
@@ -7,7 +7,7 @@ export type SaveStatus = 'saved' | 'saving' | 'offline' | 'conflict' | 'error';
 const DEBOUNCE_MS = 300;
 const KEEPALIVE_LIMIT = 60_000; // browsers cap keepalive bodies at 64 KB
 
-/** Saves committed changes to the local server, in order, one batch at a time. */
+/** Saves committed changes to storage (the local server, or this browser), in order, one batch at a time. */
 export class SyncQueue {
   status: SaveStatus = 'saved';
   error: string | null = null;
@@ -135,7 +135,12 @@ export class SyncQueue {
         this.setStatus('error', `Couldn't save: ${err.message}`);
         return;
       }
-      this.setStatus('offline', "Couldn't reach the local server. Changes are kept in this tab and saved when it's back.");
+      this.setStatus(
+        'offline',
+        BROWSER_STORAGE
+          ? "Couldn't save to this browser's storage. Changes are kept in this tab; export the file to keep a copy."
+          : "Couldn't reach the local server. Changes are kept in this tab and saved when it's back.",
+      );
       this.schedule(this.retryMs);
       this.retryMs = Math.min(this.retryMs * 2, 15_000);
     }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { FileMeta } from '../../../shared/schema.ts';
-import { ApiError, api } from '../../api.ts';
+import { ApiError, STORAGE_DOWN, api } from '../../api.ts';
 import { Editor } from '../../engine/editor.ts';
 import { onImageLoaded, readImageSize, retryFailedImages, useImagesOf } from '../../engine/images.ts';
 import { drawChildren } from '../../engine/render.ts';
@@ -156,7 +156,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         setLoadError(
           e instanceof ApiError && e.status === 404
             ? "This file doesn't exist. It may have been deleted."
-            : "Couldn't reach the local server. Start it with npm run dev (or npm start) and reload.",
+            : STORAGE_DOWN,
         );
       }
     })();
