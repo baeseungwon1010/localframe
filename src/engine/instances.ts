@@ -74,6 +74,11 @@ function build(root: SceneDoc, inst: SceneNode): SceneDoc | null {
       const v = propValue(n.propRefs.characters);
       if (typeof v === 'string') n = fitText({ ...n, text: { ...n.text, characters: v } });
     }
+    // instance swap: a nested instance shows the component the property names (only a real component)
+    if (n.propRefs?.swap && n.type === 'INSTANCE') {
+      const v = propValue(n.propRefs.swap);
+      if (typeof v === 'string' && root.get(v)?.type === 'COMPONENT') n = { ...n, componentId: v };
+    }
     const o = inst.overrides && Object.hasOwn(inst.overrides, src.id) ? inst.overrides[src.id] : undefined;
     if (o) {
       if (o.visible !== undefined) n = { ...n, visible: o.visible };

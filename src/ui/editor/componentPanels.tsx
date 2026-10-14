@@ -41,7 +41,21 @@ function CommitInput(props: { value: string; label: string; onCommit: (v: string
   );
 }
 
-/** Properties defined on a component or component set: text and boolean. */
+/** Picks one of the file's main components. */
+function ComponentSelect(props: { editor: Editor; label: string; value: string; onChange: (id: string) => void }) {
+  const comps = [...props.editor.doc.all()].filter((n) => n.type === 'COMPONENT').sort((a, b) => a.name.localeCompare(b.name));
+  return (
+    <select className="select-field" aria-label={props.label} value={props.value} onChange={(e) => props.onChange(e.target.value)}>
+      {comps.map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** Properties defined on a component or component set: text, boolean and instance swap. */
 export function PropDefinitions({ editor, owner }: { editor: Editor; owner: SceneNode }) {
   const props = owner.componentProps ?? [];
   return (
@@ -55,6 +69,9 @@ export function PropDefinitions({ editor, owner }: { editor: Editor; owner: Scen
           <button type="button" className="mini-btn wide" onClick={() => editor.addComponentProp(owner.id, 'BOOLEAN')}>
             <Plus {...ICON} /> Boolean
           </button>
+          <button type="button" className="mini-btn wide" onClick={() => editor.addComponentProp(owner.id, 'INSTANCE_SWAP')}>
+            <Plus {...ICON} /> Instance
+          </button>
         </div>
       }
     >
@@ -66,6 +83,8 @@ export function PropDefinitions({ editor, owner }: { editor: Editor; owner: Scen
             <CommitInput value={p.name} label={`Name of property ${p.name}`} onCommit={(v) => editor.updateComponentProp(owner.id, p.id, { name: v })} />
             {p.type === 'TEXT' ? (
               <CommitInput value={p.defaultValue} label={`Default of ${p.name}`} onCommit={(v) => editor.updateComponentProp(owner.id, p.id, { defaultValue: v })} />
+            ) : p.type === 'INSTANCE_SWAP' ? (
+              <ComponentSelect editor={editor} label={`Default of ${p.name}`} value={p.defaultValue} onChange={(v) => editor.updateComponentProp(owner.id, p.id, { defaultValue: v })} />
             ) : (
               <label className="check-row">
                 <input type="checkbox" checked={p.defaultValue} onChange={(e) => editor.updateComponentProp(owner.id, p.id, { defaultValue: e.target.checked })} />
@@ -153,6 +172,11 @@ export function InstanceProps({ editor, inst }: { editor: Editor; inst: SceneNod
             <span className="field-caption">{p.name}</span>
             <CommitInput value={String(value)} label={p.name} multiline onCommit={(v) => editor.setPropValue(inst.id, p.id, v)} />
           </label>
+        ) : p.type === 'INSTANCE_SWAP' ? (
+          <label key={p.id} className="variant-row">
+            <span className="field-caption">{p.name}</span>
+            <ComponentSelect editor={editor} label={p.name} value={String(value)} onChange={(v) => editor.setPropValue(inst.id, p.id, v)} />
+          </label>
         ) : (
           <label key={p.id} className="check-row">
             <input type="checkbox" checked={value === true} onChange={(e) => editor.setPropValue(inst.id, p.id, e.target.checked)} />
@@ -170,6 +194,7 @@ export function LinkProps({ editor, layer }: { editor: Editor; layer: SceneNode 
   if (props.length === 0) return null;
   const textProps = props.filter((p) => p.type === 'TEXT');
   const boolProps = props.filter((p) => p.type === 'BOOLEAN');
+  const swapProps = props.filter((p) => p.type === 'INSTANCE_SWAP');
   return (
     <Section title="Linked properties">
       {layer.type === 'TEXT' && textProps.length > 0 && (
@@ -183,6 +208,24 @@ export function LinkProps({ editor, layer }: { editor: Editor; layer: SceneNode 
           >
             <option value="">Not linked</option>
             {textProps.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {layer.type === 'INSTANCE' && swapProps.length > 0 && (
+        <label className="variant-row">
+          <span className="field-caption">Instance</span>
+          <select
+            className="select-field"
+            aria-label="Instance swap property"
+            value={layer.propRefs?.swap ?? ''}
+            onChange={(e) => editor.linkProp(layer.id, 'swap', e.target.value || null)}
+          >
+            <option value="">Not linked</option>
+            {swapProps.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
               </option>

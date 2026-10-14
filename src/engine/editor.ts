@@ -1341,10 +1341,17 @@ export class Editor {
     if (!owner || (owner.type !== 'COMPONENT' && owner.type !== 'COMPONENT_SET')) return;
     const list = owner.componentProps ?? [];
     if (list.length >= 50) return;
-    const prop: ComponentProp =
-      type === 'TEXT'
-        ? { id: newId(), name: `Text ${list.length + 1}`, type, defaultValue: 'Text' }
-        : { id: newId(), name: `Show ${list.length + 1}`, type, defaultValue: true };
+    let prop: ComponentProp;
+    if (type === 'TEXT') prop = { id: newId(), name: `Text ${list.length + 1}`, type, defaultValue: 'Text' };
+    else if (type === 'BOOLEAN') prop = { id: newId(), name: `Show ${list.length + 1}`, type, defaultValue: true };
+    else {
+      // instance swap: defaults to what the first nested instance shows, else any component
+      const nested = this.doc.descendants(ownerId).map((id) => this.doc.get(id)!).find((n) => n.type === 'INSTANCE' && n.componentId);
+      const any = [...this.doc.all()].find((n) => n.type === 'COMPONENT');
+      const def = nested?.componentId ?? any?.id;
+      if (!def) return;
+      prop = { id: newId(), name: `Instance ${list.length + 1}`, type, defaultValue: def };
+    }
     this.updateNodes([ownerId], (n) => ({ ...n, componentProps: [...list, prop] }));
   }
 
@@ -1355,6 +1362,8 @@ export class Editor {
         if (p.id !== propId) return p;
         const name = patch.name !== undefined ? patch.name.trim().slice(0, 100) || p.name : p.name;
         if (p.type === 'TEXT') return { ...p, name, defaultValue: typeof patch.defaultValue === 'string' ? patch.defaultValue : p.defaultValue };
+        if (p.type === 'INSTANCE_SWAP')
+          return { ...p, name, defaultValue: typeof patch.defaultValue === 'string' && this.doc.get(patch.defaultValue)?.type === 'COMPONENT' ? patch.defaultValue : p.defaultValue };
         return { ...p, name, defaultValue: typeof patch.defaultValue === 'boolean' ? patch.defaultValue : p.defaultValue };
       }),
     }));
@@ -1367,10 +1376,11 @@ export class Editor {
       this.put({ ...owner, componentProps: (owner.componentProps ?? []).filter((p) => p.id !== propId) });
       // unlink layers and drop instance values that used it
       for (const n of [...this.doc.all()]) {
-        if (n.propRefs && (n.propRefs.characters === propId || n.propRefs.visible === propId)) {
+        if (n.propRefs && (n.propRefs.characters === propId || n.propRefs.visible === propId || n.propRefs.swap === propId)) {
           const refs = { ...n.propRefs };
           if (refs.characters === propId) delete refs.characters;
           if (refs.visible === propId) delete refs.visible;
+          if (refs.swap === propId) delete refs.swap;
           this.put({ ...n, propRefs: Object.keys(refs).length ? refs : undefined });
         }
         if (n.propValues && Object.hasOwn(n.propValues, propId)) {
@@ -1383,7 +1393,7 @@ export class Editor {
   }
 
   /** Links a layer's text or visibility to a property of the component it is in. */
-  linkProp(layerId: string, field: 'characters' | 'visible', propId: string | null) {
+  linkProp(layerId: string, field: 'characters' | 'visible' | 'swap', propId: string | null) {
     this.updateNodes([layerId], (n) => {
       const refs = { ...(n.propRefs ?? {}) };
       if (propId) refs[field] = propId;

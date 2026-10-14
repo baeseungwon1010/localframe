@@ -271,6 +271,8 @@ const shortText = z.string().min(1).max(100);
 export const ComponentPropSchema = z.union([
   z.object({ id, name: shortText, type: z.literal('TEXT'), defaultValue: z.string().max(10_000) }).strict(),
   z.object({ id, name: shortText, type: z.literal('BOOLEAN'), defaultValue: z.boolean() }).strict(),
+  /** Which component a nested instance shows; the default is a component id. */
+  z.object({ id, name: shortText, type: z.literal('INSTANCE_SWAP'), defaultValue: id }).strict(),
 ]);
 export type ComponentProp = z.infer<typeof ComponentPropSchema>;
 
@@ -478,7 +480,7 @@ export const SceneNodeSchema = z
       .optional(),
     componentProps: z.array(ComponentPropSchema).max(50).optional(),
     /** Links this layer's text or visibility to a property of its component. */
-    propRefs: z.object({ characters: id.optional(), visible: id.optional() }).strict().optional(),
+    propRefs: z.object({ characters: id.optional(), visible: id.optional(), swap: id.optional() }).strict().optional(),
     /** An instance's values for its component's properties. */
     propValues: z
       .record(id, z.union([z.string().max(10_000), z.boolean()]))
