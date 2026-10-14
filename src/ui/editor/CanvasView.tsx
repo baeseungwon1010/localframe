@@ -9,6 +9,7 @@ import { fontStack, layoutText, lineHeightPx } from '../../engine/text.ts';
 import { adjustRuns, rangeValue } from '../../engine/textRuns.ts';
 import { ALT, MOD, Menu, type MenuItem, SHIFT } from '../components.tsx';
 import { Rulers } from './Rulers.tsx';
+import { ToolHint } from './ToolHint.tsx';
 import { useEditorRev } from '../hooks.ts';
 
 function readColors(): OverlayColors {
@@ -302,6 +303,7 @@ export function CanvasView(props: {
         <p className="canvas-hint">Press F to draw a frame, R for a rectangle, L for a line or T for text.</p>
       )}
       {props.children}
+      <ToolHint editor={editor} />
       {menu && <Menu label="Canvas actions" x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}
       {props.notice && (
         <div className="toast" role="alert">
