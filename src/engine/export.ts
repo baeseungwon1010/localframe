@@ -16,11 +16,21 @@ export type ExportTarget = { ids: string[]; background: string | null; clip?: Re
 export function exportTargetFor(doc: SceneDoc, node: SceneNode, background: string | null, pageBackground: string): ExportTarget {
   if (!node.slice) return { ids: [node.id], background };
   const page = doc.pageOf(node.id);
+  const clip = doc.worldBounds(node.id);
+  // only what reaches the slice: nothing outside it ends up in the file
   const ids = doc.pageChildren(page).filter((id) => {
     const n = doc.get(id)!;
-    return n.visible && !n.slice;
+    return n.visible && !n.slice && touches(doc, id, clip);
   });
-  return { ids, background: pageBackground, clip: doc.worldBounds(node.id) };
+  return { ids, background: pageBackground, clip };
+}
+
+/** Does a layer (with its strokes and effects) reach into the area? */
+function touches(doc: SceneDoc, id: string, area: Rect): boolean {
+  const n = doc.get(id)!;
+  const b = doc.worldBounds(id);
+  const pad = overhang(doc, id) + effectReach(n);
+  return b.x - pad < area.x + area.width && b.x + b.width + pad > area.x && b.y - pad < area.y + area.height && b.y + b.height + pad > area.y;
 }
 export type RasterFormat = 'png' | 'jpg' | 'webp';
 export type ExportFormat = RasterFormat | 'svg' | 'pdf';
@@ -196,6 +206,9 @@ class SvgWriter {
   readonly runs: TextRun[] = [];
   private readonly root: SceneDoc;
   private readonly assets: SvgAssets;
+
+  /** A slice's area: layers of the file that don't reach it are left out entirely. */
+  clip: Rect | null = null;
 
   constructor(root: SceneDoc, assets: SvgAssets) {
     this.root = root;
@@ -526,6 +539,7 @@ class SvgWriter {
 
   node(doc: SceneDoc, n: SceneNode, depth = 0): string {
     if (!n.visible || n.slice) return '';
+    if (this.clip && doc === this.root && !touches(doc, n.id, this.clip)) return '';
     if (++this.elements > SVG_MAX_ELEMENTS) throw new Error('This selection is too large to export as SVG. Try PNG or PDF.');
     const m = localMatrix(n.x, n.y, n.rotation);
     // blend mode names come from a fixed list (schema), so they are safe in the attribute
@@ -573,6 +587,7 @@ export function svgMarkup(doc: SceneDoc, target: ExportTarget, assets: SvgAssets
   const b = target.clip ?? exportBounds(doc, target.ids);
   if (!b) throw new Error('Nothing to export');
   const w = new SvgWriter(doc, assets);
+  w.clip = target.clip ?? null;
   const parts: string[] = [];
   if (target.background)
     parts.push(`<rect x="${num(b.x)}" y="${num(b.y)}" width="${num(b.width)}" height="${num(b.height)}" fill="${escapeXml(target.background)}"/>`);

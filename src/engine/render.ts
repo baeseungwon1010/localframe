@@ -84,9 +84,8 @@ export function paintCss(p: SolidPaint, extraAlpha = 1): string {
 }
 
 /** A canvas gradient in the layer's own coordinates (unit box scaled to w x h). */
-/** Colour of a gradient at t (0..1) as RGBA bytes. */
-function sampleStops(p: GradientPaint, t: number): [number, number, number, number] {
-  const stops = [...p.stops].sort((a, b) => a.position - b.position);
+/** Colour of a gradient at t (0..1) as RGBA bytes; `stops` sorted by position. */
+function sampleStops(p: GradientPaint, stops: GradientPaint['stops'], t: number): [number, number, number, number] {
   const hex = (c: string) => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
   let a = stops[0];
   let b = stops[stops.length - 1];
@@ -114,11 +113,22 @@ const rasterCache = new Map<string, HTMLCanvasElement>();
  */
 export function gradientRaster(p: GradientPaint, w: number, h: number): HTMLCanvasElement | null {
   if (typeof document === 'undefined') return null;
-  const cw = Math.max(1, Math.min(256, Math.ceil(w)));
-  const ch = Math.max(1, Math.min(256, Math.ceil(h)));
-  const key = JSON.stringify([p.type, p.stops, p.from, p.to, p.opacity, cw, ch, Math.round(w), Math.round(h)]);
+  // the pattern only depends on the box's shape, so it is drawn in a box of the same proportions
+  // (at most 256 px a side) and cached by that: resizing a layer reuses it
+  const k = Math.min(1, 256 / Math.max(1, w, h));
+  const cw = Math.max(1, Math.round(w * k));
+  const ch = Math.max(1, Math.round(h * k));
+  const key = JSON.stringify([p.type, p.stops, p.from, p.to, p.opacity, cw, ch]);
   const hit = rasterCache.get(key);
-  if (hit) return hit;
+  if (hit) {
+    // most recently used last
+    rasterCache.delete(key);
+    rasterCache.set(key, hit);
+    return hit;
+  }
+  w = cw;
+  h = ch;
+  const sorted = [...p.stops].sort((a, b) => a.position - b.position);
   const c = document.createElement('canvas');
   c.width = cw;
   c.height = ch;
@@ -143,7 +153,7 @@ export function gradientRaster(p: GradientPaint, w: number, h: number): HTMLCanv
         // diamond: distance measured along the gradient's axis and across it
         t = Math.min(1, (Math.abs(dx * ux + dy * uy) + Math.abs(-dx * uy + dy * ux)) / (len * len));
       }
-      const [r, gg, b, a] = sampleStops(p, t);
+      const [r, gg, b, a] = sampleStops(p, sorted, t);
       const i = (y * cw + x) * 4;
       img.data[i] = r;
       img.data[i + 1] = gg;
@@ -152,7 +162,8 @@ export function gradientRaster(p: GradientPaint, w: number, h: number): HTMLCanv
     }
   }
   g.putImageData(img, 0, 0);
-  if (rasterCache.size > 64) rasterCache.clear();
+  // least recently used go first
+  while (rasterCache.size >= 128) rasterCache.delete(rasterCache.keys().next().value!);
   rasterCache.set(key, c);
   return c;
 }
@@ -772,6 +783,7 @@ function noiseTile(color: string): HTMLCanvasElement | null {
     img.data[i * 4 + 3] = (seed >>> 0) % 256;
   }
   g.putImageData(img, 0, 0);
+  while (noiseTiles.size >= 16) noiseTiles.delete(noiseTiles.keys().next().value!);
   noiseTiles.set(color, c);
   return c;
 }
