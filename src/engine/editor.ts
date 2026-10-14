@@ -162,7 +162,14 @@ const TOOL_TYPE: Partial<Record<Tool, NodeType>> = {
 
 const CLIP_PREFIX = 'localframe-clipboard:';
 const ClipboardSchema = z
-  .object({ roots: z.array(z.string().max(64)).max(10_000), nodes: z.array(SceneNodeSchema).max(50_000) })
+  .object({
+    roots: z.array(z.string().max(64)).max(10_000),
+    nodes: z.array(SceneNodeSchema).max(50_000),
+    /** File the layers were copied from (images are copied over from it). */
+    sourceFile: z.string().max(64).regex(/^[A-Za-z0-9_-]+$/).optional(),
+    /** Main components of copied instances, so they can be rebuilt in another file. */
+    components: z.array(SceneNodeSchema).max(50_000).optional(),
+  })
   .strict();
 
 /** Depth of the deepest pasted layer below its root (0 = roots only). */
@@ -1530,7 +1537,24 @@ export class Editor {
       nodes.push({ ...reparentKeepWorld(n, this.doc.parentWorld(n), IDENTITY), parentId: null });
       for (const d of this.doc.descendants(id)) nodes.push(this.doc.get(d)!);
     }
-    return CLIP_PREFIX + JSON.stringify({ roots, nodes });
+    // main components of copied instances (and of instances inside them), for pasting into other files
+    const components: SceneNode[] = [];
+    const seen = new Set<string>();
+    const queue = nodes.filter((n) => n.type === 'INSTANCE' && n.componentId).map((n) => n.componentId!);
+    while (queue.length && components.length < 20_000) {
+      const cid = queue.pop()!;
+      if (seen.has(cid)) continue;
+      seen.add(cid);
+      const comp = this.doc.get(cid);
+      if (!comp) continue;
+      components.push({ ...comp, parentId: null, pageId: undefined });
+      for (const d of this.doc.descendants(cid)) {
+        const n = this.doc.get(d)!;
+        components.push(n);
+        if (n.type === 'INSTANCE' && n.componentId) queue.push(n.componentId);
+      }
+    }
+    return CLIP_PREFIX + JSON.stringify({ roots, nodes, sourceFile: this.fileId ?? undefined, components });
   }
 
   cutToText(): string | null {
@@ -1554,7 +1578,17 @@ export class Editor {
       const roots = [...new Set(parsed.data.roots)].filter((id) => byId.get(id)?.parentId === null);
       if (roots.length === 0) return;
       if (this.doc.size + parsed.data.nodes.length > MAX_NODES_PER_FILE) return;
-      this.pasteNodes(roots, parsed.data.nodes);
+      const carried = parsed.data.components ?? [];
+      const nodes = this.rebuildMissingInstances(parsed.data.nodes, carried.length && !validateTree(carried) ? carried : []);
+      if (this.doc.size + nodes.length > MAX_NODES_PER_FILE) return;
+      this.pasteNodes(roots, nodes);
+      // images come from the file they were copied from
+      const src = parsed.data.sourceFile;
+      if (src && src !== this.fileId && this.onPastedImages) {
+        const ids = new Set<string>();
+        for (const n of nodes) for (const p of n.fills) if (p.type === 'IMAGE') ids.add(p.imageId);
+        if (ids.size) this.onPastedImages(src, [...ids]);
+      }
       return;
     }
     const plain = text.slice(0, 20_000);
@@ -1568,6 +1602,54 @@ export class Editor {
       this.selection = [t.id];
     });
     this.emit('selection');
+  }
+
+  /**
+   * Instances whose main component isn't in this file become frames holding a copy of their
+   * content, built from the components carried on the clipboard.
+   */
+  private rebuildMissingInstances(nodes: SceneNode[], components: SceneNode[]): SceneNode[] {
+    const missing = nodes.filter((n) => n.type === 'INSTANCE' && n.componentId && !this.doc.get(n.componentId));
+    if (missing.length === 0) return nodes;
+    const temp = new SceneDoc();
+    temp.load([...components.filter((c) => !nodes.some((n) => n.id === c.id)), ...nodes]);
+    const out: SceneNode[] = [];
+    for (const n of nodes) {
+      if (!missing.includes(n)) {
+        out.push(n);
+        continue;
+      }
+      const v = instanceDoc(temp, n);
+      const { componentId: _c, overrides: _o, propValues: _p, ...base } = n;
+      if (!v) {
+        out.push({ ...base, type: 'FRAME', radii: [0, 0, 0, 0], clipsContent: false });
+        continue;
+      }
+      const vroot = v.get(n.id)!;
+      out.push({
+        ...base,
+        type: 'FRAME',
+        fills: vroot.fills,
+        strokes: vroot.strokes,
+        strokeWeight: vroot.strokeWeight,
+        strokeAlign: vroot.strokeAlign,
+        strokeDash: vroot.strokeDash,
+        radii: vroot.radii ?? [0, 0, 0, 0],
+        clipsContent: vroot.clipsContent ?? false,
+      });
+      const map = new Map<string, string>([[n.id, n.id]]);
+      for (const d of v.descendants(n.id)) map.set(d, newId());
+      for (const d of v.descendants(n.id)) {
+        const c = v.get(d)!;
+        // nested instances whose components did come along stay instances only if this file has them
+        const copy: SceneNode = { ...c, id: map.get(d)!, parentId: map.get(c.parentId!)!, startBind: undefined, endBind: undefined };
+        if (copy.type === 'INSTANCE' && copy.componentId && !this.doc.get(copy.componentId)) {
+          const { componentId: _cc, overrides: _oo, propValues: _pp, ...rest } = copy;
+          out.push({ ...rest, type: 'FRAME', radii: [0, 0, 0, 0], clipsContent: false });
+        } else out.push(copy);
+      }
+    }
+    return out;
   }
 
   private pasteNodes(roots: string[], nodes: SceneNode[]) {

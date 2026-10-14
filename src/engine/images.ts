@@ -20,6 +20,11 @@ export function useImagesOf(file: string | null): string | null {
   return prev;
 }
 
+/** Forgets images that failed to load, so they are fetched again (after they were copied in). */
+export function retryFailedImages() {
+  for (const [k, e] of cache) if (e.failed) cache.delete(k);
+}
+
 export function onImageLoaded(fn: () => void): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);

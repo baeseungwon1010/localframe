@@ -242,6 +242,19 @@ export class Store {
     return { id, mime };
   }
 
+  /** Copies images from one file to another (for pasting between files). Returns how many were copied. */
+  copyImages(fromFile: string, toFile: string, ids: string[]): number {
+    let copied = 0;
+    this.tx(() => {
+      for (const id of ids) {
+        if (this.getImage(toFile, id)) continue;
+        const img = this.getImage(fromFile, id);
+        if (img && this.putImage(toFile, img.data)) copied++;
+      }
+    });
+    return copied;
+  }
+
   getImage(fileId: string, id: string): { mime: string; data: Uint8Array } | null {
     const row = this.db.prepare('select mime, data from images where file_id = ? and id = ?').get(fileId, id) as
       | { mime: string; data: Uint8Array }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import type { FileMeta } from '../../../shared/schema.ts';
 import { ApiError, api } from '../../api.ts';
 import { Editor } from '../../engine/editor.ts';
-import { onImageLoaded, readImageSize, useImagesOf } from '../../engine/images.ts';
+import { onImageLoaded, readImageSize, retryFailedImages, useImagesOf } from '../../engine/images.ts';
 import { drawChildren } from '../../engine/render.ts';
 import { SyncQueue } from '../../engine/sync.ts';
 import { navigate } from '../App.tsx';
@@ -114,7 +114,18 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
     const offImages = onImageLoaded(() => editor.emit('view'));
     editor.onRequestImage = () => imageInput.current?.click();
     editor.onRequestRename = () => setRenaming(true);
+    editor.fileId = fileId;
+    editor.onPastedImages = (from, ids) => {
+      void api
+        .copyImages(fileId, from, ids)
+        .then(() => {
+          retryFailedImages();
+          editor.emit('view');
+        })
+        .catch(() => {});
+    };
     return () => {
+      editor.onPastedImages = null;
       cancelled = true;
       offImages();
       editor.onRequestImage = null;

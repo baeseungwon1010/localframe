@@ -3,13 +3,14 @@ import { createReadStream } from 'node:fs';
 import { pipeline } from 'node:stream';
 import { stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
-import type { ZodType } from 'zod';
+import { type ZodType, z } from 'zod';
 import {
   ChangesSchema,
   CreateFileSchema,
   ExportedFileSchema,
   IMAGE_TYPES,
   ImageIdSchema,
+  IdSchema,
   MAX_IMAGE_BYTES,
   MAX_IMPORT_BYTES,
   ThumbnailSchema,
@@ -39,7 +40,7 @@ const CSP = [
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
-  "font-src 'self'",
+  "font-src 'self' data:",
   "connect-src 'self'",
   "object-src 'none'",
   "base-uri 'none'",
@@ -68,6 +69,8 @@ class HttpError extends Error {
 }
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+const CopyImagesSchema = z.object({ from: IdSchema, ids: z.array(ImageIdSchema).max(500) }).strict();
 
 const API_CSP = "default-src 'none'; frame-ancestors 'none'; sandbox";
 
@@ -220,6 +223,13 @@ export function createApp(opts: AppOptions) {
       const saved = store.putImage(id, bytes);
       if (!saved) throw new HttpError(415, 'That file is not a PNG, JPEG, WebP or GIF image');
       return send(res, 201, saved);
+    }
+
+    if (path.length === 4 && path[2] === 'images' && path[3] === 'copy') {
+      if (method !== 'POST') throw new HttpError(405, 'Method not allowed');
+      const body = await readJson(req, CopyImagesSchema, limit);
+      if (!store.getMeta(id) || !store.getMeta(body.from)) throw new HttpError(404, 'File not found');
+      return send(res, 200, { copied: store.copyImages(body.from, id, body.ids) });
     }
 
     if (path.length === 4 && path[2] === 'images') {

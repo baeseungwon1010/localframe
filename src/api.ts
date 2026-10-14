@@ -47,6 +47,8 @@ export const api = {
     request<void>('PUT', `/api/files/${encodeURIComponent(id)}/thumbnail`, { dataUrl }),
   exportFile: (id: string) => request<ExportedFile>('GET', `/api/files/${encodeURIComponent(id)}/export`),
   importFile: (data: unknown) => request<FileMeta>('POST', '/api/files/import', data),
+  copyImages: (id: string, from: string, ids: string[]) =>
+    request<{ copied: number }>('POST', `/api/files/${encodeURIComponent(id)}/images/copy`, { from, ids }),
   uploadImage: async (id: string, file: Blob): Promise<{ id: string; mime: string }> => {
     const res = await fetch(`/api/files/${encodeURIComponent(id)}/images`, {
       method: 'POST',
