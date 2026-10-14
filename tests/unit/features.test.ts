@@ -652,3 +652,71 @@ describe('grids, guides, snapping, presets, rename, rotation', () => {
     expect(ed.doc.get(b)!.name).toBe('Tile 2');
   });
 });
+
+describe('image crop', () => {
+  it('double-click enters crop, dragging moves the image inside the shape, Esc leaves', () => {
+    const ed = setup();
+    const id = ed.insertImage('a'.repeat(64), { width: 200, height: 100 }, 'Photo', { x: 100, y: 100 });
+    const n = ed.doc.get(id)!;
+    const cx = n.x + n.width / 2;
+    const cy = n.y + n.height / 2;
+    const s = ed.viewMatrix;
+    const sx = cx * s[0] + s[4];
+    const sy = cy * s[3] + s[5];
+    ed.setSelection([id]);
+    ed.doubleClick(ptr(sx, sy));
+    expect(ed.cropping).toBe(id);
+    const paint = () => ed.doc.get(id)!.fills[0] as { scaleMode: string; crop?: { x: number; y: number; scale: number } };
+    expect(paint().scaleMode).toBe('crop');
+    const before = { x: ed.doc.get(id)!.x, y: ed.doc.get(id)!.y };
+    drag(ed, [sx, sy], [sx + 30 * s[0], sy + 10 * s[3]]);
+    expect(paint().crop!.x).toBeCloseTo(30, 1);
+    expect(paint().crop!.y).toBeCloseTo(10, 1);
+    // the layer itself didn't move
+    expect(ed.doc.get(id)!.x).toBe(before.x);
+    expect(ed.doc.get(id)!.y).toBe(before.y);
+    ed.undo();
+    expect(paint().crop!.x).toBe(0);
+    ed.keyDown({ code: 'Escape', key: 'Escape', shift: false, alt: false, mod: false, repeat: false });
+    expect(ed.cropping).toBeNull();
+    valid(ed);
+  });
+});
+
+describe('paste between files', () => {
+  it('instances whose component is missing come over as frames with their content, and images are copied', () => {
+    const a = setup();
+    a.fileId = 'file-a';
+    const r = draw(a, 'rect', [100, 100], [200, 160]);
+    a.setSelection([r]);
+    a.createComponent();
+    const comp = a.selection[0];
+    const inst = a.createInstance(comp, { x: 400, y: 100 })!;
+    expect(a.doc.get(inst)!.type).toBe('INSTANCE');
+    a.updateNodes([comp], (n) => ({ ...n, fills: [{ type: 'IMAGE', imageId: 'b'.repeat(64), scaleMode: 'fill', opacity: 1, visible: true }] }));
+    a.setSelection([inst]);
+    const text = a.copyToText()!;
+
+    const b = setup();
+    b.fileId = 'file-b';
+    const asked: [string, string[]][] = [];
+    b.onPastedImages = (from, ids) => asked.push([from, ids]);
+    b.pasteText(text);
+    const pasted = b.doc.get(b.selection[0])!;
+    expect(pasted.type).toBe('FRAME');
+    expect(pasted.componentId).toBeUndefined();
+    const kids = b.doc.children(pasted.id);
+    expect(kids).toHaveLength(1);
+    expect(b.doc.get(kids[0])!.type).toBe('RECTANGLE');
+    expect(asked).toEqual([['file-a', ['b'.repeat(64)]]]);
+    valid(b);
+
+    // pasting in the same file keeps it an instance and copies nothing
+    const before = a.doc.size;
+    a.onPastedImages = () => asked.push(['same', []]);
+    a.pasteText(text);
+    expect(a.doc.get(a.selection[0])!.type).toBe('INSTANCE');
+    expect(a.doc.size).toBe(before + 1);
+    expect(asked).toHaveLength(1);
+  });
+});

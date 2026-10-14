@@ -185,7 +185,7 @@ test('pages, images, components, connectors and PDF export', async ({ page }) =>
 
   // whole file as PDF: two frames on page 1, its loose layers, and page 2
   await page.getByRole('button', { name: 'Export file' }).click();
-  await page.getByLabel(/PDF/).check();
+  await page.getByLabel(/^PDF \(\.pdf\)/).check();
   const [pdf] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export', exact: true }).click()]);
   const pdfText = readFileSync(await pdf.path()).toString('latin1');
   expect(pdfText.startsWith('%PDF')).toBe(true);
@@ -214,4 +214,50 @@ test('canvas text: double-click to edit, Korean input, empty text is removed', a
   await editor.fill('');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('treeitem', { name: /^Text 1/ })).toHaveCount(0);
+});
+
+test('crop an image and print a vector PDF', async ({ page }) => {
+  await page.addInitScript(() => {
+    // the print dialog can't be driven here; count calls instead (runs in the print frame too)
+    window.print = () => {
+      const top = window.top as unknown as { __printed?: number };
+      top.__printed = (top.__printed ?? 0) + 1;
+    };
+  });
+  const errors = await newFile(page);
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Place image' }).click()]);
+  await chooser.setFiles({ name: 'dot.png', mimeType: 'image/png', buffer: png });
+  await expect(page.getByRole('treeitem', { name: 'dot' })).toBeVisible();
+  for (const [label, v] of [['Width', '300'], ['Height', '200']]) {
+    const f = page.getByLabel(label, { exact: true });
+    await f.fill(v);
+    await f.press('Enter');
+  }
+  await page.locator('canvas').first().click({ position: { x: 5, y: 5 } });
+  await page.getByRole('treeitem', { name: 'dot' }).click();
+  await page.keyboard.press('Shift+2');
+  const box = (await page.locator('canvas').first().boundingBox())!;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.dblclick(cx, cy);
+  const fit = page.getByLabel(/fit$/);
+  await expect(fit).toHaveValue('crop');
+  await expect(page.getByLabel(/zoom$/)).toHaveValue('100');
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 40, cy + 20, { steps: 5 });
+  await page.mouse.up();
+  await page.keyboard.press('Escape');
+  await expect(fit).toHaveValue('crop');
+
+  await page.getByRole('button', { name: 'Export file' }).click();
+  await page.getByLabel(/^Vector PDF/).check();
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  await expect(page.getByText('Sent to the print dialog')).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { __printed?: number }).__printed)).toBe(1);
+  expect(errors).toEqual([]);
 });

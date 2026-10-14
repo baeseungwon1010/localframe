@@ -158,6 +158,36 @@ describe('images and pages', () => {
     expect(noOrigin.status).toBe(403);
   });
 
+  it('copies images between files for pasting, and only real ids from real files', async () => {
+    const a = await (await call('POST', '/api/files', {})).json();
+    const b = await (await call('POST', '/api/files', {})).json();
+    const up = await fetch(`${base}/api/files/${a.id}/images`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png', Origin: origin },
+      body: PNG,
+    });
+    const { id } = await up.json();
+    expect((await fetch(`${base}/api/files/${b.id}/images/${id}`)).status).toBe(404);
+    let r = await call('POST', `/api/files/${b.id}/images/copy`, { from: a.id, ids: [id, 'f'.repeat(64)] });
+    expect(r.status).toBe(200);
+    expect((await r.json()).copied).toBe(1);
+    const back = await fetch(`${base}/api/files/${b.id}/images/${id}`);
+    expect(Buffer.from(await back.arrayBuffer()).equals(PNG)).toBe(true);
+    // again: nothing new
+    r = await call('POST', `/api/files/${b.id}/images/copy`, { from: a.id, ids: [id] });
+    expect((await r.json()).copied).toBe(0);
+    r = await call('POST', `/api/files/${b.id}/images/copy`, { from: 'nope', ids: [id] });
+    expect(r.status).toBe(404);
+    r = await call('POST', `/api/files/${b.id}/images/copy`, { from: a.id, ids: ['../x'] });
+    expect(r.status).toBe(400);
+    r = await fetch(`${base}/api/files/${b.id}/images/copy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: a.id, ids: [id] }),
+    });
+    expect(r.status).toBe(403);
+  });
+
   it('saves pages with changes and carries pages and images through export and import', async () => {
     const f = await (await call('POST', '/api/files', { name: 'Paged' })).json();
     const up = await fetch(`${base}/api/files/${f.id}/images`, {
