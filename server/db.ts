@@ -3,6 +3,12 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  AUTO_VERSION_EVERY_MS,
+  MAX_AUTO_VERSIONS,
+  MAX_IMAGE_BYTES_PER_FILE,
+  MAX_NAMED_VERSIONS,
+  MAX_SNAPSHOT_CHARS,
+  MAX_VERSION_BYTES_PER_FILE,
   type Comment,
   type ExportedFile,
   type VersionMeta,
@@ -23,6 +29,8 @@ import {
   sniffImage,
   validateTree,
 } from '../shared/schema.ts';
+
+export { AUTO_VERSION_EVERY_MS, MAX_AUTO_VERSIONS, MAX_IMAGE_BYTES_PER_FILE, MAX_NAMED_VERSIONS, MAX_SNAPSHOT_CHARS, MAX_VERSION_BYTES_PER_FILE };
 
 const MIGRATIONS = [
   `create table files (
@@ -79,14 +87,7 @@ const MIGRATIONS = [
    create index comments_file on comments (file_id, created_at);`,
 ];
 
-/** Autosaved versions: one at the start of each editing session (after this long without one). */
-export const AUTO_VERSION_EVERY_MS = 10 * 60 * 1000;
-export const MAX_AUTO_VERSIONS = 50;
-export const MAX_NAMED_VERSIONS = 200;
-/** Larger files skip autosaved versions (each one is a full copy). */
-export const MAX_SNAPSHOT_CHARS = 64 * 1024 * 1024;
-/** All of a file's versions together, like its images. */
-export const MAX_VERSION_BYTES_PER_FILE = 1024 * 1024 * 1024;
+
 
 type Snapshot = { nodes: SceneNode[]; pages: Page[]; styles: Style[]; variables: Variables };
 type CommentRow = {
@@ -167,7 +168,6 @@ function toMeta(r: FileRow): FileMeta {
 const now = () => new Date().toISOString();
 const META_COLS = 'id, name, background, pages, styles, variables, version, created_at, updated_at, (thumbnail is not null) as has_thumbnail';
 
-export const MAX_IMAGE_BYTES_PER_FILE = 1024 * 1024 * 1024;
 
 export const imageHash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 

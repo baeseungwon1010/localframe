@@ -505,6 +505,15 @@ export type VersionMeta = { id: number; name: string | null; auto: boolean; crea
 export const VersionNameSchema = z.object({ name: z.string().trim().min(1).max(120) }).strict();
 
 export const MAX_COMMENTS_PER_FILE = 5000;
+/** Autosaved versions: one at the start of each editing session (after this long without one). */
+export const AUTO_VERSION_EVERY_MS = 10 * 60 * 1000;
+export const MAX_AUTO_VERSIONS = 50;
+export const MAX_NAMED_VERSIONS = 200;
+/** Larger files skip autosaved versions (each one is a full copy). */
+export const MAX_SNAPSHOT_CHARS = 64 * 1024 * 1024;
+/** All of a file's versions together, like its images. */
+export const MAX_VERSION_BYTES_PER_FILE = 1024 * 1024 * 1024;
+export const MAX_IMAGE_BYTES_PER_FILE = 1024 * 1024 * 1024;
 const coord = z.number().min(-1e7).max(1e7);
 const commentBody = z.string().trim().min(1).max(5000);
 
