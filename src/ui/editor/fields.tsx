@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { Eye, EyeOff, Minus } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, Minus } from 'lucide-react';
 import type { ImagePaint, SolidPaint } from '../../../shared/schema.ts';
 import { getImage } from '../../engine/images.ts';
 
@@ -326,14 +326,47 @@ export function ImagePaintRow(props: { paint: ImagePaint; label: string; onChang
   );
 }
 
+const FOLD_KEY = 'localframe.foldedSections';
+const folded = new Set<string>(
+  (() => {
+    try {
+      return JSON.parse(localStorage.getItem(FOLD_KEY) ?? '[]') as string[];
+    } catch {
+      return [];
+    }
+  })(),
+);
+
+/** A properties section; its title folds it away, and that is remembered for every layer. */
 export function Section(props: { title: string; action?: ReactNode; children?: ReactNode }) {
+  const [closed, setClosed] = useState(() => folded.has(props.title));
+  const toggle = () => {
+    const next = !closed;
+    setClosed(next);
+    if (next) folded.add(props.title);
+    else folded.delete(props.title);
+    try {
+      localStorage.setItem(FOLD_KEY, JSON.stringify([...folded]));
+    } catch {
+      /* not remembered */
+    }
+  };
   return (
-    <section className="prop-section" aria-label={props.title}>
+    <section className={`prop-section ${closed ? 'folded' : ''}`} aria-label={props.title}>
       <div className="prop-head">
-        <h3>{props.title}</h3>
+        <h3>
+          {props.children ? (
+            <button type="button" className="fold-btn" aria-expanded={!closed} aria-label={`${props.title} section`} onClick={toggle}>
+              <ChevronDown size={12} strokeWidth={2} aria-hidden="true" className="fold-icon" />
+              {props.title}
+            </button>
+          ) : (
+            props.title
+          )}
+        </h3>
         {props.action}
       </div>
-      {props.children && <div className="prop-body">{props.children}</div>}
+      {props.children && !closed && <div className="prop-body">{props.children}</div>}
     </section>
   );
 }

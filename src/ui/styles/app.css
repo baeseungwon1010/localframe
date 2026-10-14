@@ -2231,3 +2231,60 @@ button:disabled {
     display: none;
   }
 }
+
+.fold-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: -16px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.fold-icon {
+  color: var(--color-text-muted);
+  opacity: 0;
+  transition: transform 120ms ease-out, opacity 120ms ease-out;
+}
+
+.prop-section:hover .fold-icon,
+.fold-btn:focus-visible .fold-icon,
+.prop-section.folded .fold-icon {
+  opacity: 1;
+}
+
+.prop-section.folded .fold-icon {
+  transform: rotate(-90deg);
+}
+
+.prop-section.folded {
+  padding-bottom: var(--space-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fold-icon {
+    transition: none;
+  }
+}
+
+.tool-hint {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-6);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: calc(100% - 48px);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5);
+  transform: translateX(-50%);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-popover);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
