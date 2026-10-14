@@ -261,3 +261,82 @@ test('crop an image and print a vector PDF', async ({ page }) => {
   expect(await page.evaluate(() => (window as unknown as { __printed?: number }).__printed)).toBe(1);
   expect(errors).toEqual([]);
 });
+
+test('comments: pin a comment to a layer, reply, resolve, and it follows the layer', async ({ page }) => {
+  const errors = await newFile(page);
+  const { at, drag } = await canvasHelpers(page);
+  await page.keyboard.press('r');
+  await drag([200, 200], [400, 320]);
+  await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
+
+  await page.keyboard.press('c');
+  await expect(page.getByRole('complementary', { name: 'Comments' })).toBeVisible();
+  await page.mouse.click(...at(300, 260));
+  await page.getByRole('textbox', { name: 'Add a comment' }).fill('Make this wider');
+  await page.keyboard.press('Enter');
+  const pin = page.getByRole('button', { name: /^Comment 1(, resolved)?: Make this wider/ });
+  await expect(pin).toBeVisible();
+  await page.getByRole('textbox', { name: 'Reply' }).fill('On it');
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('On it')).toBeVisible();
+  await page.getByRole('button', { name: 'Resolve' }).click();
+  await expect(page.getByRole('button', { name: 'Reopen' })).toBeVisible();
+  await page.screenshot({ path: 'test-results/comments.png' });
+
+  // the pin moves with its layer
+  const before = (await pin.boundingBox())!;
+  await page.keyboard.press('v');
+  await drag([250, 220], [350, 320]);
+  await page.keyboard.press('c');
+  const after = (await pin.boundingBox())!;
+  expect(after.x - before.x).toBeCloseTo(100, -1);
+  expect(after.y - before.y).toBeCloseTo(100, -1);
+
+  // still there after a reload, resolved and with its reply
+  await page.reload();
+  await expect(page.getByRole('treeitem', { name: /^Rectangle 1/ })).toBeVisible();
+  await page.keyboard.press('c');
+  await expect(page.getByRole('button', { name: /^Comment 1, resolved: Make this wider/ })).toBeVisible();
+  await page.getByLabel('Show resolved').check();
+  await expect(page.getByRole('complementary', { name: 'Comments' })).toContainText('1 reply');
+  expect(errors).toEqual([]);
+});
+
+test('version history: save a version, change the file, restore it', async ({ page }) => {
+  const errors = await newFile(page);
+  const { drag } = await canvasHelpers(page);
+  await page.keyboard.press('r');
+  await drag([100, 100], [200, 200]);
+  await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
+
+  await page.getByRole('button', { name: 'Version history' }).click();
+  await page.getByRole('textbox', { name: 'Version name' }).fill('One square');
+  await page.getByRole('button', { name: 'Save version' }).click();
+  await expect(page.getByRole('list', { name: 'Versions' })).toContainText('One square');
+  await page.getByRole('button', { name: 'Close' }).click();
+
+  await page.keyboard.press('o');
+  await drag([300, 100], [400, 200]);
+  await expect(page.getByRole('treeitem', { name: /^Ellipse 1/ })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
+
+  await page.getByRole('button', { name: 'Version history' }).click();
+  const item = page.getByRole('listitem').filter({ hasText: 'One square' });
+  await item.getByRole('button', { name: 'Restore' }).click();
+  await page.screenshot({ path: 'test-results/versions.png' });
+  await item.getByRole('button', { name: 'Restore' }).click();
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await expect(page.getByRole('treeitem', { name: /^Ellipse 1/ })).toBeHidden();
+  await expect(page.getByRole('treeitem', { name: /^Rectangle 1/ })).toBeVisible();
+
+  // the state before restoring is kept as an autosave, and editing keeps saving
+  await page.getByRole('button', { name: 'Version history' }).click();
+  await expect(page.getByRole('list', { name: 'Versions' }).getByRole('listitem').first()).toContainText('Autosave');
+  await page.getByRole('button', { name: 'Close' }).click();
+  await page.keyboard.press('r');
+  await drag([300, 300], [350, 350]);
+  await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
+  await page.reload();
+  await expect(page.getByRole('treeitem', { name: /^Rectangle 2/ })).toBeVisible();
+  expect(errors).toEqual([]);
+});
