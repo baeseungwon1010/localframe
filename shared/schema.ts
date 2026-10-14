@@ -431,6 +431,57 @@ export type FileMeta = z.infer<typeof FileMetaSchema>;
 export const CreateFileSchema = z.object({ name: z.string().trim().min(1).max(200).optional() }).strict();
 export const UpdateFileSchema = z.object({ name: z.string().trim().min(1).max(200).optional() }).strict();
 
+// ------------------------------------------------------------ versions and comments
+
+export type VersionMeta = { id: number; name: string | null; auto: boolean; createdAt: string; nodeCount: number };
+export const VersionNameSchema = z.object({ name: z.string().trim().min(1).max(120) }).strict();
+
+export const MAX_COMMENTS_PER_FILE = 5000;
+const coord = z.number().min(-1e7).max(1e7);
+const commentBody = z.string().trim().min(1).max(5000);
+
+/**
+ * A comment pin (or a reply, which has a parentId). x/y are on the page; a pin on a layer also has
+ * its place inside that layer (`offset`), so it moves with it, and falls back to x/y once it's gone.
+ */
+export type Comment = {
+  id: string;
+  parentId: string | null;
+  pageId: string;
+  nodeId: string | null;
+  offset: { x: number; y: number } | null;
+  x: number;
+  y: number;
+  body: string;
+  resolved: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+const commentOffset = z.object({ x: coord, y: coord }).strict();
+export const NewCommentSchema = z
+  .object({
+    parentId: IdSchema.optional(),
+    pageId: IdSchema,
+    nodeId: IdSchema.optional(),
+    offset: commentOffset.optional(),
+    x: coord,
+    y: coord,
+    body: commentBody,
+  })
+  .strict()
+  .refine((c) => !c.nodeId === !c.offset, 'a pin on a layer needs its offset');
+export const CommentPatchSchema = z
+  .object({
+    body: commentBody.optional(),
+    resolved: z.boolean().optional(),
+    x: coord.optional(),
+    y: coord.optional(),
+    nodeId: IdSchema.nullable().optional(),
+    offset: commentOffset.nullable().optional(),
+  })
+  .strict()
+  .refine((c) => c.nodeId === undefined || !c.nodeId === !c.offset, 'a pin on a layer needs its offset');
+
 export const ChangesSchema = z
   .object({
     baseVersion: z.number().int().min(0),

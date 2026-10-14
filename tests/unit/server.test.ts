@@ -328,3 +328,105 @@ describe('local-only guards', () => {
     expect(r.status).toBe(400);
   });
 });
+
+describe('versions', () => {
+  it('autosaves the file before an editing session, saves named versions, and restores them', async () => {
+    const f = await (await call('POST', '/api/files', {})).json();
+    // first save of a new file: nothing worth keeping yet
+    let r = await call('POST', `/api/files/${f.id}/changes`, { baseVersion: 0, upserts: [rect('a')], deletes: [] });
+    expect(r.status).toBe(200);
+    expect(await (await call('GET', `/api/files/${f.id}/versions`)).json()).toEqual([]);
+
+    r = await call('POST', `/api/files/${f.id}/versions`, { name: 'One rectangle' });
+    expect(r.status).toBe(201);
+    const v1 = await r.json();
+    expect(v1).toMatchObject({ name: 'One rectangle', auto: false, nodeCount: 1 });
+
+    // the next save starts a session: the state before it is autosaved once
+    await call('POST', `/api/files/${f.id}/changes`, { baseVersion: 1, upserts: [rect('b')], deletes: [] });
+    await call('POST', `/api/files/${f.id}/changes`, { baseVersion: 2, upserts: [rect('c')], deletes: ['a'] });
+    let list = await (await call('GET', `/api/files/${f.id}/versions`)).json();
+    expect(list.map((v: { auto: boolean }) => v.auto)).toEqual([true, false]);
+
+    r = await call('POST', `/api/files/${f.id}/versions/${v1.id}/restore`);
+    expect(r.status).toBe(200);
+    const meta = await r.json();
+    expect(meta.version).toBe(4);
+    const file = await (await call('GET', `/api/files/${f.id}`)).json();
+    expect(file.nodes.map((n: SceneNode) => n.id)).toEqual(['a']);
+    // what was there before the restore is kept
+    list = await (await call('GET', `/api/files/${f.id}/versions`)).json();
+    expect(list[0]).toMatchObject({ auto: true, nodeCount: 2 });
+
+    r = await call('PATCH', `/api/files/${f.id}/versions/${list[0].id}`, { name: 'Before restore' });
+    expect(r.status).toBe(204);
+    list = await (await call('GET', `/api/files/${f.id}/versions`)).json();
+    expect(list[0]).toMatchObject({ name: 'Before restore', auto: false });
+    r = await call('DELETE', `/api/files/${f.id}/versions/${list[0].id}`);
+    expect(r.status).toBe(204);
+
+    for (const bad of ['0', '-1', 'abc', '1e3', '99999999999999999999']) {
+      expect((await call('POST', `/api/files/${f.id}/versions/${bad}/restore`)).status).toBe(404);
+    }
+    expect((await call('POST', `/api/files/${f.id}/versions`, { name: '' })).status).toBe(400);
+    expect((await call('POST', `/api/files/${f.id}/versions`, { name: 'x', extra: 1 })).status).toBe(400);
+    // a version from another file can't be restored here
+    const other = await (await call('POST', '/api/files', {})).json();
+    expect((await call('POST', `/api/files/${other.id}/versions/${v1.id}/restore`)).status).toBe(404);
+  });
+
+  it('refuses a damaged snapshot instead of loading it', async () => {
+    const f = await (await call('POST', '/api/files', {})).json();
+    await call('POST', `/api/files/${f.id}/changes`, { baseVersion: 0, upserts: [rect('a')], deletes: [] });
+    const v = await (await call('POST', `/api/files/${f.id}/versions`, { name: 'v' })).json();
+    store.db.prepare('update versions set snapshot = ? where id = ?').run(JSON.stringify({ nodes: [rect('x', 'x')], pages: [{ id: 'page-1', name: 'P', background: '#FFFFFF' }] }), v.id);
+    const r = await call('POST', `/api/files/${f.id}/versions/${v.id}/restore`);
+    expect(r.status).toBe(400);
+    const file = await (await call('GET', `/api/files/${f.id}`)).json();
+    expect(file.nodes.map((n: SceneNode) => n.id)).toEqual(['a']);
+  });
+});
+
+describe('comments', () => {
+  it('adds threads and replies, resolves, edits and deletes them', async () => {
+    const f = await (await call('POST', '/api/files', {})).json();
+    let r = await call('POST', `/api/files/${f.id}/comments`, { pageId: 'page-1', x: 10, y: 20, body: '  Tighten this spacing  ' });
+    expect(r.status).toBe(201);
+    const c = await r.json();
+    expect(c).toMatchObject({ body: 'Tighten this spacing', resolved: false, parentId: null, nodeId: null });
+    r = await call('POST', `/api/files/${f.id}/comments`, { parentId: c.id, pageId: 'elsewhere', x: 999, y: 999, body: 'Done' });
+    const reply = await r.json();
+    // replies take their thread's place
+    expect(reply).toMatchObject({ parentId: c.id, pageId: 'page-1', x: 10, y: 20 });
+    // no replies to replies
+    expect((await call('POST', `/api/files/${f.id}/comments`, { parentId: reply.id, pageId: 'page-1', x: 0, y: 0, body: 'x' })).status).toBe(400);
+
+    r = await call('PATCH', `/api/files/${f.id}/comments/${c.id}`, { resolved: true, body: 'Edited' });
+    expect(await r.json()).toMatchObject({ resolved: true, body: 'Edited' });
+    expect((await call('PATCH', `/api/files/${f.id}/comments/${c.id}`, { body: '   ' })).status).toBe(400);
+    expect((await call('POST', `/api/files/${f.id}/comments`, { pageId: 'page-1', x: 1e9, y: 0, body: 'far' })).status).toBe(400);
+    expect((await call('POST', `/api/files/${f.id}/comments`, { pageId: 'page-1', x: 0, y: 0, body: 'x'.repeat(5001) })).status).toBe(400);
+
+    // a pin on a layer keeps its place inside it; moving the thread moves its replies
+    expect((await call('POST', `/api/files/${f.id}/comments`, { pageId: 'page-1', nodeId: 'r1', x: 0, y: 0, body: 'x' })).status).toBe(400);
+    r = await call('PATCH', `/api/files/${f.id}/comments/${c.id}`, { x: 50, y: 60, nodeId: 'r1', offset: { x: 5, y: 6 } });
+    expect(await r.json()).toMatchObject({ x: 50, y: 60, nodeId: 'r1', offset: { x: 5, y: 6 } });
+    const all = await (await call('GET', `/api/files/${f.id}/comments`)).json();
+    expect(all.find((x: { id: string }) => x.id === reply.id)).toMatchObject({ x: 50, y: 60, nodeId: 'r1', offset: { x: 5, y: 6 } });
+    r = await call('PATCH', `/api/files/${f.id}/comments/${c.id}`, { nodeId: null, offset: null });
+    expect(await r.json()).toMatchObject({ nodeId: null, offset: null });
+
+    // deleting a thread deletes its replies
+    expect((await call('DELETE', `/api/files/${f.id}/comments/${c.id}`)).status).toBe(204);
+    expect(await (await call('GET', `/api/files/${f.id}/comments`)).json()).toEqual([]);
+
+    // comments of one file can't be touched through another
+    const c2 = await (await call('POST', `/api/files/${f.id}/comments`, { pageId: 'page-1', x: 0, y: 0, body: 'mine' })).json();
+    const other = await (await call('POST', '/api/files', {})).json();
+    expect((await call('DELETE', `/api/files/${other.id}/comments/${c2.id}`)).status).toBe(404);
+    expect((await call('PATCH', `/api/files/${other.id}/comments/${c2.id}`, { resolved: true })).status).toBe(404);
+    // and they go with the file
+    await call('DELETE', `/api/files/${f.id}`);
+    expect(store.db.prepare('select count(*) as n from comments where file_id = ?').get(f.id)).toEqual({ n: 0 });
+  });
+});

@@ -3,7 +3,10 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  type Comment,
   type ExportedFile,
+  type VersionMeta,
+  MAX_COMMENTS_PER_FILE,
   type FileMeta,
   type Page,
   type SceneNode,
@@ -48,7 +51,69 @@ const MIGRATIONS = [
    );`,
   `alter table files add column styles text check (styles is null or json_valid(styles));
    alter table files add column variables text check (variables is null or json_valid(variables));`,
+  `create table versions (
+     id          integer primary key,
+     file_id     text not null references files(id) on delete cascade,
+     name        text,
+     auto        integer not null check (auto in (0, 1)),
+     created_at  text not null,
+     node_count  integer not null,
+     snapshot    text not null check (json_valid(snapshot))
+   );
+   create index versions_file on versions (file_id, id desc);`,
+  `create table comments (
+     id          text primary key,
+     file_id     text not null references files(id) on delete cascade,
+     parent_id   text references comments(id) on delete cascade,
+     page_id     text not null,
+     node_id     text,
+     ox          real,
+     oy          real,
+     x           real not null,
+     y           real not null,
+     body        text not null check (length(body) between 1 and 5000),
+     resolved    integer not null default 0 check (resolved in (0, 1)),
+     created_at  text not null,
+     updated_at  text not null
+   );
+   create index comments_file on comments (file_id, created_at);`,
 ];
+
+/** Autosaved versions: one at the start of each editing session (after this long without one). */
+export const AUTO_VERSION_EVERY_MS = 10 * 60 * 1000;
+export const MAX_AUTO_VERSIONS = 50;
+export const MAX_NAMED_VERSIONS = 200;
+/** Larger files skip autosaved versions (each one is a full copy). */
+export const MAX_SNAPSHOT_CHARS = 64 * 1024 * 1024;
+
+type Snapshot = { nodes: SceneNode[]; pages: Page[]; styles: Style[]; variables: Variables };
+type CommentRow = {
+  id: string;
+  parent_id: string | null;
+  page_id: string;
+  node_id: string | null;
+  ox: number | null;
+  oy: number | null;
+  x: number;
+  y: number;
+  body: string;
+  resolved: number;
+  created_at: string;
+  updated_at: string;
+};
+const toComment = (r: CommentRow): Comment => ({
+  id: r.id,
+  parentId: r.parent_id,
+  pageId: r.page_id,
+  nodeId: r.node_id,
+  offset: r.node_id && r.ox !== null && r.oy !== null ? { x: r.ox, y: r.oy } : null,
+  x: r.x,
+  y: r.y,
+  body: r.body,
+  resolved: r.resolved === 1,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
 
 export class ConflictError extends Error {
   readonly version: number;
@@ -192,6 +257,11 @@ export class Store {
       const meta = this.getMeta(fileId);
       if (!meta) throw new InvalidError('file not found');
       if (meta.version !== baseVersion) throw new ConflictError(meta.version);
+      // the file as it was before this editing session, kept as an autosaved version
+      const last = this.db.prepare('select created_at from versions where file_id = ? and auto = 1 order by id desc limit 1').get(fileId) as
+        | { created_at: string }
+        | undefined;
+      if (meta.version > 0 && (!last || Date.now() - Date.parse(last.created_at) >= AUTO_VERSION_EVERY_MS)) this.snapshot(fileId, null, true);
       const del = this.db.prepare('delete from nodes where file_id = ? and id = ?');
       for (const id of deletes) del.run(fileId, id);
       const put = this.db.prepare(
@@ -260,6 +330,150 @@ export class Store {
       | { mime: string; data: Uint8Array }
       | undefined;
     return row ?? null;
+  }
+
+  // --------------------------------------------------------------- versions
+
+  /** Saves the file's current content as a version. Autosaves of very large files are skipped. */
+  private snapshot(fileId: string, name: string | null, auto: boolean): number | null {
+    const meta = this.getMeta(fileId)!;
+    const nodes = this.getNodes(fileId);
+    const data: Snapshot = { nodes, pages: meta.pages, styles: meta.styles, variables: meta.variables };
+    const json = JSON.stringify(data);
+    if (json.length > MAX_SNAPSHOT_CHARS) {
+      if (auto) return null;
+      throw new InvalidError('this file is too large to save as a version');
+    }
+    if (!auto) {
+      const named = this.db.prepare('select count(*) as n from versions where file_id = ? and auto = 0').get(fileId) as { n: number };
+      if (Number(named.n) >= MAX_NAMED_VERSIONS) throw new InvalidError(`a file keeps up to ${MAX_NAMED_VERSIONS} named versions; delete some first`);
+    }
+    const r = this.db
+      .prepare('insert into versions (file_id, name, auto, created_at, node_count, snapshot) values (?, ?, ?, ?, ?, ?)')
+      .run(fileId, name, auto ? 1 : 0, now(), nodes.length, json);
+    if (auto) {
+      this.db
+        .prepare(
+          'delete from versions where file_id = ? and auto = 1 and id not in (select id from versions where file_id = ? and auto = 1 order by id desc limit ?)',
+        )
+        .run(fileId, fileId, MAX_AUTO_VERSIONS);
+    }
+    return Number(r.lastInsertRowid);
+  }
+
+  listVersions(fileId: string): VersionMeta[] {
+    const rows = this.db
+      .prepare('select id, name, auto, created_at, node_count from versions where file_id = ? order by id desc')
+      .all(fileId) as { id: number; name: string | null; auto: number; created_at: string; node_count: number }[];
+    return rows.map((r) => ({ id: Number(r.id), name: r.name, auto: r.auto === 1, createdAt: r.created_at, nodeCount: Number(r.node_count) }));
+  }
+
+  saveVersion(fileId: string, name: string): VersionMeta {
+    const id = this.tx(() => this.snapshot(fileId, name, false))!;
+    return this.listVersions(fileId).find((v) => v.id === id)!;
+  }
+
+  /** Naming an autosave keeps it for good. */
+  renameVersion(fileId: string, versionId: number, name: string): boolean {
+    return Number(this.db.prepare('update versions set name = ?, auto = 0 where file_id = ? and id = ?').run(name, fileId, versionId).changes) > 0;
+  }
+
+  deleteVersion(fileId: string, versionId: number): boolean {
+    return Number(this.db.prepare('delete from versions where file_id = ? and id = ?').run(fileId, versionId).changes) > 0;
+  }
+
+  /** Puts a version's content back. What was there is saved as an autosave first, so a restore can be undone. */
+  restoreVersion(fileId: string, versionId: number): FileMeta | null {
+    return this.tx(() => {
+      const row = this.db.prepare('select name, created_at, snapshot from versions where file_id = ? and id = ?').get(fileId, versionId) as
+        | { name: string | null; created_at: string; snapshot: string }
+        | undefined;
+      if (!row) return null;
+      const raw = JSON.parse(row.snapshot) as Partial<Snapshot>;
+      const nodes = SceneNodeSchema.array().safeParse(raw.nodes);
+      const pages = PagesSchema.safeParse(raw.pages);
+      const styles = StylesSchema.safeParse(raw.styles ?? []);
+      const variables = VariablesSchema.safeParse(raw.variables ?? EMPTY_VARIABLES);
+      if (!nodes.success || !pages.success || !styles.success || !variables.success) throw new InvalidError('this version can no longer be read');
+      const problem = validateTree(nodes.data, pages.data);
+      if (problem) throw new InvalidError(problem);
+      const meta = this.getMeta(fileId)!;
+      this.snapshot(fileId, null, true);
+      this.db.prepare('delete from nodes where file_id = ?').run(fileId);
+      const put = this.db.prepare('insert into nodes (file_id, id, data) values (?, ?, ?)');
+      for (const n of nodes.data) put.run(fileId, n.id, JSON.stringify(n));
+      this.db
+        .prepare('update files set version = ?, pages = ?, background = ?, styles = ?, variables = ?, updated_at = ? where id = ?')
+        .run(meta.version + 1, JSON.stringify(pages.data), pages.data[0].background, JSON.stringify(styles.data), JSON.stringify(variables.data), now(), fileId);
+      return this.getMeta(fileId);
+    });
+  }
+
+  // --------------------------------------------------------------- comments
+
+  listComments(fileId: string): Comment[] {
+    const rows = this.db.prepare('select * from comments where file_id = ? order by created_at, id').all(fileId) as CommentRow[];
+    return rows.map(toComment);
+  }
+
+  addComment(
+    fileId: string,
+    c: { parentId?: string; pageId: string; nodeId?: string; offset?: { x: number; y: number }; x: number; y: number; body: string },
+  ): Comment {
+    return this.tx(() => {
+      const count = this.db.prepare('select count(*) as n from comments where file_id = ?').get(fileId) as { n: number };
+      if (Number(count.n) >= MAX_COMMENTS_PER_FILE) throw new InvalidError(`a file keeps up to ${MAX_COMMENTS_PER_FILE} comments`);
+      let { pageId, nodeId, x, y } = c;
+      let ox = c.offset?.x ?? null;
+      let oy = c.offset?.y ?? null;
+      if (c.parentId) {
+        // replies live in their thread: same page and place, and threads are one level deep
+        const parent = this.db.prepare('select * from comments where file_id = ? and id = ?').get(fileId, c.parentId) as CommentRow | undefined;
+        if (!parent || parent.parent_id) throw new InvalidError('that comment thread does not exist');
+        ({ page_id: pageId, x, y, ox, oy } = parent);
+        nodeId = parent.node_id ?? undefined;
+      }
+      const id = randomUUID();
+      const t = now();
+      this.db
+        .prepare(
+          'insert into comments (id, file_id, parent_id, page_id, node_id, ox, oy, x, y, body, resolved, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)',
+        )
+        .run(id, fileId, c.parentId ?? null, pageId, nodeId ?? null, ox, oy, x, y, c.body, t, t);
+      return toComment(this.db.prepare('select * from comments where id = ?').get(id) as CommentRow);
+    });
+  }
+
+  updateComment(
+    fileId: string,
+    id: string,
+    patch: { body?: string; resolved?: boolean; x?: number; y?: number; nodeId?: string | null; offset?: { x: number; y: number } | null },
+  ): Comment | null {
+    const row = this.db.prepare('select * from comments where file_id = ? and id = ?').get(fileId, id) as CommentRow | undefined;
+    if (!row) return null;
+    const next = {
+      body: patch.body ?? row.body,
+      resolved: patch.resolved === undefined ? row.resolved : patch.resolved ? 1 : 0,
+      x: patch.x ?? row.x,
+      y: patch.y ?? row.y,
+      node_id: patch.nodeId === undefined ? row.node_id : patch.nodeId,
+      ox: patch.nodeId === undefined ? row.ox : (patch.offset?.x ?? null),
+      oy: patch.nodeId === undefined ? row.oy : (patch.offset?.y ?? null),
+    };
+    this.tx(() => {
+      // a thread moves with its replies
+      this.db
+        .prepare('update comments set body = ?, resolved = ?, updated_at = ? where id = ?')
+        .run(next.body, next.resolved, now(), id);
+      this.db
+        .prepare('update comments set x = ?, y = ?, node_id = ?, ox = ?, oy = ? where id = ? or parent_id = ?')
+        .run(next.x, next.y, next.node_id, next.ox, next.oy, id, id);
+    });
+    return toComment(this.db.prepare('select * from comments where id = ?').get(id) as CommentRow);
+  }
+
+  deleteComment(fileId: string, id: string): boolean {
+    return Number(this.db.prepare('delete from comments where file_id = ? and id = ?').run(fileId, id).changes) > 0;
   }
 
   exportFile(id: string): ExportedFile | null {

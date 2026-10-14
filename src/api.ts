@@ -1,4 +1,4 @@
-import type { Changes, ExportedFile, FileMeta, SceneNode } from '../shared/schema.ts';
+import type { Changes, Comment, ExportedFile, FileMeta, SceneNode, VersionMeta } from '../shared/schema.ts';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -47,6 +47,25 @@ export const api = {
     request<void>('PUT', `/api/files/${encodeURIComponent(id)}/thumbnail`, { dataUrl }),
   exportFile: (id: string) => request<ExportedFile>('GET', `/api/files/${encodeURIComponent(id)}/export`),
   importFile: (data: unknown) => request<FileMeta>('POST', '/api/files/import', data),
+  listVersions: (id: string) => request<VersionMeta[]>('GET', `/api/files/${encodeURIComponent(id)}/versions`),
+  saveVersion: (id: string, name: string) => request<VersionMeta>('POST', `/api/files/${encodeURIComponent(id)}/versions`, { name }),
+  renameVersion: (id: string, vid: number, name: string) =>
+    request<void>('PATCH', `/api/files/${encodeURIComponent(id)}/versions/${vid}`, { name }),
+  deleteVersion: (id: string, vid: number) => request<void>('DELETE', `/api/files/${encodeURIComponent(id)}/versions/${vid}`),
+  restoreVersion: (id: string, vid: number) => request<FileMeta>('POST', `/api/files/${encodeURIComponent(id)}/versions/${vid}/restore`),
+  listComments: (id: string) => request<Comment[]>('GET', `/api/files/${encodeURIComponent(id)}/comments`),
+  addComment: (
+    id: string,
+    c: { parentId?: string; pageId: string; nodeId?: string; offset?: { x: number; y: number }; x: number; y: number; body: string },
+  ) =>
+    request<Comment>('POST', `/api/files/${encodeURIComponent(id)}/comments`, c),
+  updateComment: (
+    id: string,
+    cid: string,
+    patch: { body?: string; resolved?: boolean; x?: number; y?: number; nodeId?: string | null; offset?: { x: number; y: number } | null },
+  ) =>
+    request<Comment>('PATCH', `/api/files/${encodeURIComponent(id)}/comments/${encodeURIComponent(cid)}`, patch),
+  deleteComment: (id: string, cid: string) => request<void>('DELETE', `/api/files/${encodeURIComponent(id)}/comments/${encodeURIComponent(cid)}`),
   copyImages: (id: string, from: string, ids: string[]) =>
     request<{ copied: number }>('POST', `/api/files/${encodeURIComponent(id)}/images/copy`, { from, ids }),
   uploadImage: async (id: string, file: Blob): Promise<{ id: string; mime: string }> => {

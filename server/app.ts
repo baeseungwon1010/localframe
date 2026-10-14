@@ -11,6 +11,9 @@ import {
   IMAGE_TYPES,
   ImageIdSchema,
   IdSchema,
+  VersionNameSchema,
+  NewCommentSchema,
+  CommentPatchSchema,
   MAX_IMAGE_BYTES,
   MAX_IMPORT_BYTES,
   ThumbnailSchema,
@@ -245,6 +248,65 @@ export function createApp(opts: AppOptions) {
         'Cache-Control': 'private, max-age=31536000, immutable',
       });
       return res.end(Buffer.from(img.data));
+    }
+
+    if (path[2] === 'versions') {
+      if (!store.getMeta(id)) throw new HttpError(404, 'File not found');
+      if (path.length === 3) {
+        if (method === 'GET') return send(res, 200, store.listVersions(id));
+        if (method === 'POST') {
+          const body = await readJson(req, VersionNameSchema, limit);
+          return send(res, 201, store.saveVersion(id, body.name));
+        }
+        throw new HttpError(405, 'Method not allowed');
+      }
+      const vid = /^[1-9][0-9]{0,15}$/.test(path[3] ?? '') ? Number(path[3]) : NaN;
+      if (!Number.isSafeInteger(vid)) throw new HttpError(404, 'Version not found');
+      if (path.length === 4) {
+        if (method === 'PATCH') {
+          const body = await readJson(req, VersionNameSchema, limit);
+          if (!store.renameVersion(id, vid, body.name)) throw new HttpError(404, 'Version not found');
+          return send(res, 204, undefined);
+        }
+        if (method === 'DELETE') {
+          if (!store.deleteVersion(id, vid)) throw new HttpError(404, 'Version not found');
+          return send(res, 204, undefined);
+        }
+        throw new HttpError(405, 'Method not allowed');
+      }
+      if (path.length === 5 && path[4] === 'restore') {
+        if (method !== 'POST') throw new HttpError(405, 'Method not allowed');
+        const meta = store.restoreVersion(id, vid);
+        if (!meta) throw new HttpError(404, 'Version not found');
+        return send(res, 200, meta);
+      }
+      throw new HttpError(404, 'Not found');
+    }
+
+    if (path[2] === 'comments') {
+      if (!store.getMeta(id)) throw new HttpError(404, 'File not found');
+      if (path.length === 3) {
+        if (method === 'GET') return send(res, 200, store.listComments(id));
+        if (method === 'POST') {
+          const body = await readJson(req, NewCommentSchema, limit);
+          return send(res, 201, store.addComment(id, body));
+        }
+        throw new HttpError(405, 'Method not allowed');
+      }
+      if (path.length === 4 && ID.test(path[3])) {
+        if (method === 'PATCH') {
+          const body = await readJson(req, CommentPatchSchema, limit);
+          const c = store.updateComment(id, path[3], body);
+          if (!c) throw new HttpError(404, 'Comment not found');
+          return send(res, 200, c);
+        }
+        if (method === 'DELETE') {
+          if (!store.deleteComment(id, path[3])) throw new HttpError(404, 'Comment not found');
+          return send(res, 204, undefined);
+        }
+        throw new HttpError(405, 'Method not allowed');
+      }
+      throw new HttpError(404, 'Not found');
     }
 
     if (path.length === 3 && path[2] === 'thumbnail') {
