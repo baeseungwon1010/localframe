@@ -31,7 +31,8 @@ to keep. For a copy that keeps files on disk, run it locally (below).
   - slices (S): areas of the page to export, never drawn in the design
   - text with auto width, auto height or a fixed size, and bold, italic, underline, a link, or a
     different font, size or colour on part of the text; bulleted and numbered lists, paragraph
-    spacing, upper/lower/title case and a maximum number of lines; fonts installed on your computer
+    spacing, upper/lower/title case, small caps, kerning on or off, and a maximum number of lines;
+    fonts installed on your computer
   Shift keeps proportions or 45° angles, and Alt draws from the centre.
 - **Edit**:
   - Select, Shift-select and marquee. Double-click goes deeper, and Ctrl/Cmd-click selects the deepest layer.
@@ -42,7 +43,8 @@ to keep. For a copy that keeps files on disk, run it locally (below).
   - Hold Alt to see the distances from the selection to the layer under the pointer, or to its parent.
   - Select matching layers (Ctrl/Cmd+Alt+A), and find and replace text on the page (Ctrl/Cmd+F).
   - Boolean operations (union, subtract, intersect, exclude) and masks.
-  - Flatten (Ctrl/Cmd+E) turns a rectangle, ellipse, polygon, star or line into an editable vector.
+  - Flatten (Ctrl/Cmd+E) turns a rectangle, ellipse, polygon, star, line or boolean group into an
+    editable vector; Outline stroke (Ctrl/Cmd+Shift+O) turns a stroke into a filled shape.
 - **Images**: place PNG, JPEG, WebP or GIF images with the picker (Ctrl/Cmd+Shift+K), by dropping files on
   the canvas, or by pasting. An image fills its shape: fill, fit, stretch, or crop (double-click the
   image to move it inside its shape, and set the zoom in the panel).
@@ -55,7 +57,8 @@ to keep. For a copy that keeps files on disk, run it locally (below).
 - **Libraries**: use the components of another file on this computer. Inserting one copies it onto a
   "Library components" page; when the library file changes, the Assets tab offers to update the copies.
 - **Auto layout and layout grids**: Shift+A stacks a frame's content vertically or horizontally, with gap,
-  padding, alignment, and hug, fill or fixed sizes. Horizontal layouts can wrap onto new rows, and
+  padding, alignment, and hug, fill or fixed sizes; or as a grid of equal columns. Horizontal layouts
+  can wrap onto new rows, and
   minimum and maximum sizes limit how far a frame or child grows or shrinks.
 - **Strokes**: inside, center or outside; dashed; flat, round or square ends; miter, round or bevel
   corners; a different weight per side on rectangles and frames. Frames can show column, row and square grids.
@@ -125,7 +128,7 @@ elsewhere and `LOCALFRAME_API_PORT` to change the port. Back up a file with **Ex
 | --- | --- |
 | Move, Frame, Rectangle, Ellipse, Line, Pen, Text, Hand, Comment | V, F, R, O, L, P, T, H, C |
 | Section / Slice / Pencil | Shift+S / S / Shift+P |
-| Flatten | Ctrl/Cmd+E |
+| Flatten / Outline stroke | Ctrl/Cmd+E / Ctrl/Cmd+Shift+O |
 | Outline mode | Ctrl/Cmd+Y |
 | Measure distances | Hold Alt with a selection |
 | Select matching layers | Ctrl/Cmd+Alt+A |
