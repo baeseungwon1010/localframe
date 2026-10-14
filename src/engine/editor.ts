@@ -993,6 +993,11 @@ export class Editor {
     this.emit('view');
   }
 
+  setPrototypeDevice(device: 'phone' | 'tablet' | 'desktop' | null) {
+    const id = this.doc.currentPage;
+    this.transact(() => this.setPages(this.pages.map((p) => (p.id === id ? { ...p, device: device ?? undefined } : p))));
+  }
+
   setPrototypeView(on: boolean) {
     if (this.prototypeView === on) return;
     this.prototypeView = on;

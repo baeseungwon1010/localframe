@@ -1992,3 +1992,69 @@ button:disabled {
 .override-input.invalid {
   outline: 1px solid var(--color-danger);
 }
+
+.present-scroll {
+  position: relative;
+  overscroll-behavior: contain;
+}
+
+.present-content {
+  position: relative;
+}
+
+.present-fixed,
+.present-fixed-spots,
+.present-anim {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.present-fixed,
+.present-fixed-spots {
+  pointer-events: none;
+}
+
+.present-fixed-spots .hotspot {
+  pointer-events: auto;
+}
+
+.present-anim[hidden] {
+  display: none;
+}
+
+.device-none {
+  display: contents;
+}
+
+/* a plain bezel around the screen; no brand's hardware */
+.device {
+  z-index: 1;
+  padding: 14px;
+  border-radius: 44px;
+  background: #0E0F11;
+  box-shadow: 0 0 0 2px #2A2C31, 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.device .present-screen {
+  overflow: hidden;
+  border-radius: 30px;
+}
+
+.device-tablet {
+  padding: 20px;
+  border-radius: 32px;
+}
+
+.device-tablet .present-screen {
+  border-radius: 14px;
+}
+
+.device-desktop {
+  padding: 12px 12px 28px;
+  border-radius: 14px;
+}
+
+.device-desktop .present-screen {
+  border-radius: 4px;
+}

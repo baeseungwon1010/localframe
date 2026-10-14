@@ -12,10 +12,13 @@ const ACTION_LABEL: Record<Reaction['action'], string> = {
   back: 'Back',
   overlay: 'Open overlay',
   'close-overlay': 'Close overlay',
+  'change-to': 'Change to (variant)',
+  'set-mode': 'Set variable mode',
 };
 const TRANSITION_LABEL: Record<Reaction['transition'], string> = {
   instant: 'Instant',
   dissolve: 'Dissolve',
+  'smart-animate': 'Smart animate',
   'move-in': 'Move in',
   push: 'Push',
   'slide-in': 'Slide in',
@@ -48,6 +51,17 @@ export function PrototypePanel({ editor, nodes, onPresent }: { editor: Editor; n
               onChange={(v) => editor.setPrototypeStart(v || null)}
             />
           )}
+          <SelectField
+            label="Device"
+            value={page.device ?? 'none'}
+            options={[
+              { value: 'none', label: 'No device frame' },
+              { value: 'phone', label: 'Phone' },
+              { value: 'tablet', label: 'Tablet' },
+              { value: 'desktop', label: 'Desktop' },
+            ]}
+            onChange={(v) => editor.setPrototypeDevice(v === 'none' ? null : v)}
+          />
           <button type="button" className="btn secondary full" disabled={frames.length === 0} onClick={onPresent}>
             <Play {...ICON} /> Present
           </button>
@@ -60,6 +74,19 @@ export function PrototypePanel({ editor, nodes, onPresent }: { editor: Editor; n
   const reactions = single.reactions ?? [];
   const own = topOf(editor, single);
   const destinations = frames.filter((f) => f.id !== own);
+  // variants this layer's component can change to: the other components of its set
+  const comp = componentOf(editor, single);
+  const variantSet = comp?.parentId ? editor.doc.get(comp.parentId) : undefined;
+  const variants =
+    variantSet?.type === 'COMPONENT_SET'
+      ? editor.doc
+          .children(variantSet.id)
+          .map((id) => editor.doc.get(id)!)
+          .filter((v) => v.type === 'COMPONENT' && v.id !== comp!.id)
+      : [];
+  const collections = editor.variables.collections;
+  const isScreenFrame = single.type === 'FRAME' && frames.some((f) => f.id === single.id);
+  const inScrolling = !isScreenFrame && !!editor.doc.get(own)?.overflow;
   const set = (next: Reaction[]) => editor.updateNodes([single.id], (n) => ({ ...n, reactions: next.length ? next : undefined }));
   const change = (i: number, patch: Partial<Reaction>) => set(reactions.map((r, j) => (j === i ? clean({ ...r, ...patch }) : r)));
   const add = () =>
@@ -113,8 +140,32 @@ export function PrototypePanel({ editor, nodes, onPresent }: { editor: Editor; n
                     onChange={(v) => change(i, { destinationId: v || undefined })}
                   />
                 )}
+                {r.action === 'change-to' && (
+                  <SelectField
+                    label="Variant"
+                    value={r.destinationId && variants.some((v) => v.id === r.destinationId) ? r.destinationId : ''}
+                    options={[{ value: '', label: variants.length ? 'Pick a variant' : 'Not in a variant set' }, ...variants.map((v) => ({ value: v.id, label: v.name }))]}
+                    onChange={(v) => change(i, { destinationId: v || undefined })}
+                  />
+                )}
               </div>
-              {r.action !== 'back' && r.action !== 'close-overlay' && (
+              {r.action === 'set-mode' && (
+                <div className="grid2">
+                  <SelectField
+                    label="Collection"
+                    value={r.collectionId ?? ''}
+                    options={[{ value: '', label: collections.length ? 'Collection' : 'No variables yet' }, ...collections.map((c) => ({ value: c.id, label: c.name }))]}
+                    onChange={(v) => change(i, { collectionId: v || undefined, modeId: collections.find((c) => c.id === v)?.modes[0]?.id })}
+                  />
+                  <SelectField
+                    label="Mode"
+                    value={r.modeId ?? ''}
+                    options={[{ value: '', label: 'Mode' }, ...(collections.find((c) => c.id === r.collectionId)?.modes ?? []).map((m) => ({ value: m.id, label: m.name }))]}
+                    onChange={(v) => change(i, { modeId: v || undefined })}
+                  />
+                </div>
+              )}
+              {r.action !== 'back' && r.action !== 'close-overlay' && r.action !== 'change-to' && r.action !== 'set-mode' && (
                 <>
                   <div className="grid2">
                     <SelectField label="Animation" value={r.transition} options={opts(TRANSITIONS, TRANSITION_LABEL)} onChange={(v) => change(i, { transition: v })} />
@@ -132,6 +183,34 @@ export function PrototypePanel({ editor, nodes, onPresent }: { editor: Editor; n
           );
         })}
       </Section>
+      {isScreenFrame && (
+        <Section title="Scrolling">
+          <SelectField
+            label="Scroll direction"
+            value={single.overflow ?? 'none'}
+            options={[
+              { value: 'none', label: 'No scrolling' },
+              { value: 'vertical', label: 'Vertical' },
+              { value: 'horizontal', label: 'Horizontal' },
+              { value: 'both', label: 'Both directions' },
+            ]}
+            onChange={(v) => editor.updateNodes([single.id], (n) => ({ ...n, overflow: v === 'none' ? undefined : v }))}
+          />
+          <p className="field-caption">When presenting, content outside the frame scrolls into view.</p>
+        </Section>
+      )}
+      {inScrolling && (
+        <Section title="Scrolling">
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={!!single.fixedOnScroll}
+              onChange={(e) => editor.updateNodes([single.id], (n) => ({ ...n, fixedOnScroll: e.target.checked || undefined }))}
+            />
+            Fixed when scrolling
+          </label>
+        </Section>
+      )}
     </>
   );
 }
@@ -141,14 +220,25 @@ function clean(r: Reaction): Reaction {
   const out: Reaction = { ...r };
   if (out.trigger !== 'after-delay') delete out.delay;
   else out.delay ??= 800;
-  if (out.action !== 'navigate' && out.action !== 'overlay') delete out.destinationId;
+  if (out.action !== 'navigate' && out.action !== 'overlay' && out.action !== 'change-to') delete out.destinationId;
+  if (out.action !== 'set-mode') {
+    delete out.collectionId;
+    delete out.modeId;
+  }
   if (out.transition === 'move-in' || out.transition === 'push' || out.transition === 'slide-in') out.direction ??= 'left';
   else delete out.direction;
   return out;
 }
 
+/** The component a layer belongs to (itself, or the nearest one above it). */
+function componentOf(editor: Editor, n: SceneNode): SceneNode | undefined {
+  for (let cur: SceneNode | undefined = n; cur; cur = cur.parentId ? editor.doc.get(cur.parentId) : undefined) if (cur.type === 'COMPONENT') return cur;
+  return undefined;
+}
+
+/** The screen a layer is on: its top-level frame, or the frame inside a section. */
 function topOf(editor: Editor, n: SceneNode): string {
   let cur = n;
-  for (let guard = 0; cur.parentId && guard < 200; guard++) cur = editor.doc.get(cur.parentId)!;
+  for (let guard = 0; cur.parentId && !editor.doc.get(cur.parentId)?.section && guard < 200; guard++) cur = editor.doc.get(cur.parentId)!;
   return cur.id;
 }

@@ -356,8 +356,8 @@ export type PageGuide = z.infer<typeof GuideSchema>;
 // ------------------------------------------------------------- prototyping
 
 export const TRIGGERS = ['click', 'mouse-enter', 'after-delay'] as const;
-export const ACTIONS = ['navigate', 'back', 'overlay', 'close-overlay'] as const;
-export const TRANSITIONS = ['instant', 'dissolve', 'move-in', 'push', 'slide-in'] as const;
+export const ACTIONS = ['navigate', 'back', 'overlay', 'close-overlay', 'change-to', 'set-mode'] as const;
+export const TRANSITIONS = ['instant', 'dissolve', 'smart-animate', 'move-in', 'push', 'slide-in'] as const;
 export const DIRECTIONS = ['left', 'right', 'up', 'down'] as const;
 export const EASINGS = ['linear', 'ease-in', 'ease-out', 'ease-in-out'] as const;
 
@@ -368,8 +368,11 @@ export const ReactionSchema = z
     /** after-delay: milliseconds */
     delay: z.number().int().min(0).max(60_000).optional(),
     action: z.enum(ACTIONS),
-    /** navigate and overlay: a top-level frame */
+    /** navigate and overlay: a screen; change-to: a variant of the same component set */
     destinationId: id.optional(),
+    /** set-mode: which variable collection switches to which mode */
+    collectionId: id.optional(),
+    modeId: id.optional(),
     transition: z.enum(TRANSITIONS),
     direction: z.enum(DIRECTIONS).optional(),
     duration: z.number().int().min(0).max(10_000),
@@ -439,6 +442,10 @@ export const SceneNodeSchema = z
       )
       .max(10)
       .optional(),
+    /** Presenting: the frame scrolls its content along these axes instead of clipping it. */
+    overflow: z.enum(['vertical', 'horizontal', 'both']).optional(),
+    /** Presenting: the layer stays put while its scrolling frame scrolls. */
+    fixedOnScroll: z.boolean().optional(),
     /** A frame used as a section: a labelled area on the page that holds frames. Top level only. */
     section: z.boolean().optional(),
     /** A vector drawn as a polygon or star: its points are rebuilt from these when it changes size. */
@@ -528,6 +535,8 @@ export const PageSchema = z
     guides: z.array(GuideSchema).max(200).optional(),
     /** The frame a presentation of this page starts on. */
     prototypeStart: id.optional(),
+    /** A device drawn around the screens when presenting. */
+    device: z.enum(['phone', 'tablet', 'desktop']).optional(),
   })
   .strict();
 export type Page = z.infer<typeof PageSchema>;
