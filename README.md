@@ -18,7 +18,8 @@ requests.
   to the selection, rulers with draggable guides, and light and dark themes.
 - **Draw**:
   - frames (with presets for phones, tablets, desktops and paper), groups and nested frames with clip content
-  - rectangles with per-corner radius, ellipses, lines and arrows
+  - sections (Shift+S) that hold frames; drawing one around frames takes them in
+  - rectangles with per-corner radius, ellipses, polygons, stars, lines and arrows
   - vector paths with the pen tool (P), edited point by point
   - text with auto width, auto height or a fixed size, and bold, italic, underline or a different font,
     size or colour on part of the text
@@ -29,6 +30,8 @@ requests.
   - Resize with 8 handles and snapping, rotate one or several layers, and drag layers into or out of frames.
   - Undo and redo, copy, cut, paste (also between tabs and between files), duplicate, delete and z-order.
   - Group, wrap in a frame, ungroup, align, distribute, and rename many layers at once.
+  - Hold Alt to see the distances from the selection to the layer under the pointer, or to its parent.
+  - Select matching layers (Ctrl/Cmd+Alt+A), and find and replace text on the page (Ctrl/Cmd+F).
   - Boolean operations (union, subtract, intersect, exclude) and masks.
 - **Images**: place PNG, JPEG, WebP or GIF images with the picker (Ctrl/Cmd+Shift+K), by dropping files on
   the canvas, or by pasting. An image fills its shape: fill, fit, stretch, or crop (double-click the
@@ -40,9 +43,10 @@ requests.
   variables in collections with modes (for example light and dark), bound to fills, strokes, radius,
   spacing and opacity.
 - **Auto layout and layout grids**: Shift+A stacks a frame's content vertically or horizontally, with gap,
-  padding, alignment, and hug, fill or fixed sizes. Frames can show column, row and square grids.
+  padding, alignment, and hug, fill or fixed sizes. Horizontal layouts can wrap onto new rows, and
+  minimum and maximum sizes limit how far a frame or child grows or shrinks. Frames can show column, row and square grids.
 - **Paint and effects**: solid colours, linear and radial gradients and images; drop and inner shadows,
-  layer blur and background blur.
+  layer blur and background blur; layer blend modes (multiply, screen, overlay and the rest).
 - **Connectors**: a line or arrow drawn from one shape to another attaches to both and follows them when
   they move. Lines can be straight or elbow (right-angled). Dropping an end on a side's midpoint pins it to
   that side; Ctrl/Cmd while drawing leaves the ends loose.
@@ -55,7 +59,8 @@ requests.
 - **Properties**: position, rotation, size with aspect lock, corner radius, constraints, opacity, fills and
   strokes (colour, opacity, weight, inside/center/outside, dashed), arrow heads and text settings. Fields
   accept maths, like `120/2`.
-- **Layers panel**: tree view with rename, hide, lock, drag to reorder or reparent, and keyboard navigation.
+- **Layers panel**: tree view with search, rename, hide, lock, drag to reorder or reparent, and keyboard
+  navigation.
 - **Export a selection or page**: PNG, JPG, WebP (1x to 4x), SVG, PDF, or a vector PDF through the print
   dialog.
 - **Export a whole file** (Ctrl/Cmd+Shift+E, or the file list menu):
@@ -100,6 +105,10 @@ elsewhere and `LOCALFRAME_API_PORT` to change the port. Back up a file with **Ex
 | Action | Keys |
 | --- | --- |
 | Move, Frame, Rectangle, Ellipse, Line, Pen, Text, Hand, Comment | V, F, R, O, L, P, T, H, C |
+| Section | Shift+S |
+| Measure distances | Hold Alt with a selection |
+| Select matching layers | Ctrl/Cmd+Alt+A |
+| Find and replace text | Ctrl/Cmd+F |
 | Arrow | Shift+L |
 | Pan | Space+drag, or scroll |
 | Zoom | Ctrl/Cmd+scroll, Ctrl/Cmd + / −, Shift+0 (100%) |

@@ -793,3 +793,113 @@ describe('prototyping', () => {
     expect(ed.currentPage.prototypeStart).toBeUndefined();
   });
 });
+
+describe('batch I', () => {
+  it('blend modes are stored, validated and exported to SVG', () => {
+    const ed = setup();
+    const r = draw(ed, 'rect', [100, 100], [200, 200]);
+    ed.updateNodes([r], (n) => ({ ...n, blendMode: 'multiply' }));
+    valid(ed);
+    expect(svgMarkup(ed.doc, { ids: [r], background: null }).svg).toContain('mix-blend-mode:multiply');
+    expect(SceneNodeSchema.safeParse({ ...ed.doc.get(r)!, blendMode: 'x;background:url(evil)' }).success).toBe(false);
+  });
+
+  it('Alt shows the gap to a hovered layer and the insets inside the parent', () => {
+    const ed = setup();
+    const f = draw(ed, 'frame', [0, 0], [400, 400]);
+    const a = draw(ed, 'rect', [50, 60], [100, 100]);
+    const b = draw(ed, 'rect', [180, 70], [220, 90]);
+    ed.setSelection([a]);
+    ed.keyDown({ code: 'AltLeft', key: 'Alt', shift: false, alt: true, mod: false, repeat: false });
+    ed.setHover(b);
+    expect(ed.measurements().map((m) => m.length)).toEqual([80]);
+    ed.setHover(null);
+    // nothing hovered: insets inside the frame
+    expect(ed.doc.get(a)!.parentId).toBe(f);
+    expect(ed.measurements().map((m) => m.length).sort((x, y) => x - y)).toEqual([50, 60, 300, 300]);
+    ed.keyUp({ code: 'AltLeft' });
+    expect(ed.measurements()).toEqual([]);
+  });
+
+  it('selects matching layers on the page', () => {
+    const ed = setup();
+    const a = draw(ed, 'rect', [0, 0], [50, 50]);
+    const b = draw(ed, 'rect', [100, 0], [180, 50]);
+    const c = draw(ed, 'rect', [200, 0], [250, 50]);
+    draw(ed, 'ellipse', [300, 0], [350, 50]);
+    ed.updateNodes([c], (n) => ({ ...n, fills: [{ color: '#FF0000', opacity: 1, visible: true }] }));
+    ed.setSelection([a]);
+    ed.selectMatching();
+    expect([...ed.selection].sort()).toEqual([a, b].sort());
+  });
+
+  it('finds and replaces text, keeping styled runs, in one undo step', () => {
+    const ed = setup();
+    ed.setTool('text');
+    drag(ed, [100, 100], [300, 140]);
+    const t = ed.editingText!;
+    ed.commitTextEdit('Hello world, hello');
+    ed.setSelection([t]);
+    ed.styleText({ fontWeight: 700 }); // whole text bold: not a run
+    expect(ed.findText('hello', { matchCase: false })).toEqual([{ id: t, count: 2 }]);
+    expect(ed.findText('hello', { matchCase: true })).toEqual([{ id: t, count: 1 }]);
+    expect(ed.replaceText('hello', 'Bye', { matchCase: false })).toBe(2);
+    expect(ed.doc.get(t)!.text!.characters).toBe('Bye world, Bye');
+    ed.undo();
+    expect(ed.doc.get(t)!.text!.characters).toBe('Hello world, hello');
+    valid(ed);
+  });
+
+  it('wraps a horizontal auto layout onto rows and respects size limits', () => {
+    const ed = setup();
+    const f = draw(ed, 'frame', [0, 0], [230, 100]);
+    const kids = [0, 1, 2].map((i) => draw(ed, 'rect', [10 + i * 5, 10], [110 + i * 5, 50]));
+    ed.updateNodes(kids, (n) => ({ ...n, width: 100, height: 40 }));
+    ed.setSelection([f]);
+    ed.addAutoLayout();
+    ed.updateNodes([f], (n) => ({ ...n, width: 230, layout: { ...n.layout!, mode: 'horizontal', gap: 10, padding: [10, 10, 10, 10], widthMode: 'fixed', heightMode: 'hug', wrap: true, counterGap: 20 } }));
+    const pos = kids.map((id) => ({ x: ed.doc.get(id)!.x, y: ed.doc.get(id)!.y }));
+    // two fit in 210 inner width (100 + 10 + 100), the third goes to the next row
+    expect(pos.filter((p) => p.y === 10)).toHaveLength(2);
+    expect(pos.filter((p) => p.y === 10 + 40 + 20)).toHaveLength(1);
+    expect(ed.doc.get(f)!.height).toBe(10 + 40 + 20 + 40 + 10);
+    ed.updateNodes([f], (n) => ({ ...n, maxHeight: 100 }));
+    expect(ed.doc.get(f)!.height).toBe(100);
+    valid(ed);
+  });
+
+  it('draws polygons and stars that rebuild their points, until the points are edited', () => {
+    const ed = setup();
+    const p = draw(ed, 'polygon', [100, 100], [200, 200]);
+    const n = () => ed.doc.get(p)!;
+    expect(n().type).toBe('VECTOR');
+    expect(n().vector!.points).toHaveLength(3);
+    ed.updateNodes([p], (x) => ({ ...x, shape: { ...x.shape!, count: 6 } }));
+    expect(n().vector!.points).toHaveLength(6);
+    const s = draw(ed, 'star', [300, 100], [400, 200]);
+    expect(ed.doc.get(s)!.vector!.points).toHaveLength(10);
+    // every point inside the box
+    for (const q of ed.doc.get(s)!.vector!.points) {
+      expect(q.x).toBeGreaterThanOrEqual(0);
+      expect(q.x).toBeLessThanOrEqual(100);
+    }
+    ed.updateNodes([p], (x) => ({ ...x, vector: { ...x.vector!, points: x.vector!.points.slice(0, 5) } }));
+    expect(n().shape).toBeUndefined();
+    valid(ed);
+  });
+
+  it('a section drawn around frames takes them in, stays on the page, and its frames are screens', () => {
+    const ed = setup();
+    const f1 = draw(ed, 'frame', [100, 100], [200, 200]);
+    const f2 = draw(ed, 'frame', [300, 100], [400, 200]);
+    const sec = draw(ed, 'section', [50, 50], [450, 300]);
+    expect(ed.doc.get(sec)!.section).toBe(true);
+    expect(ed.doc.get(f1)!.parentId).toBe(sec);
+    expect(ed.doc.get(f2)!.parentId).toBe(sec);
+    // still in the same place on the page
+    expect(ed.doc.worldBounds(f1)).toMatchObject({ x: 100, y: 100 });
+    expect(ed.topFrames().map((f) => f.id)).toEqual([f1, f2]);
+    valid(ed);
+    expect(SceneNodeSchema.safeParse({ ...ed.doc.get(f1)!, section: true }).success).toBe(false);
+  });
+});

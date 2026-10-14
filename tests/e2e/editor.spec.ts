@@ -373,3 +373,51 @@ test('prototype: link a button to another frame and click through the presentati
   await expect(show).toBeHidden();
   expect(errors).toEqual([]);
 });
+
+test('sections, polygons, layer search, find and replace, and Alt distances', async ({ page }) => {
+  const errors = await newFile(page);
+  const { at, drag } = await canvasHelpers(page);
+  await page.keyboard.press('f');
+  await drag([100, 100], [300, 300]);
+  await page.getByRole('button', { name: 'Polygon' }).click();
+  await drag([140, 140], [200, 200]);
+  await page.keyboard.press('t');
+  await page.mouse.click(...at(140, 240));
+  await page.keyboard.type('Sign up now');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Shift+S');
+  await drag([60, 60], [360, 360]);
+  const tree = page.getByRole('tree', { name: 'Layer tree' });
+  await expect(tree.getByRole('treeitem', { name: 'Section 1' })).toHaveAttribute('aria-level', '1');
+  await expect(tree.getByRole('treeitem', { name: 'Frame 1' })).toHaveAttribute('aria-level', '2');
+
+  // layer search
+  await page.getByLabel('Find layers').fill('poly');
+  await expect(tree.getByRole('treeitem')).toHaveCount(3);
+  await expect(tree.getByRole('treeitem', { name: 'Polygon 1' })).toBeVisible();
+  await page.getByLabel('Find layers').fill('');
+
+  // find and replace
+  await page.mouse.click(...at(800, 650));
+  await page.keyboard.press('Control+f');
+  await page.getByRole('textbox', { name: 'Find' }).fill('sign up');
+  await expect(page.getByRole('dialog', { name: 'Find and replace' })).toContainText('1 match in 1 text layer');
+  await page.getByRole('textbox', { name: 'Replace with' }).fill('Join');
+  await page.getByRole('button', { name: 'Replace all' }).click();
+  await expect(page.getByRole('dialog', { name: 'Find and replace' })).toContainText('Replaced 1 match');
+  await page.getByRole('textbox', { name: 'Find' }).fill('Join now');
+  await expect(page.getByRole('dialog', { name: 'Find and replace' })).toContainText('1 match in 1 text layer');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Find and replace' })).toBeHidden();
+
+  // Alt: distances from the polygon to its frame
+  await tree.getByRole('treeitem', { name: 'Polygon 1' }).click();
+  await page.mouse.move(...at(700, 600));
+  await page.keyboard.down('Alt');
+  await page.screenshot({ path: 'test-results/measure.png' });
+  await page.keyboard.up('Alt');
+  await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
+  await page.reload();
+  await expect(page.getByRole('treeitem', { name: 'Section 1' })).toBeVisible();
+  expect(errors).toEqual([]);
+});
