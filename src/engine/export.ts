@@ -5,7 +5,7 @@ import { ensureImages, imageDataUrl, imageSize } from './images.ts';
 import { instanceDoc } from './instances.ts';
 import { type Mat, type Rect, IDENTITY, localMatrix, unionRects } from './math.ts';
 import { buildPdf, type PdfPage } from './pdf.ts';
-import { arrowSize, clampRadii, drawNode, effectReach, imageRect, imagesUsed } from './render.ts';
+import { arrowSize, clampRadii, drawNode, effectReach, imageRect, imagesUsed, lineShape } from './render.ts';
 import { fontStack, layoutText, lineOffset } from './text.ts';
 import { svgPathData } from './vector.ts';
 
@@ -323,16 +323,14 @@ class SvgWriter {
   private line(n: SceneNode): string {
     const paints = n.strokes.filter((p) => p.visible);
     if (paints.length === 0 || n.strokeWeight <= 0) return '';
-    const { length: al, halfWidth: aw } = arrowSize(n.strokeWeight);
     const len = n.width;
-    const ts = n.arrowStart ? Math.min(al * 0.8, len / 2) : 0;
-    const te = n.arrowEnd ? Math.min(al * 0.8, len / 2) : 0;
+    const shape = lineShape(n);
+    const poly = (pts: { x: number; y: number }[]) => pts.map((q, i) => `${i ? 'L' : 'M'}${num(q.x)} ${num(q.y)}`).join('');
     const dash = n.strokeDash.length ? ` stroke-dasharray="${n.strokeDash.map(num).join(' ')}"` : '';
     const out: string[] = [];
     for (const p of paints) {
-      out.push(`<path d="M${num(ts)} 0H${num(len - te)}" fill="none"${this.paint(p, 'stroke', Math.max(1, len), Math.max(1, n.strokeWeight))} stroke-width="${num(n.strokeWeight)}"${dash}/>`);
-      if (n.arrowEnd) out.push(`<path d="M${num(len)} 0L${num(len - al)} ${num(-aw)}L${num(len - al)} ${num(aw)}Z"${this.paint(p, 'fill', Math.max(1, len), Math.max(1, n.strokeWeight))}/>`);
-      if (n.arrowStart) out.push(`<path d="M0 0L${num(al)} ${num(-aw)}L${num(al)} ${num(aw)}Z"${this.paint(p, 'fill', Math.max(1, len), Math.max(1, n.strokeWeight))}/>`);
+      out.push(`<path d="${poly(shape.points)}" fill="none" stroke-linejoin="round"${this.paint(p, 'stroke', Math.max(1, len), Math.max(1, n.strokeWeight))} stroke-width="${num(n.strokeWeight)}"${dash}/>`);
+      for (const h of shape.heads) out.push(`<path d="${poly(h)}Z"${this.paint(p, 'fill', Math.max(1, len), Math.max(1, n.strokeWeight))}/>`);
     }
     return out.join('');
   }

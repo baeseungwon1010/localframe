@@ -653,7 +653,7 @@ export class Editor {
       return false;
     };
     for (const n of doc.all()) {
-      if (n.type !== 'LINE' || (!n.startBind && !n.endBind)) continue;
+      if (n.type !== 'LINE' || (!n.startBind && !n.endBind && !n.elbow && !n.route)) continue;
       if (!changed.has(n.id) && !near(n.startBind?.nodeId) && !near(n.endBind?.nodeId) && !near(n.id)) continue;
       let line = n;
       const page = doc.pageOf(n.id);

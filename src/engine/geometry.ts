@@ -126,6 +126,11 @@ export function lineEnds(node: SceneNode): [Point, Point] {
   ];
 }
 
+/** A line's points in its own coordinates: the start, any elbow bends, the end. */
+export function linePoints(n: SceneNode): Point[] {
+  return [{ x: 0, y: 0 }, ...(n.elbow && n.route ? n.route : []), { x: n.width, y: 0 }];
+}
+
 /** Line geometry from two points in parent coordinates. */
 export function lineFromEnds(node: SceneNode, a: Point, b: Point): SceneNode {
   const len = Math.hypot(b.x - a.x, b.y - a.y);

@@ -2,7 +2,8 @@ import { type Effect, type GradientPaint, type ImagePaint, type Paint, type Scen
 import type { SceneDoc } from './doc.ts';
 import { getImage } from './images.ts';
 import { instanceDoc } from './instances.ts';
-import { type Rect, localMatrix, rectsIntersect } from './math.ts';
+import { type Point, type Rect, boundsOfPoints, localMatrix, rectsIntersect } from './math.ts';
+import { linePoints } from './geometry.ts';
 import { fontString, layoutText, lineOffset } from './text.ts';
 import { tracePath } from './vector.ts';
 
@@ -39,6 +40,13 @@ export function effectReach(n: SceneNode): number {
     if (e.type === 'LAYER_BLUR') r = Math.max(r, e.radius * 1.5);
   }
   return r;
+}
+
+/** A line's own-coordinate box with room for its stroke and arrowheads. */
+function lineBox(n: SceneNode): Rect {
+  const b = boundsOfPoints(linePoints(n));
+  const pad = n.strokeWeight * 4 + 10;
+  return { x: b.x - pad, y: b.y - pad, width: b.width + pad * 2, height: b.height + pad * 2 };
 }
 
 function culled(doc: SceneDoc, n: SceneNode, cull: Rect | undefined): boolean {
@@ -195,38 +203,54 @@ export function arrowSize(strokeWeight: number) {
   return { length: 6 + strokeWeight * 3, halfWidth: 3 + strokeWeight * 1.6 };
 }
 
+/**
+ * A line's stroke (trimmed where arrowheads sit) and its arrowhead triangles, in its own
+ * coordinates. Heads point along the first and last segments, so elbows get them right too.
+ */
+export function lineShape(n: SceneNode): { points: Point[]; heads: Point[][] } {
+  const pts = linePoints(n).map((p) => ({ ...p }));
+  const { length: al, halfWidth: aw } = arrowSize(n.strokeWeight);
+  const heads: Point[][] = [];
+  const head = (tip: Point, from: Point, end: 'start' | 'end') => {
+    const dx = tip.x - from.x;
+    const dy = tip.y - from.y;
+    const d = Math.hypot(dx, dy);
+    if (d === 0) return;
+    const ux = dx / d;
+    const uy = dy / d;
+    const trim = Math.min(al * 0.8, d / 2);
+    const back = { x: tip.x - ux * al, y: tip.y - uy * al };
+    heads.push([tip, { x: back.x + uy * aw, y: back.y - ux * aw }, { x: back.x - uy * aw, y: back.y + ux * aw }]);
+    const k = end === 'end' ? pts.length - 1 : 0;
+    pts[k] = { x: tip.x - ux * trim, y: tip.y - uy * trim };
+  };
+  const tipEnd = pts[pts.length - 1];
+  const tipStart = pts[0];
+  if (n.arrowEnd) head(tipEnd, pts[pts.length - 2], 'end');
+  if (n.arrowStart) head(tipStart, pts[1], 'start');
+  return { points: pts, heads };
+}
+
 function drawLine(ctx: Ctx, n: SceneNode) {
   const paints = n.strokes.filter((p) => p.visible);
   if (paints.length === 0 || n.strokeWeight <= 0) return;
-  const { length: al, halfWidth: aw } = arrowSize(n.strokeWeight);
+  const shape = lineShape(n);
   const len = n.width;
-  const trimStart = n.arrowStart ? Math.min(al * 0.8, len / 2) : 0;
-  const trimEnd = n.arrowEnd ? Math.min(al * 0.8, len / 2) : 0;
   ctx.save();
   ctx.lineWidth = n.strokeWeight;
   ctx.lineCap = 'butt';
+  ctx.lineJoin = 'round';
   ctx.setLineDash(n.strokeDash);
   for (const p of paints) {
     const style = paintStyle(ctx, p, Math.max(1, len), Math.max(1, n.strokeWeight));
     ctx.strokeStyle = style;
     ctx.fillStyle = style;
     ctx.beginPath();
-    ctx.moveTo(trimStart, 0);
-    ctx.lineTo(len - trimEnd, 0);
+    shape.points.forEach((q, i) => (i === 0 ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y)));
     ctx.stroke();
-    if (n.arrowEnd) {
+    for (const head of shape.heads) {
       ctx.beginPath();
-      ctx.moveTo(len, 0);
-      ctx.lineTo(len - al, -aw);
-      ctx.lineTo(len - al, aw);
-      ctx.closePath();
-      ctx.fill();
-    }
-    if (n.arrowStart) {
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(al, -aw);
-      ctx.lineTo(al, aw);
+      head.forEach((q, i) => (i === 0 ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y)));
       ctx.closePath();
       ctx.fill();
     }
@@ -558,7 +582,7 @@ function drawWithEffects(ctx: Ctx, doc: SceneDoc, n: SceneNode, effects: Effect[
   }
 
   // content as an image, so shadows follow what is drawn and blur applies to all of it
-  const box = n.type === 'LINE' ? { x: 0, y: -n.strokeWeight * 4 - 10, width: n.width, height: n.strokeWeight * 8 + 20 } : { x: 0, y: 0, width: n.width, height: n.height };
+  const box = n.type === 'LINE' ? lineBox(n) : { x: 0, y: 0, width: n.width, height: n.height };
   const layer = renderLayer(ctx, { x: box.x - reach, y: box.y - reach, width: box.width + reach * 2, height: box.height + reach * 2 }, (lc) => {
     drawBody(lc, doc, n, opts, root);
     if (hasShapeOutline(n)) for (const e of inner) innerShadow(lc, n, e);

@@ -323,6 +323,9 @@ export const SceneNodeSchema = z
     arrowEnd: z.boolean().optional(),
     startBind: BindingSchema.optional(),
     endBind: BindingSchema.optional(),
+    /** Connector drawn with right-angle bends; `route` holds the bends in the line's own coordinates. */
+    elbow: z.boolean().optional(),
+    route: z.array(z.object({ x: finite, y: finite }).strict()).max(8).optional(),
     text: TextStyleSchema.optional(),
     vector: VectorSchema.optional(),
     booleanOp: z.enum(BOOLEAN_OPS).optional(),
@@ -374,6 +377,7 @@ export const SceneNodeSchema = z
     if (!container && n.grids) issue('only frames have layout grids');
     if (n.type !== 'LINE' && (n.arrowStart !== undefined || n.arrowEnd !== undefined)) issue('only LINE has arrows');
     if (n.type !== 'LINE' && (n.startBind || n.endBind)) issue('only LINE has bindings');
+    if (n.type !== 'LINE' && (n.elbow !== undefined || n.route)) issue('only LINE has elbows');
     if ((n.type === 'INSTANCE') !== (n.componentId !== undefined)) issue('INSTANCE needs componentId');
     if (n.type !== 'INSTANCE' && n.overrides) issue('only INSTANCE has overrides');
     if (n.type !== 'INSTANCE' && n.propValues) issue('only INSTANCE has property values');

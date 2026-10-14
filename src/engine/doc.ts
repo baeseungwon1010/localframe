@@ -1,4 +1,5 @@
 import type { SceneNode } from '../../shared/schema.ts';
+import { linePoints } from './geometry.ts';
 import {
   type Mat,
   type Point,
@@ -206,7 +207,7 @@ export class SceneDoc {
     if (!n) return { x: 0, y: 0, width: 0, height: 0 };
     if (n.type === 'LINE') {
       const m = this.world(id);
-      return boundsOfPoints([apply(m, { x: 0, y: 0 }), apply(m, { x: n.width, y: 0 })]);
+      return boundsOfPoints(linePoints(n).map((p) => apply(m, p)));
     }
     return boundsOfPoints(this.worldCorners(id));
   }

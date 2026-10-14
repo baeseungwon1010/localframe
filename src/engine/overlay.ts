@@ -5,6 +5,7 @@ import { instanceDoc } from './instances.ts';
 import { drawChildren, imageRect } from './render.ts';
 import { getImage } from './images.ts';
 import { tracePath } from './vector.ts';
+import { linePoints } from './geometry.ts';
 
 export type OverlayColors = {
   accent: string;
@@ -29,10 +30,11 @@ function outlinePath(ctx: CanvasRenderingContext2D, n: SceneNode, m: Mat) {
     return;
   }
   if (n.type === 'LINE') {
-    const a = apply(m, { x: 0, y: 0 });
-    const b = apply(m, { x: n.width, y: 0 });
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
+    linePoints(n).forEach((p, i) => {
+      const q = apply(m, p);
+      if (i === 0) ctx.moveTo(q.x, q.y);
+      else ctx.lineTo(q.x, q.y);
+    });
     return;
   }
   if (n.type === 'ELLIPSE') {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Editor, type PointerInput } from '../../src/engine/editor.ts';
 import { instanceDoc } from '../../src/engine/instances.ts';
+import { linePoints } from '../../src/engine/geometry.ts';
+import { svgMarkup } from '../../src/engine/export.ts';
 import { buildPdf } from '../../src/engine/pdf.ts';
 import { buildZip, crc32, uniqueName } from '../../src/engine/zip.ts';
 import { SceneNodeSchema, sniffImage, validateTree } from '../../shared/schema.ts';
@@ -182,6 +184,49 @@ describe('connectors', () => {
     ed.setSelection([b]);
     ed.deleteSelection();
     expect(line().endBind).toBeUndefined();
+    valid(ed);
+  });
+});
+
+describe('elbow connectors', () => {
+  it('route with right angles between the bound sides, follow moves, and export as a polyline', () => {
+    const ed = setup();
+    const a = draw(ed, 'rect', [100, 100], [200, 200]);
+    const b = draw(ed, 'rect', [400, 300], [500, 400]);
+    const arrow = draw(ed, 'arrow', [150, 150], [450, 350]);
+    expect(ed.doc.get(arrow)!.startBind?.nodeId).toBe(a);
+    ed.updateNodes([arrow], (n) => ({ ...n, elbow: true }));
+    const worldPts = () => {
+      const l = ed.doc.get(arrow)!;
+      const m = ed.doc.world(arrow);
+      return linePoints(l).map((p) => ({ x: m[0] * p.x + m[2] * p.y + m[4], y: m[1] * p.x + m[3] * p.y + m[5] }));
+    };
+    const check = () => {
+      const pts = worldPts();
+      expect(pts.length).toBeGreaterThan(2);
+      for (let i = 1; i < pts.length; i++) {
+        const dx = Math.abs(pts[i].x - pts[i - 1].x);
+        const dy = Math.abs(pts[i].y - pts[i - 1].y);
+        expect(Math.min(dx, dy)).toBeLessThan(0.05);
+      }
+      return pts;
+    };
+    let pts = check();
+    expect(pts[0].x).toBeCloseTo(200, 0); // right side of a
+    expect(pts[pts.length - 1].x).toBeCloseTo(400, 0); // left side of b
+    expect(pts[pts.length - 1].y).toBeCloseTo(350, 0);
+
+    ed.setSelection([b]);
+    drag(ed, [450, 350], [450, 650]);
+    pts = check();
+    // now it comes into b's top side from above
+    expect(pts[pts.length - 1].y).toBeCloseTo(600, 0);
+    expect(pts[pts.length - 2].y).toBeLessThan(600);
+
+    const { svg } = svgMarkup(ed.doc, { ids: [arrow], background: null });
+    expect(svg).toMatch(/<path d="M[^"]*L[^"]*L[^"]*L/);
+    ed.updateNodes([arrow], (n) => ({ ...n, elbow: undefined }));
+    expect(ed.doc.get(arrow)!.route).toBeUndefined();
     valid(ed);
   });
 });

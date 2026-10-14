@@ -15,6 +15,7 @@ import {
   Underline,
   ArrowLeft,
   ArrowRight,
+  CornerDownRight,
   Component,
   Link2,
   Link2Off,
@@ -427,6 +428,16 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
               }}
             >
               <ArrowRight {...ICON} />
+            </IconButton>
+            <IconButton
+              label="Elbow line"
+              pressed={nodes.every((n) => n.elbow)}
+              onClick={() => {
+                const on = !nodes.every((n) => n.elbow);
+                update((n) => ({ ...n, elbow: on || undefined }));
+              }}
+            >
+              <CornerDownRight {...ICON} />
             </IconButton>
           </div>
         )}
