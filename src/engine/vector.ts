@@ -56,6 +56,50 @@ export function vectorBounds(v: Vector): Rect {
   return boundsOfPoints(pts);
 }
 
+/** Drops points that sit within `epsilon` of the line through their neighbours (Ramer–Douglas–Peucker). */
+export function simplifyPoints(pts: Point[], epsilon: number): Point[] {
+  if (pts.length < 3) return pts.slice();
+  const keep = new Uint8Array(pts.length);
+  keep[0] = keep[pts.length - 1] = 1;
+  const stack: [number, number][] = [[0, pts.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop()!;
+    const pa = pts[a];
+    const pb = pts[b];
+    const len = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+    let worst = -1;
+    let at = -1;
+    for (let i = a + 1; i < b; i++) {
+      const p = pts[i];
+      const d = len === 0 ? Math.hypot(p.x - pa.x, p.y - pa.y) : Math.abs((pb.x - pa.x) * (pa.y - p.y) - (pa.x - p.x) * (pb.y - pa.y)) / len;
+      if (d > worst) {
+        worst = d;
+        at = i;
+      }
+    }
+    if (worst > epsilon) {
+      keep[at] = 1;
+      stack.push([a, at], [at, b]);
+    }
+  }
+  return pts.filter((_, i) => keep[i]);
+}
+
+/** A smooth open path through the points (Catmull-Rom turned into curve handles). */
+export function smoothPath(pts: Point[]): VectorPoint[] {
+  const k = 1 / 6;
+  return pts.map((p, i) => {
+    const prev = pts[i - 1] ?? p;
+    const next = pts[i + 1] ?? p;
+    const dx = (next.x - prev.x) * k;
+    const dy = (next.y - prev.y) * k;
+    const out: VectorPoint = { x: round2(p.x), y: round2(p.y) };
+    if (i > 0) out.in = { x: round2(p.x - dx), y: round2(p.y - dy) };
+    if (i < pts.length - 1) out.out = { x: round2(p.x + dx), y: round2(p.y + dy) };
+    return out;
+  });
+}
+
 /** Points of a polygon or star filling a w × h box, first point at the top. */
 export function shapeVector(shape: { kind: 'polygon' | 'star'; count: number; ratio: number }, w: number, h: number): Vector {
   const n = shape.kind === 'star' ? shape.count * 2 : shape.count;

@@ -71,11 +71,11 @@ import {
 import { canHaveChildren, createNode, fitText, keyAt, keyOnTop, keysAbove, keysOnTop, newId, nextName, solid } from './nodes.ts';
 import { canvasMeasure } from './text.ts';
 import { type RunProps, adjustRuns, styleRange } from './textRuns.ts';
-import { fitVector, scaleVector, shapeVector } from './vector.ts';
+import { fitVector, scaleVector, shapeVector, simplifyPoints, smoothPath } from './vector.ts';
 
 export { fitText };
 
-export type Tool = 'move' | 'hand' | 'frame' | 'section' | 'rect' | 'ellipse' | 'polygon' | 'star' | 'line' | 'arrow' | 'text' | 'pen' | 'comment';
+export type Tool = 'move' | 'hand' | 'frame' | 'section' | 'pencil' | 'rect' | 'ellipse' | 'polygon' | 'star' | 'line' | 'arrow' | 'text' | 'pen' | 'comment';
 
 /** Where a new comment goes: on the page, and inside the layer under it if there is one. */
 export type CommentSpot = { x: number; y: number; nodeId?: string; offset?: Point };
@@ -143,6 +143,7 @@ type Interaction =
   | { kind: 'line-end'; id: string; end: 0 | 1; original: SceneNode }
   | { kind: 'create'; tool: Tool; start: Point; startScreen: Point; nodeId: string | null; parentId: string | null }
   | { kind: 'pen-handle' }
+  | { kind: 'pencil'; nodeId: string | null; parentId: string | null; points: Point[] }
   | { kind: 'vec-point'; id: string; index: number; part: 'point' | 'in' | 'out'; start: Point; original: Vector };
 
 /** A path being drawn with the pen tool (world coordinates until it is placed). */
@@ -2261,6 +2262,10 @@ export class Editor {
     }
     if (e.button !== 0) return;
     if (this.tool === 'pen') return this.penDown(p, e);
+    if (this.tool === 'pencil') {
+      this.interaction = { kind: 'pencil', nodeId: null, parentId: frameAt(this.doc, p), points: [p] };
+      return;
+    }
     if (this.tool === 'comment') {
       const id = hitDeepest(this.doc, p, this.hitTolerance());
       const spot: CommentSpot = { x: round2(p.x), y: round2(p.y) };
@@ -2411,6 +2416,22 @@ export class Editor {
     switch (it.kind) {
       case 'pen-handle':
         return this.penDrag(p, e);
+      case 'pencil': {
+        const last = it.points[it.points.length - 1];
+        if (Math.hypot(p.x - last.x, p.y - last.y) * this.viewport.zoom < 1.5) return;
+        it.points.push(p);
+        if (it.points.length > 20_000) return;
+        if (!it.nodeId) {
+          this.begin();
+          const node = createNode(this.doc, 'VECTOR', it.parentId, { x: 0, y: 0, width: 1, height: 1 });
+          this.put({ ...node, name: nextName(this.doc, 'Drawing') });
+          it.nodeId = node.id;
+          this.selection = [node.id];
+          this.emit('selection');
+        }
+        this.placeStroke(it.nodeId, it.parentId, it.points.map((q) => ({ x: q.x, y: q.y })));
+        return;
+      }
       case 'crop': {
         const n = this.doc.get(it.id);
         if (!n) return;
@@ -2536,6 +2557,16 @@ export class Editor {
     this.interaction = { kind: 'none' };
     if (it.kind === 'pen-handle') {
       this.emit('view');
+      return;
+    }
+    if (it.kind === 'pencil') {
+      // a click without a stroke draws nothing; a stroke is simplified and smoothed
+      if (it.nodeId) {
+        const tidy = smoothPath(simplifyPoints(it.points, 1.5 / this.viewport.zoom));
+        this.placeStroke(it.nodeId, it.parentId, tidy);
+        this.end();
+      }
+      this.emit('view', 'selection');
       return;
     }
     if (it.kind === 'crop') {
@@ -2692,6 +2723,20 @@ export class Editor {
       in: e.alt ? last.in : { x: last.x - dx, y: last.y - dy },
     };
     this.placePen(false);
+  }
+
+  /** Writes a freehand stroke (world points) into its vector layer. */
+  private placeStroke(nodeId: string, parentId: string | null, points: VectorPoint[]) {
+    const n = this.doc.get(nodeId);
+    if (!n) return;
+    const toParent = invert(parentId === null ? IDENTITY : this.doc.world(parentId));
+    const local = (q: Point) => {
+      const r = apply(toParent, q);
+      return { x: round2(r.x), y: round2(r.y) };
+    };
+    const pts = points.map((pt) => ({ ...local(pt), ...(pt.in ? { in: local(pt.in) } : {}), ...(pt.out ? { out: local(pt.out) } : {}) }));
+    this.put(fitVector({ ...n, x: 0, y: 0, rotation: 0, vector: { closed: false, points: pts } }));
+    this.emit('doc', 'view');
   }
 
   /** Writes the pen's world points into the vector layer. */
@@ -3578,6 +3623,7 @@ export class Editor {
       if (code === 'KeyL') return this.setTool('arrow'), true;
       if (code === 'KeyR') return this.toggleRulers(), true;
       if (code === 'KeyS') return this.setTool('section'), true;
+      if (code === 'KeyP') return this.setTool('pencil'), true;
       if (code === 'KeyA') {
         if (this.selection.length === 0) return false;
         this.addAutoLayout();
@@ -3676,7 +3722,7 @@ export class Editor {
   /** Cursor for the current state at a screen point. */
   cursorAt(sx: number, sy: number): string {
     const it = this.interaction.kind;
-    if (this.tool === 'pen' || this.tool === 'comment') return 'crosshair';
+    if (this.tool === 'pen' || this.tool === 'pencil' || this.tool === 'comment') return 'crosshair';
     if (this.editingVector) return this.vectorPartAt(sx, sy) ? 'move' : 'default';
     if (it === 'pan') return 'grabbing';
     if (this.spaceDown || this.tool === 'hand') return 'grab';

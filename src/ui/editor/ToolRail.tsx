@@ -1,4 +1,4 @@
-import { Circle, Frame, SquareDashed, Hand, ImagePlus, MessageCircle, Minus, Star, Triangle, MousePointer2, MoveUpRight, PenTool, Square, Type } from 'lucide-react';
+import { Circle, Frame, Pencil, SquareDashed, Hand, ImagePlus, MessageCircle, Minus, Star, Triangle, MousePointer2, MoveUpRight, PenTool, Square, Type } from 'lucide-react';
 import type { Editor, Tool } from '../../engine/editor.ts';
 import { IconButton, MOD, SHIFT } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
@@ -14,6 +14,7 @@ const TOOLS: { tool: Tool; label: string; key: string; Icon: typeof Square }[] =
   { tool: 'line', label: 'Line', key: 'L', Icon: Minus },
   { tool: 'arrow', label: 'Arrow', key: `${SHIFT}L`, Icon: MoveUpRight },
   { tool: 'pen', label: 'Pen', key: 'P', Icon: PenTool },
+  { tool: 'pencil', label: 'Pencil', key: `${SHIFT}P`, Icon: Pencil },
   { tool: 'text', label: 'Text', key: 'T', Icon: Type },
   { tool: 'hand', label: 'Hand', key: 'H', Icon: Hand },
   { tool: 'comment', label: 'Comment', key: 'C', Icon: MessageCircle },
