@@ -88,79 +88,98 @@ function paths(doc: SceneDoc, rootId: string): Map<string, string> {
   return out;
 }
 
-/**
- * One frame of a smart animate transition at t (0..1, already eased): the destination screen with
- * every layer that has a namesake in the source moved, sized, turned, faded and recoloured from
- * where it was; layers only in the destination fade in, layers only in the source fade out.
- * The result is a document holding just the tweened screen, with the destination's root id.
- */
+/** One frame of a smart animate transition at t (see `prepareTween`). */
 export function tweenScreens(from: SceneDoc, fromRoot: string, to: SceneDoc, toRoot: string, t: number): SceneDoc {
+  return prepareTween(from, fromRoot, to, toRoot)(t);
+}
+
+/**
+ * Smart animate between two screens. Matching layers by name path, finding what leaves and what the
+ * instances need is done once; the returned function makes one frame at t (0..1, already eased):
+ * the destination screen with every layer that has a namesake in the source moved, sized, turned,
+ * faded and recoloured from where it was; layers only in the destination fade in, layers only in
+ * the source fade out. The frame is a document with the destination's root id.
+ */
+export function prepareTween(from: SceneDoc, fromRoot: string, to: SceneDoc, toRoot: string): (t: number) => SceneDoc {
   const a = paths(from, fromRoot);
   const b = paths(to, toRoot);
-  const nodes: SceneNode[] = [];
-  const mix = (src: SceneNode, dst: SceneNode): SceneNode => {
-    const sf = firstSolid(src);
-    const df = firstSolid(dst);
-    const fills = sf && df ? dst.fills.map((p) => (p === df ? { ...df, color: lerpColor(sf.color, df.color, t), opacity: lerp(sf.opacity, df.opacity, t) } : p)) : dst.fills;
-    return {
-      ...dst,
-      x: lerp(src.x, dst.x, t),
-      y: lerp(src.y, dst.y, t),
-      width: Math.max(0.01, lerp(src.width, dst.width, t)),
-      height: dst.type === 'LINE' ? 0 : Math.max(0.01, lerp(src.height, dst.height, t)),
-      rotation: lerp(src.rotation, dst.rotation, t),
-      opacity: lerp(src.opacity, dst.opacity, t),
-      fills,
-      radii: src.radii && dst.radii ? (dst.radii.map((r, i) => lerp(src.radii![i], r, t)) as [number, number, number, number]) : dst.radii,
-    };
-  };
   const srcRoot = from.get(fromRoot)!;
   const dstRoot = to.get(toRoot)!;
-  // the screen itself stays where the destination is; only its look changes
-  nodes.push({ ...mix(srcRoot, dstRoot), x: dstRoot.x, y: dstRoot.y, width: dstRoot.width, height: dstRoot.height, rotation: 0, parentId: null, pageId: undefined });
+  const pairs: { dst: SceneNode; src: SceneNode | null }[] = [];
   for (const [key, id] of b) {
     const dst = to.get(id)!;
     const srcId = a.get(key);
     const src = srcId ? from.get(srcId) : undefined;
-    nodes.push(src && src.type === dst.type ? mix(src, dst) : { ...dst, opacity: dst.opacity * t });
+    pairs.push({ dst, src: src && src.type === dst.type ? src : null });
   }
-  // layers that leave: under their namesake parent if it stays, else under the screen
+  // layers that leave: under their namesake parent if it stays, else under the screen; their
+  // children come along unchanged (ids get a prefix so they can't meet the destination's)
+  const leaving: SceneNode[] = [];
+  const carried: SceneNode[] = [];
   const parentKey = (key: string) => key.slice(0, key.lastIndexOf('/'));
+  const LEAVE = 'leave_';
   for (const [key, id] of a) {
     if (b.has(key)) continue;
-    const src = from.get(id)!;
     const pk = parentKey(key);
     if (pk && !b.has(pk)) continue; // its parent leaves too and carries it
-    const parent = pk ? b.get(pk)! : toRoot;
-    nodes.push({ ...src, id: `leave~${id}`, parentId: parent, opacity: src.opacity * (1 - t), order: src.order });
-  }
-  // the children of leaving layers come along with new ids
-  const leaving = new Set(nodes.filter((n) => n.id.startsWith('leave~')).map((n) => n.id.slice(6)));
-  for (const id of leaving) {
+    const src = from.get(id)!;
+    leaving.push({ ...src, id: LEAVE + id, parentId: pk ? b.get(pk)! : toRoot });
     for (const d of from.descendants(id)) {
       const n = from.get(d)!;
-      if (leaving.has(d)) continue;
-      nodes.push({ ...n, id: `leave~${d}`, parentId: `leave~${n.parentId}` });
+      carried.push({ ...n, id: LEAVE + d, parentId: LEAVE + n.parentId });
     }
   }
-  // components the screen's instances need
-  const out = new SceneDoc();
-  const need = new Set<string>();
-  for (const n of nodes) if (n.type === 'INSTANCE' && n.componentId) need.add(n.componentId);
+  // every component the frame can draw: instances' components, swap targets, and what those use
   const extra: SceneNode[] = [];
-  const have = new Set(nodes.map((n) => n.id));
-  for (const cid of need) {
-    for (const d of [cid, ...to.ancestors(cid), ...to.descendants(cid)]) {
+  const have = new Set<string>([toRoot, ...pairs.map((p) => p.dst.id), ...leaving.map((n) => n.id), ...carried.map((n) => n.id)]);
+  const queue: string[] = [];
+  const want = (n: SceneNode) => {
+    if (n.type === 'INSTANCE' && n.componentId) queue.push(n.componentId);
+    for (const v of Object.values(n.propValues ?? {})) if (typeof v === 'string') queue.push(v);
+    for (const p of n.componentProps ?? []) if (p.type === 'INSTANCE_SWAP') queue.push(p.defaultValue);
+  };
+  [dstRoot, ...pairs.map((p) => p.dst), ...leaving, ...carried].forEach(want);
+  const doneComps = new Set<string>();
+  while (queue.length && extra.length < 200_000) {
+    const cid = queue.pop()!;
+    const src = to.get(cid) ? to : from.get(cid) ? from : null;
+    if (!src || doneComps.has(cid) || src.get(cid)!.type !== 'COMPONENT') continue;
+    doneComps.add(cid);
+    for (const d of [...src.ancestors(cid), cid, ...src.descendants(cid)]) {
       if (have.has(d)) continue;
-      const n = to.get(d);
-      if (n) {
-        extra.push(n);
-        have.add(d);
-      }
+      const n = src.get(d)!;
+      extra.push(n);
+      have.add(d);
+      want(n);
     }
   }
-  out.load([...nodes, ...extra], to.defaultPage);
-  return out;
+  return (t: number) => {
+    const mix = (s: SceneNode, d: SceneNode): SceneNode => {
+      const sf = firstSolid(s);
+      const df = firstSolid(d);
+      const fills = sf && df ? d.fills.map((p) => (p === df ? { ...df, color: lerpColor(sf.color, df.color, t), opacity: lerp(sf.opacity, df.opacity, t) } : p)) : d.fills;
+      return {
+        ...d,
+        x: lerp(s.x, d.x, t),
+        y: lerp(s.y, d.y, t),
+        width: Math.max(0.01, lerp(s.width, d.width, t)),
+        height: d.type === 'LINE' ? 0 : Math.max(0.01, lerp(s.height, d.height, t)),
+        rotation: lerp(s.rotation, d.rotation, t),
+        opacity: lerp(s.opacity, d.opacity, t),
+        fills,
+        radii: s.radii && d.radii ? (d.radii.map((r, i) => lerp(s.radii![i], r, t)) as [number, number, number, number]) : d.radii,
+      };
+    };
+    // the screen itself stays where the destination is; only its look changes
+    const nodes: SceneNode[] = [
+      { ...mix(srcRoot, dstRoot), x: dstRoot.x, y: dstRoot.y, width: dstRoot.width, height: dstRoot.height, rotation: 0, parentId: null, pageId: undefined },
+    ];
+    for (const p of pairs) nodes.push(p.src ? mix(p.src, p.dst) : t === 1 ? p.dst : { ...p.dst, opacity: p.dst.opacity * t });
+    for (const n of leaving) nodes.push({ ...n, opacity: n.opacity * (1 - t) });
+    const out = new SceneDoc();
+    out.load([...nodes, ...carried, ...extra], to.defaultPage);
+    return out;
+  };
 }
 
 export function ease(kind: Reaction['easing'], t: number): number {

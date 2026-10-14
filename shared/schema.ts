@@ -765,6 +765,18 @@ export function validateTree(nodes: Iterable<SceneNode>, pages?: Page[]): string
     else edges.set(a, [b]);
   };
   const instanceTargets: string[] = [];
+  // instance swap: a linked nested instance can show the property's default or any value an instance picks
+  const swapTargets = new Map<string, Set<string>>();
+  const addSwap = (propId: string, value: unknown) => {
+    if (typeof value !== 'string' || byId.get(value)?.type !== 'COMPONENT') return;
+    let set = swapTargets.get(propId);
+    if (!set) swapTargets.set(propId, (set = new Set()));
+    set.add(value);
+  };
+  for (const n of byId.values()) {
+    for (const p of n.componentProps ?? []) if (p.type === 'INSTANCE_SWAP') addSwap(p.id, p.defaultValue);
+    for (const [propId, v] of Object.entries(n.propValues ?? {})) addSwap(propId, v);
+  }
   for (const n of byId.values()) {
     const own = owner.get(n.id) ?? null;
     if (own) direct.set(own, (direct.get(own) ?? 0) + 1);
@@ -774,6 +786,7 @@ export function validateTree(nodes: Iterable<SceneNode>, pages?: Page[]): string
       if (target && target.type !== 'COMPONENT') return `instance ${n.id} points at a ${target.type.toLowerCase()}`;
       if (own) addEdge(own, n.componentId);
       instanceTargets.push(n.componentId);
+      if (own && n.propRefs?.swap) for (const t of swapTargets.get(n.propRefs.swap) ?? []) addEdge(own, t);
     }
   }
   // cycles (iterative DFS)

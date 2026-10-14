@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { FileMeta, SceneNode } from '../../../shared/schema.ts';
 import { api } from '../../api.ts';
 import { SceneDoc } from '../../engine/doc.ts';
@@ -57,6 +57,16 @@ export function LibraryPanel({ editor }: { editor: Editor }) {
     };
   }, [lib]);
 
+  // versions of the library's components: worked out once per library file, not on every edit here
+  const versions = useMemo(() => {
+    const out = new Map<string, string>();
+    if (source) for (const n of source.doc.all()) if (n.type === 'COMPONENT') out.set(n.id, Editor.libraryVersion(source.doc, n.id));
+    return out;
+  }, [source]);
+  // this file's copies of them, in one pass
+  const copies = new Map<string, string>();
+  for (const n of editor.doc.all()) if (n.libraryRef?.fileId === lib) copies.set(n.libraryRef.componentId, n.libraryRef.version);
+
   if (!fileId || !files || files.length === 0) return null;
 
   const pick = (id: string) => {
@@ -71,9 +81,9 @@ export function LibraryPanel({ editor }: { editor: Editor }) {
 
   const comps = source ? [...source.doc.all()].filter((n) => n.type === 'COMPONENT').sort((a, b) => a.name.localeCompare(b.name)) : [];
   const status = (c: SceneNode) => {
-    const copy = editor.libraryCopy(lib, c.id);
-    if (!copy) return 'new';
-    return copy.libraryRef?.version === Editor.libraryVersion(source!.doc, c.id) ? 'current' : 'outdated';
+    const version = copies.get(c.id);
+    if (version === undefined) return 'new';
+    return version === versions.get(c.id) ? 'current' : 'outdated';
   };
   const outdated = comps.filter((c) => status(c) === 'outdated');
 
@@ -94,7 +104,8 @@ export function LibraryPanel({ editor }: { editor: Editor }) {
     }
     if (images.size) {
       try {
-        await api.copyImages(fileId, source.fileId, [...images].slice(0, 500));
+        const list = [...images];
+        for (let i = 0; i < list.length; i += 500) await api.copyImages(fileId, source.fileId, list.slice(i, i + 500));
         retryFailedImages();
         editor.emit('view');
       } catch {

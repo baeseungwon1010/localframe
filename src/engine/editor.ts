@@ -171,6 +171,14 @@ const TOOL_TYPE: Partial<Record<Tool, NodeType>> = {
 };
 
 const CLIP_PREFIX = 'localframe-clipboard:';
+const PENCIL_MAX_POINTS = 4000;
+
+/** 32-bit FNV-1a as 8 hex digits. */
+function fnv(text: string, seed: number): string {
+  let h = seed >>> 0;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
 const COPIED_FROM_KEY = 'localframe.copiedFrom';
 
 /** Copied from in this tab (also kept when storage is unavailable). */
@@ -1022,78 +1030,128 @@ export class Editor {
   }
 
   /**
-   * Copies a component from another file (and the components its instances use) onto this file's
-   * "Library components" page, or brings an existing copy up to date. Instances of the copy keep
-   * working. Returns the local component and the images it needs from the library file.
+   * Copies a component from another file (and the components its instances and swap properties
+   * use) onto this file's "Library components" page, or brings an existing copy up to date. Layers
+   * inside a copy keep the same ids from one update to the next, so instances keep their overrides.
+   * References to the library file's own screens, styles and variables are dropped. Nothing changes
+   * unless the result passes the same checks as a saved file. Returns the local component and the
+   * images it needs from the library file.
    */
   importLibraryComponent(source: { fileId: string; nodes: SceneNode[] }, componentId: string): { id: string; images: string[] } | null {
     const src = new SceneDoc();
     src.load(source.nodes);
     if (src.get(componentId)?.type !== 'COMPONENT') return null;
-    // the component first, then what it depends on; copied dependencies first
+    const isComp = (id: unknown): id is string => typeof id === 'string' && src.get(id)?.type === 'COMPONENT';
+    // what a component needs: components of its instances, and of its swap properties' values
     const order: string[] = [];
     const seen = new Set<string>();
     const visit = (cid: string, depth: number) => {
-      if (seen.has(cid) || depth > 50 || src.get(cid)?.type !== 'COMPONENT') return;
+      if (seen.has(cid) || depth > 50 || !isComp(cid)) return;
       seen.add(cid);
-      for (const d of src.descendants(cid)) {
-        const n = src.get(d)!;
+      for (const id of [cid, ...src.descendants(cid)]) {
+        const n = src.get(id)!;
         if (n.type === 'INSTANCE' && n.componentId) visit(n.componentId, depth + 1);
+        for (const v of Object.values(n.propValues ?? {})) if (isComp(v)) visit(v, depth + 1);
+        for (const p of n.componentProps ?? []) if (p.type === 'INSTANCE_SWAP') visit(p.defaultValue, depth + 1);
       }
       order.push(cid);
     };
     visit(componentId, 0);
     const total = order.reduce((sum, cid) => sum + 1 + src.descendants(cid).length, 0);
     if (this.doc.size + total > MAX_NODES_PER_FILE) return null;
+
+    // local ids: an existing copy keeps its own; layers inside derive theirs from the copy and the source
     const map = new Map<string, string>();
+    for (const cid of order) map.set(cid, this.libraryCopy(source.fileId, cid)?.id ?? newId());
+    const inner = (localRoot: string, sourceId: string) => `l${fnv(`${localRoot}:${sourceId}`, 0x811c9dc5)}${fnv(`${sourceId}:${localRoot}`, 0x01000193)}`;
+    const localOf = (cid: string, sourceId: string) => (sourceId === cid ? map.get(cid)! : inner(map.get(cid)!, sourceId));
+
+    let page = this.pages.find((p) => p.name === 'Library components');
+    const newPage = !page;
+    if (!page) {
+      if (this.pages.length >= MAX_PAGES) return null;
+      page = { id: newId(), name: 'Library components', background: this.background };
+    }
+    let bottom = Math.max(0, ...this.doc.pageChildren(page.id).map((id) => this.doc.worldBounds(id)).map((b) => b.y + b.height + 40));
+    const out: SceneNode[] = [];
+    const drops = new Set<string>();
     const images = new Set<string>();
-    this.transact(() => {
-      let page = this.pages.find((p) => p.name === 'Library components');
-      if (!page) {
-        if (this.pages.length >= MAX_PAGES) return;
-        page = { id: newId(), name: 'Library components', background: this.background };
-        this.setPages([...this.pages, page]);
-      }
-      let bottom = Math.max(0, ...this.doc.pageChildren(page.id).map((id) => this.doc.worldBounds(id)).map((b) => b.y + b.height + 40));
-      for (const cid of order) {
-        const version = Editor.libraryVersion(src, cid);
-        const existing = this.libraryCopy(source.fileId, cid);
-        if (existing && existing.libraryRef?.version === version) {
-          map.set(cid, existing.id);
-          continue;
+    for (const cid of order) {
+      const version = Editor.libraryVersion(src, cid);
+      const existing = this.libraryCopy(source.fileId, cid);
+      if (existing && existing.libraryRef?.version === version) continue;
+      if (existing) for (const d of this.doc.descendants(existing.id)) drops.add(d);
+      const root = src.get(cid)!;
+      for (const sid of [cid, ...src.descendants(cid)]) {
+        const n = src.get(sid)!;
+        for (const p of n.fills) if (p.type === 'IMAGE') images.add(p.imageId);
+        // the library file's styles, variables and screens don't exist here
+        const {
+          fillStyleId: _f,
+          strokeStyleId: _s,
+          textStyleId: _t,
+          effectStyleId: _e,
+          bindings: _b,
+          modes: _m,
+          libraryRef: _l,
+          variant: _v,
+          ...rest
+        } = n;
+        let copy: SceneNode = { ...rest, id: localOf(cid, sid), parentId: sid === cid ? null : localOf(cid, n.parentId!) };
+        if (sid !== cid && n.variant) copy.variant = n.variant;
+        if (copy.type === 'INSTANCE' && copy.componentId && map.has(copy.componentId)) {
+          const target = copy.componentId;
+          copy.componentId = map.get(target)!;
+          // overrides are keyed by layers of the instance's component: those have local ids now
+          if (copy.overrides)
+            copy.overrides = Object.fromEntries(Object.entries(copy.overrides).map(([k, o]) => [localOf(target, k), o]));
         }
-        const root = src.get(cid)!;
-        const localId = existing?.id ?? newId();
-        map.set(cid, localId);
-        const ids = new Map<string, string>([[cid, localId]]);
-        for (const d of src.descendants(cid)) ids.set(d, newId());
-        if (existing) for (const d of this.doc.descendants(existing.id)) this.drop(d);
-        const { variant: _v, ...rootRest } = root;
-        this.put({
-          ...rootRest,
-          id: localId,
-          parentId: null,
-          pageId: page.id,
-          order: existing?.order ?? keyOnTop(this.doc, null),
-          x: existing?.x ?? 0,
-          y: existing?.y ?? bottom,
-          libraryRef: { fileId: source.fileId, componentId: cid, version },
-        });
-        if (!existing) bottom += root.height + 40;
-        for (const d of src.descendants(cid)) {
-          const n = src.get(d)!;
-          let copy: SceneNode = { ...n, id: ids.get(d)!, parentId: ids.get(n.parentId!)! };
-          if (copy.type === 'INSTANCE' && copy.componentId) copy = { ...copy, componentId: map.get(copy.componentId) ?? copy.componentId };
-          if (copy.startBind) copy = { ...copy, startBind: ids.has(copy.startBind.nodeId) ? { ...copy.startBind, nodeId: ids.get(copy.startBind.nodeId)! } : undefined };
-          if (copy.endBind) copy = { ...copy, endBind: ids.has(copy.endBind.nodeId) ? { ...copy.endBind, nodeId: ids.get(copy.endBind.nodeId)! } : undefined };
-          if (copy.libraryRef) copy = { ...copy, libraryRef: undefined };
-          this.put(copy);
+        if (copy.propValues)
+          copy.propValues = Object.fromEntries(
+            Object.entries(copy.propValues)
+              .filter(([, v]) => !isComp(v) || map.has(v))
+              .map(([k, v]) => [k, isComp(v) ? map.get(v)! : v]),
+          );
+        if (copy.componentProps)
+          copy.componentProps = copy.componentProps.flatMap((p): ComponentProp[] =>
+            p.type !== 'INSTANCE_SWAP' ? [p] : map.has(p.defaultValue) ? [{ ...p, defaultValue: map.get(p.defaultValue)! }] : [],
+          );
+        if (copy.reactions) {
+          const kept = copy.reactions
+            .filter((r) => r.action !== 'set-mode' && (!r.destinationId || src.isAncestor(cid, r.destinationId) || r.destinationId === cid))
+            .map((r) => (r.destinationId ? { ...r, destinationId: localOf(cid, r.destinationId) } : r));
+          copy.reactions = kept.length ? kept : undefined;
         }
-        for (const id of [cid, ...src.descendants(cid)]) for (const p of src.get(id)!.fills) if (p.type === 'IMAGE') images.add(p.imageId);
+        const bind = (b: SceneNode['startBind']) => (b && (src.isAncestor(cid, b.nodeId) || b.nodeId === cid) ? { ...b, nodeId: localOf(cid, b.nodeId) } : undefined);
+        if (copy.startBind) copy.startBind = bind(copy.startBind);
+        if (copy.endBind) copy.endBind = bind(copy.endBind);
+        if (sid === cid) {
+          copy = {
+            ...copy,
+            pageId: page.id,
+            order: existing?.order ?? keyOnTop(this.doc, null),
+            x: existing?.x ?? 0,
+            y: existing?.y ?? bottom,
+            libraryRef: { fileId: source.fileId, componentId: cid, version },
+          };
+          if (!existing) bottom += root.height + 40;
+        }
+        out.push(copy);
       }
-    });
-    const id = map.get(componentId);
-    return id ? { id, images: [...images] } : null;
+    }
+    // check the whole file as it would be before changing anything
+    const replaced = new Set(out.map((n) => n.id));
+    const pages = newPage ? [...this.pages, page] : this.pages;
+    const after = [...[...this.doc.all()].filter((n) => !drops.has(n.id) && !replaced.has(n.id)), ...out];
+    if (validateTree(after, pages)) return null;
+    if (out.length) {
+      this.transact(() => {
+        if (newPage) this.setPages(pages);
+        for (const d of drops) if (!replaced.has(d)) this.drop(d);
+        for (const n of out) this.put(n);
+      });
+    }
+    return { id: map.get(componentId)!, images: [...images] };
   }
 
   toggleOutlineMode() {
@@ -1470,8 +1528,12 @@ export class Editor {
         if (p.id !== propId) return p;
         const name = patch.name !== undefined ? patch.name.trim().slice(0, 100) || p.name : p.name;
         if (p.type === 'TEXT') return { ...p, name, defaultValue: typeof patch.defaultValue === 'string' ? patch.defaultValue : p.defaultValue };
-        if (p.type === 'INSTANCE_SWAP')
-          return { ...p, name, defaultValue: typeof patch.defaultValue === 'string' && this.doc.get(patch.defaultValue)?.type === 'COMPONENT' ? patch.defaultValue : p.defaultValue };
+        if (p.type === 'INSTANCE_SWAP') {
+          // a component can't show itself (or its own set's variants) inside itself
+          const target = typeof patch.defaultValue === 'string' ? this.doc.get(patch.defaultValue) : undefined;
+          const ok = target?.type === 'COMPONENT' && target.id !== ownerId && target.parentId !== ownerId && !this.doc.isAncestor(target.id, ownerId);
+          return { ...p, name, defaultValue: ok ? target.id : p.defaultValue };
+        }
         return { ...p, name, defaultValue: typeof patch.defaultValue === 'boolean' ? patch.defaultValue : p.defaultValue };
       }),
     }));
@@ -1511,7 +1573,12 @@ export class Editor {
   }
 
   setPropValue(instanceId: string, propId: string, value: string | boolean) {
-    this.updateNodes([instanceId], (n) => ({ ...n, propValues: { ...(n.propValues ?? {}), [propId]: value } }));
+    const n = this.doc.get(instanceId);
+    if (!n) return;
+    const next = { ...n, propValues: { ...(n.propValues ?? {}), [propId]: value } };
+    // a swap that would make a component show itself is refused
+    if (typeof value === 'string' && this.doc.get(value)?.type === 'COMPONENT' && validateTree([...this.doc.all()].map((x) => (x.id === instanceId ? next : x)), this.pages)) return;
+    this.updateNodes([instanceId], () => next);
   }
 
   /** The component (or set) whose properties a layer inside it can link to. */
@@ -2609,8 +2676,9 @@ export class Editor {
       case 'pencil': {
         const last = it.points[it.points.length - 1];
         if (Math.hypot(p.x - last.x, p.y - last.y) * this.viewport.zoom < 1.5) return;
+        // a stroke stops growing well under what a vector can hold (10,000 points)
+        if (it.points.length >= PENCIL_MAX_POINTS) return;
         it.points.push(p);
-        if (it.points.length > 20_000) return;
         if (!it.nodeId) {
           this.begin();
           const node = createNode(this.doc, 'VECTOR', it.parentId, { x: 0, y: 0, width: 1, height: 1 });
@@ -2619,7 +2687,9 @@ export class Editor {
           this.selection = [node.id];
           this.emit('selection');
         }
-        this.placeStroke(it.nodeId, it.parentId, it.points.map((q) => ({ x: q.x, y: q.y })));
+        // the live preview redraws less often as the stroke grows (the final path is placed on release)
+        const every = Math.max(1, Math.floor(it.points.length / 150));
+        if (it.points.length % every === 0) this.placeStroke(it.nodeId, it.parentId, it.points.map((q) => ({ x: q.x, y: q.y })));
         return;
       }
       case 'crop': {

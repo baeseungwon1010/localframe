@@ -6,7 +6,7 @@ import type { Editor } from '../../engine/editor.ts';
 import { exportBounds, renderCanvas } from '../../engine/export.ts';
 import { ensureImages } from '../../engine/images.ts';
 import { type Rect, apply, unionRects } from '../../engine/math.ts';
-import { ease, isScreen, presentationDoc, reactionsOf, setPresentationMode, swapVariant, tweenScreens } from '../../engine/prototype.ts';
+import { ease, isScreen, prepareTween, presentationDoc, reactionsOf, setPresentationMode, swapVariant } from '../../engine/prototype.ts';
 import { drawNode, imagesUsed } from '../../engine/render.ts';
 import { layoutText, lineOffset } from '../../engine/text.ts';
 import { IconButton } from '../components.tsx';
@@ -164,11 +164,13 @@ export function Presenter({ editor, startId, onClose }: { editor: Editor; startI
       c.hidden = false;
       const ctx = c.getContext('2d')!;
       const target = doc.get(to.id)!;
+      // matching and gathering happen once; each frame only blends numbers
+      const frameAt = prepareTween(doc, fromId, doc, to.id);
       const start = performance.now();
       await new Promise<void>((done) => {
         const frame = (now: number) => {
           const t = Math.min(1, (now - start) / Math.max(1, how.duration));
-          const tween = tweenScreens(doc, fromId, doc, to.id, ease(how.easing, t));
+          const tween = frameAt(ease(how.easing, t));
           ctx.setTransform(1, 0, 0, 1, 0, 0);
           ctx.clearRect(0, 0, c.width, c.height);
           ctx.setTransform(scale, 0, 0, scale, -to.view.x * scale, -to.view.y * scale);
