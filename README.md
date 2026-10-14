@@ -9,47 +9,60 @@ requests.
 
 - **Files**: create, rename, delete, import and export. Every change autosaves to a local SQLite file, and
   each file shows a thumbnail in the file list.
+- **Version history**: name a version of the file at any point. The file is also saved there on its own
+  when you start editing again after ten minutes away. Restoring a version keeps the current state as an
+  autosave, so a restore can be undone.
 - **Pages**: add, rename, duplicate, reorder and delete pages. Each page has its own background, and layers
   can be moved to another page.
 - **Canvas**: infinite canvas with pan and zoom (Space-drag, scroll, Ctrl/Cmd+scroll or pinch), zoom to fit or
-  to the selection, and light and dark themes.
+  to the selection, rulers with draggable guides, and light and dark themes.
 - **Draw**:
-  - frames, including nested frames with clip content
-  - rectangles with per-corner radius
-  - ellipses
-  - lines and arrows
-  - text with auto width, auto height or a fixed size
-  Shift keeps proportions or 45° angles, and Alt draws from the centre. Shapes drawn inside a frame
-  become its children.
+  - frames (with presets for phones, tablets, desktops and paper), groups and nested frames with clip content
+  - rectangles with per-corner radius, ellipses, lines and arrows
+  - vector paths with the pen tool (P), edited point by point
+  - text with auto width, auto height or a fixed size, and bold, italic, underline or a different font,
+    size or colour on part of the text
+  Shift keeps proportions or 45° angles, and Alt draws from the centre.
 - **Edit**:
-  - Select, Shift-select and marquee. Double-click goes deeper into frames, and Ctrl/Cmd-click selects
-    the deepest layer.
+  - Select, Shift-select and marquee. Double-click goes deeper, and Ctrl/Cmd-click selects the deepest layer.
   - Move with smart guides and snapping, nudge with the arrow keys, and Alt-drag to duplicate.
-  - Resize with 8 handles. Rotate from just outside a corner. Frame children follow their constraints.
-  - Drag layers into or out of frames.
-  - Undo and redo, copy, cut, paste (also between tabs), duplicate, delete and z-order.
-  - Ctrl/Cmd+G wraps the selection in a frame, and Ctrl/Cmd+Shift+G removes the frame.
-  - Align and distribute.
+  - Resize with 8 handles and snapping, rotate one or several layers, and drag layers into or out of frames.
+  - Undo and redo, copy, cut, paste (also between tabs and between files), duplicate, delete and z-order.
+  - Group, wrap in a frame, ungroup, align, distribute, and rename many layers at once.
+  - Boolean operations (union, subtract, intersect, exclude) and masks.
 - **Images**: place PNG, JPEG, WebP or GIF images with the picker (Ctrl/Cmd+Shift+K), by dropping files on
-  the canvas, or by pasting. An image is an image fill on a rectangle, set to fill, fit or stretch.
-- **Components**: turn a frame into a component (Ctrl/Cmd+Alt+K) and place instances from the Assets tab.
-  Instances follow the main component. Their text can be changed per instance, and they can be
-  detached (Ctrl/Cmd+Alt+B).
-- **Auto layout**: Shift+A stacks a frame's content vertically or horizontally, with gap, padding,
-  alignment, and hug or fixed size. Children can fill the container or ignore the layout. Dragging a
-  child reorders it.
+  the canvas, or by pasting. An image fills its shape: fill, fit, stretch, or crop (double-click the
+  image to move it inside its shape, and set the zoom in the panel).
+- **Components**: components, instances, variants (Ctrl/Cmd+Alt+Shift+K combines components into a set),
+  text and boolean component properties, and overrides. Double-click into an instance to
+  change one of its layers. Instances can be detached (Ctrl/Cmd+Alt+B).
+- **Styles and variables**: colour, text and effect styles shared across the file; colour and number
+  variables in collections with modes (for example light and dark), bound to fills, strokes, radius,
+  spacing and opacity.
+- **Auto layout and layout grids**: Shift+A stacks a frame's content vertically or horizontally, with gap,
+  padding, alignment, and hug, fill or fixed sizes. Frames can show column, row and square grids.
+- **Paint and effects**: solid colours, linear and radial gradients and images; drop and inner shadows,
+  layer blur and background blur.
 - **Connectors**: a line or arrow drawn from one shape to another attaches to both and follows them when
-  they move. Dropping an end on a side's midpoint pins it to that side; Ctrl/Cmd while drawing leaves the
-  ends loose.
-- **Properties**: position, rotation, size with aspect lock, and corner radius. Also constraints, opacity,
-  fills and strokes (colour, opacity, weight, inside/center/outside, dashed), arrow heads, and text
-  (font, weight, size, line height, letter spacing, alignment, resizing). Fields accept maths, like `120/2`.
+  they move. Lines can be straight or elbow (right-angled). Dropping an end on a side's midpoint pins it to
+  that side; Ctrl/Cmd while drawing leaves the ends loose.
+- **Prototyping**: in the Prototype tab, make a layer open another frame on click, on mouse enter or after a
+  delay, go back, or open and close an overlay, with instant, dissolve, move in, push or slide in
+  animations. Present (Ctrl/Cmd+Alt+Enter) plays the page full screen; clicking outside a link shows where
+  the links are.
+- **Comments**: the comment tool (C) pins a comment anywhere, or to a layer so it moves with it. Threads have
+  replies and can be resolved, edited, moved and deleted. Comments stay on your machine.
+- **Properties**: position, rotation, size with aspect lock, corner radius, constraints, opacity, fills and
+  strokes (colour, opacity, weight, inside/center/outside, dashed), arrow heads and text settings. Fields
+  accept maths, like `120/2`.
 - **Layers panel**: tree view with rename, hide, lock, drag to reorder or reparent, and keyboard navigation.
-- **Export a selection or page**: PNG, JPG, WebP (1x to 4x), SVG or PDF.
+- **Export a selection or page**: PNG, JPG, WebP (1x to 4x), SVG, PDF, or a vector PDF through the print
+  dialog.
 - **Export a whole file** (Ctrl/Cmd+Shift+E, or the file list menu):
   - as a `.localframe.json` that keeps everything editable, images included;
-  - as a PDF with one page per frame;
-  - as PNG, JPG, WebP or SVG files, one per frame. Several files come in a ZIP, with a folder per page.
+  - as a PDF with one page per frame, as images (PNG, JPG or WebP) or as a vector PDF through the print
+    dialog;
+  - as SVG files, one per frame. Several files come in a ZIP, with a folder per page.
   - SVG exports embed their images and the font subsets they use, so they look the same anywhere.
 - **Fonts**: Inter, IBM Plex Sans, IBM Plex Serif and Space Grotesk, with Noto Sans KR for Korean.
   All fonts are bundled.
@@ -86,24 +99,30 @@ elsewhere and `LOCALFRAME_API_PORT` to change the port. Back up a file with **Ex
 
 | Action | Keys |
 | --- | --- |
-| Move, Frame, Rectangle, Ellipse, Line, Text, Hand | V, F, R, O, L, T, H |
+| Move, Frame, Rectangle, Ellipse, Line, Pen, Text, Hand, Comment | V, F, R, O, L, P, T, H, C |
 | Arrow | Shift+L |
 | Pan | Space+drag, or scroll |
 | Zoom | Ctrl/Cmd+scroll, Ctrl/Cmd + / −, Shift+0 (100%) |
 | Zoom to fit / to selection | Shift+1 / Shift+2 |
+| Rulers / layout grids | Shift+R / Ctrl/Cmd+Shift+4 |
 | Undo / Redo | Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z |
 | Duplicate | Ctrl/Cmd+D, or Alt+drag |
-| Wrap in frame / Remove frame | Ctrl/Cmd+G / Ctrl/Cmd+Shift+G |
-| Create component / Detach instance | Ctrl/Cmd+Alt+K / Ctrl/Cmd+Alt+B |
+| Group / Wrap in frame / Ungroup | Ctrl/Cmd+G / Ctrl/Cmd+Alt+G / Ctrl/Cmd+Shift+G |
+| Create component / Combine as variants | Ctrl/Cmd+Alt+K / Ctrl/Cmd+Alt+Shift+K |
+| Detach instance | Ctrl/Cmd+Alt+B |
+| Use as mask | Ctrl/Cmd+Alt+M |
 | Add auto layout | Shift+A |
+| Rename selected layers | Ctrl/Cmd+R |
 | Place image | Ctrl/Cmd+Shift+K, drop, or paste |
+| Crop image | Double-click an image. Enter or Esc finishes |
+| Present | Ctrl/Cmd+Alt+Enter. In the presentation: arrow keys, R to restart, Esc to leave |
 | Export file | Ctrl/Cmd+Shift+E |
 | Bring forward / Send backward | Ctrl/Cmd+] / Ctrl/Cmd+[ (add Shift for front or back) |
 | Hide / Lock | Ctrl/Cmd+Shift+H / Ctrl/Cmd+Shift+L |
 | Select children / parent | Enter / Shift+Enter |
 | Next / previous sibling | Tab / Shift+Tab |
 | Nudge | Arrow keys (Shift for 10 px) |
-| Edit text | Double-click, or Enter. Esc finishes |
+| Edit text | Double-click, or Enter. Esc finishes. Ctrl/Cmd+B, I, U style the selected text |
 
 Shortcuts use physical key positions, so they work with any keyboard layout, including Korean input.
 
@@ -118,7 +137,10 @@ The editor is built to be reachable only by your own browser:
   every save and import: no cycles, a nesting limit, layers only on existing pages, and no component that
   contains itself. Request bodies are size-limited.
 - **Images**: uploads are recognised by their bytes. Only PNG, JPEG, WebP and GIF are accepted, never SVG.
-  Images are stored under their SHA-256, and imported images must match their hash.
+  Images are stored under their SHA-256, and imported images must match their hash. A file holds up to
+  1 GB of images.
+- **Limits**: layer counts, nesting, component expansion, versions and comments per file are capped, so a
+  hostile import or paste can't exhaust memory or disk.
 - **Page and file safety**: the built page is served with a strict Content Security Policy. Text and names
   are escaped in SVG export.
 
@@ -134,6 +156,6 @@ npm run test:e2e    # browser tests (needs: npx playwright install chromium)
 shared/   document schema and tree validation (client and server)
 server/   local HTTP server and SQLite storage
 src/engine/  canvas engine: scene model, geometry, hit testing, rendering, tools, history, export
-src/ui/   React panels: file list, title bar, tools, layers, properties
+src/ui/   React panels: file list, title bar, tools, layers, properties, comments, presentation
 tests/    unit and end-to-end tests
 ```
