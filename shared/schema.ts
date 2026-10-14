@@ -269,6 +269,24 @@ export const EMPTY_VARIABLES: Variables = { collections: [], vars: [] };
 export const BINDABLE = ['fill', 'stroke', 'radius', 'gap', 'padding', 'strokeWeight', 'opacity'] as const;
 export type Bindable = (typeof BINDABLE)[number];
 
+export const LayoutGridSchema = z
+  .object({
+    type: z.enum(['columns', 'rows', 'grid']),
+    count: z.number().int().min(1).max(100),
+    gutter: z.number().min(0).max(1000),
+    margin: z.number().min(0).max(10_000),
+    /** Cell size of a square grid. */
+    size: z.number().min(1).max(1000),
+    color: hexColor,
+    opacity: z.number().min(0).max(1),
+    visible: z.boolean(),
+  })
+  .strict();
+export type LayoutGrid = z.infer<typeof LayoutGridSchema>;
+
+export const GuideSchema = z.object({ axis: z.enum(['x', 'y']), pos: z.number().min(-1e8).max(1e8) }).strict();
+export type PageGuide = z.infer<typeof GuideSchema>;
+
 export const SceneNodeSchema = z
   .object({
     id,
@@ -297,6 +315,7 @@ export const SceneNodeSchema = z
     clipsContent: z.boolean().optional(),
     constraints: ConstraintsSchema.optional(),
     layout: LayoutSchema.optional(),
+    grids: z.array(LayoutGridSchema).max(8).optional(),
     layoutChild: LayoutChildSchema.optional(),
     arrowStart: z.boolean().optional(),
     arrowEnd: z.boolean().optional(),
@@ -350,6 +369,7 @@ export const SceneNodeSchema = z
     if (n.type !== 'TEXT' && n.text) issue('only TEXT has text');
     if (!container && n.type !== 'INSTANCE' && n.clipsContent !== undefined) issue('only frames have clipsContent');
     if (!container && n.layout) issue('only frames have auto layout');
+    if (!container && n.grids) issue('only frames have layout grids');
     if (n.type !== 'LINE' && (n.arrowStart !== undefined || n.arrowEnd !== undefined)) issue('only LINE has arrows');
     if (n.type !== 'LINE' && (n.startBind || n.endBind)) issue('only LINE has bindings');
     if ((n.type === 'INSTANCE') !== (n.componentId !== undefined)) issue('INSTANCE needs componentId');
@@ -375,6 +395,7 @@ export const PageSchema = z
     id,
     name: z.string().trim().min(1).max(200),
     background: hexColor,
+    guides: z.array(GuideSchema).max(200).optional(),
   })
   .strict();
 export type Page = z.infer<typeof PageSchema>;
