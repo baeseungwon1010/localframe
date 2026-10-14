@@ -1,5 +1,5 @@
 import type { SceneNode } from '../../shared/schema.ts';
-import type { Editor } from './editor.ts';
+import { type Editor, gridRects } from './editor.ts';
 import { type Mat, apply, multiply } from './math.ts';
 import { instanceDoc } from './instances.ts';
 import { drawChildren } from './render.ts';
@@ -92,6 +92,68 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const view = editor.viewMatrix;
   const selected = new Set(editor.selection);
+
+  // layout grids of visible frames on this page
+  if (editor.showGrids) {
+    for (const n of doc.all()) {
+      if (!n.grids?.length || !doc.isEffectivelyVisible(n.id) || doc.pageOf(n.id) !== doc.currentPage || n.rotation !== 0) continue;
+      const b = doc.worldBounds(n.id);
+      const tl = editor.toScreen({ x: b.x, y: b.y });
+      if (tl.x > width || tl.y > height || tl.x + b.width * v.zoom < 0 || tl.y + b.height * v.zoom < 0) continue;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(tl.x, tl.y, b.width * v.zoom, b.height * v.zoom);
+      ctx.clip();
+      for (const g of n.grids) {
+        if (!g.visible) continue;
+        const rects = gridRects({ ...n, grids: [g] }, b);
+        ctx.globalAlpha = g.opacity;
+        if (g.type === 'grid') {
+          ctx.strokeStyle = g.color;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          for (const r of rects) {
+            const a = editor.toScreen({ x: r.x, y: r.y });
+            ctx.moveTo(Math.round(a.x) + 0.5, Math.round(a.y) + 0.5);
+            ctx.lineTo(Math.round(a.x + r.width * v.zoom) + 0.5, Math.round(a.y + r.height * v.zoom) + 0.5);
+          }
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = g.color;
+          for (const r of rects) {
+            const a = editor.toScreen({ x: r.x, y: r.y });
+            ctx.fillRect(a.x, a.y, r.width * v.zoom, r.height * v.zoom);
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+    }
+  }
+
+  // page guides (and one being dragged)
+  const guides = [...(editor.currentPage.guides ?? [])];
+  const drag = editor.guideDrag;
+  if (drag && drag.index !== null) guides.splice(drag.index, 1);
+  const drawGuide = (axis: 'x' | 'y', pos: number, faded: boolean) => {
+    const s = editor.toScreen(axis === 'x' ? { x: pos, y: 0 } : { x: 0, y: pos });
+    ctx.save();
+    ctx.globalAlpha = faded ? 0.4 : 1;
+    ctx.strokeStyle = c.guide;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    if (axis === 'x') {
+      ctx.moveTo(Math.round(s.x) + 0.5, 0);
+      ctx.lineTo(Math.round(s.x) + 0.5, height);
+    } else {
+      ctx.moveTo(0, Math.round(s.y) + 0.5);
+      ctx.lineTo(width, Math.round(s.y) + 0.5);
+    }
+    ctx.stroke();
+    ctx.restore();
+  };
+  for (const g of guides) drawGuide(g.axis, g.pos, false);
+  if (drag) drawGuide(drag.axis, drag.pos, drag.remove);
 
   // frame labels (top-level frames)
   ctx.font = `500 ${LABEL_FONT_SIZE}px ${c.font}`;
