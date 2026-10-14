@@ -988,6 +988,100 @@ export class Editor {
     if (changed.length) this.emit('selection', 'view');
   }
 
+  // -------------------------------------------------------------- libraries
+
+  /** Version of a library component: a hash of its content (not where it sits). */
+  static libraryVersion(doc: SceneDoc, componentId: string): string {
+    const root = doc.get(componentId);
+    if (!root) return '';
+    const { x: _x, y: _y, parentId: _p, order: _o, pageId: _pg, ...look } = root;
+    const json = JSON.stringify([look, ...doc.descendants(componentId).map((id) => doc.get(id))]);
+    let h = 0x811c9dc5;
+    for (let i = 0; i < json.length; i++) h = Math.imul(h ^ json.charCodeAt(i), 0x01000193);
+    return (h >>> 0).toString(16).padStart(8, '0') + json.length.toString(16);
+  }
+
+  /** The local copy of a component from a library file, if there is one. */
+  libraryCopy(fileId: string, componentId: string): SceneNode | undefined {
+    for (const n of this.doc.all()) if (n.type === 'COMPONENT' && n.libraryRef?.fileId === fileId && n.libraryRef.componentId === componentId) return n;
+    return undefined;
+  }
+
+  /**
+   * Copies a component from another file (and the components its instances use) onto this file's
+   * "Library components" page, or brings an existing copy up to date. Instances of the copy keep
+   * working. Returns the local component and the images it needs from the library file.
+   */
+  importLibraryComponent(source: { fileId: string; nodes: SceneNode[] }, componentId: string): { id: string; images: string[] } | null {
+    const src = new SceneDoc();
+    src.load(source.nodes);
+    if (src.get(componentId)?.type !== 'COMPONENT') return null;
+    // the component first, then what it depends on; copied dependencies first
+    const order: string[] = [];
+    const seen = new Set<string>();
+    const visit = (cid: string, depth: number) => {
+      if (seen.has(cid) || depth > 50 || src.get(cid)?.type !== 'COMPONENT') return;
+      seen.add(cid);
+      for (const d of src.descendants(cid)) {
+        const n = src.get(d)!;
+        if (n.type === 'INSTANCE' && n.componentId) visit(n.componentId, depth + 1);
+      }
+      order.push(cid);
+    };
+    visit(componentId, 0);
+    const total = order.reduce((sum, cid) => sum + 1 + src.descendants(cid).length, 0);
+    if (this.doc.size + total > MAX_NODES_PER_FILE) return null;
+    const map = new Map<string, string>();
+    const images = new Set<string>();
+    this.transact(() => {
+      let page = this.pages.find((p) => p.name === 'Library components');
+      if (!page) {
+        if (this.pages.length >= MAX_PAGES) return;
+        page = { id: newId(), name: 'Library components', background: this.background };
+        this.setPages([...this.pages, page]);
+      }
+      let bottom = Math.max(0, ...this.doc.pageChildren(page.id).map((id) => this.doc.worldBounds(id)).map((b) => b.y + b.height + 40));
+      for (const cid of order) {
+        const version = Editor.libraryVersion(src, cid);
+        const existing = this.libraryCopy(source.fileId, cid);
+        if (existing && existing.libraryRef?.version === version) {
+          map.set(cid, existing.id);
+          continue;
+        }
+        const root = src.get(cid)!;
+        const localId = existing?.id ?? newId();
+        map.set(cid, localId);
+        const ids = new Map<string, string>([[cid, localId]]);
+        for (const d of src.descendants(cid)) ids.set(d, newId());
+        if (existing) for (const d of this.doc.descendants(existing.id)) this.drop(d);
+        const { variant: _v, ...rootRest } = root;
+        this.put({
+          ...rootRest,
+          id: localId,
+          parentId: null,
+          pageId: page.id,
+          order: existing?.order ?? keyOnTop(this.doc, null),
+          x: existing?.x ?? 0,
+          y: existing?.y ?? bottom,
+          libraryRef: { fileId: source.fileId, componentId: cid, version },
+        });
+        if (!existing) bottom += root.height + 40;
+        for (const d of src.descendants(cid)) {
+          const n = src.get(d)!;
+          let copy: SceneNode = { ...n, id: ids.get(d)!, parentId: ids.get(n.parentId!)! };
+          if (copy.type === 'INSTANCE' && copy.componentId) copy = { ...copy, componentId: map.get(copy.componentId) ?? copy.componentId };
+          if (copy.startBind) copy = { ...copy, startBind: ids.has(copy.startBind.nodeId) ? { ...copy.startBind, nodeId: ids.get(copy.startBind.nodeId)! } : undefined };
+          if (copy.endBind) copy = { ...copy, endBind: ids.has(copy.endBind.nodeId) ? { ...copy.endBind, nodeId: ids.get(copy.endBind.nodeId)! } : undefined };
+          if (copy.libraryRef) copy = { ...copy, libraryRef: undefined };
+          this.put(copy);
+        }
+        for (const id of [cid, ...src.descendants(cid)]) for (const p of src.get(id)!.fills) if (p.type === 'IMAGE') images.add(p.imageId);
+      }
+    });
+    const id = map.get(componentId);
+    return id ? { id, images: [...images] } : null;
+  }
+
   toggleOutlineMode() {
     this.outlineMode = !this.outlineMode;
     this.emit('view');

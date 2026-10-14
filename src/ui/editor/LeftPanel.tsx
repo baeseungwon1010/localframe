@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { LibraryPanel } from './LibraryPanel.tsx';
 import { ChevronDown, ChevronRight, Component, FileText, Plus } from 'lucide-react';
 import type { SceneNode } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
@@ -149,6 +150,7 @@ function AssetsPanel({ editor }: { editor: Editor }) {
       </div>
       <h4 className="asset-heading">Components</h4>
       <ComponentList editor={editor} />
+      <LibraryPanel editor={editor} />
       <StylesList editor={editor} />
       {varsOpen && <VariablesDialog editor={editor} onClose={() => setVarsOpen(false)} />}
     </div>
