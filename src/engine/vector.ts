@@ -56,6 +56,58 @@ export function vectorBounds(v: Vector): Rect {
   return boundsOfPoints(pts);
 }
 
+const KAPPA = 0.5522847498;
+
+/**
+ * The outline of a rectangle (with its corner radii), ellipse or line as path points in the layer's
+ * own coordinates, so it can become an editable vector. Null for anything else.
+ */
+export function outlineVector(n: SceneNode, linePts?: Point[]): Vector | null {
+  const w = n.width;
+  const h = n.height;
+  const P = (x: number, y: number, inn?: Point, out?: Point): VectorPoint => ({
+    x: round2(x),
+    y: round2(y),
+    ...(inn ? { in: { x: round2(inn.x), y: round2(inn.y) } } : {}),
+    ...(out ? { out: { x: round2(out.x), y: round2(out.y) } } : {}),
+  });
+  if (n.type === 'ELLIPSE') {
+    const rx = w / 2;
+    const ry = h / 2;
+    const kx = rx * KAPPA;
+    const ky = ry * KAPPA;
+    return {
+      closed: true,
+      points: [
+        P(rx, 0, { x: rx - kx, y: 0 }, { x: rx + kx, y: 0 }),
+        P(w, ry, { x: w, y: ry - ky }, { x: w, y: ry + ky }),
+        P(rx, h, { x: rx + kx, y: h }, { x: rx - kx, y: h }),
+        P(0, ry, { x: 0, y: ry + ky }, { x: 0, y: ry - ky }),
+      ],
+    };
+  }
+  if (n.type === 'RECTANGLE') {
+    const max = Math.min(w, h) / 2;
+    const [tl, tr, br, bl] = (n.radii ?? [0, 0, 0, 0]).map((r) => Math.max(0, Math.min(r, max)));
+    const pts: VectorPoint[] = [];
+    // each rounded corner is two points with handles; a square corner is one point
+    const corner = (cx: number, cy: number, r: number, ax: number, ay: number, bx: number, by: number) => {
+      if (r <= 0) return void pts.push(P(cx, cy));
+      const a = { x: cx + ax * r, y: cy + ay * r };
+      const b = { x: cx + bx * r, y: cy + by * r };
+      pts.push(P(a.x, a.y, undefined, { x: a.x - ax * r * KAPPA, y: a.y - ay * r * KAPPA }));
+      pts.push(P(b.x, b.y, { x: b.x - bx * r * KAPPA, y: b.y - by * r * KAPPA }));
+    };
+    corner(0, 0, tl, 0, 1, 1, 0);
+    corner(w, 0, tr, -1, 0, 0, 1);
+    corner(w, h, br, 0, -1, -1, 0);
+    corner(0, h, bl, 1, 0, 0, -1);
+    return { closed: true, points: pts };
+  }
+  if (n.type === 'LINE' && linePts) return { closed: false, points: linePts.map((q) => P(q.x, q.y)) };
+  return null;
+}
+
 /** Drops points that sit within `epsilon` of the line through their neighbours (Ramer–Douglas–Peucker). */
 export function simplifyPoints(pts: Point[], epsilon: number): Point[] {
   if (pts.length < 3) return pts.slice();

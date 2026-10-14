@@ -44,6 +44,7 @@ import {
   applyConstraints,
   lineEnds,
   lineFromEnds,
+  linePoints,
   reparentKeepWorld,
   resizeBox,
   rotateAboutCenter,
@@ -71,7 +72,7 @@ import {
 import { canHaveChildren, createNode, fitText, keyAt, keyOnTop, keysAbove, keysOnTop, newId, nextName, solid } from './nodes.ts';
 import { canvasMeasure } from './text.ts';
 import { type RunProps, adjustRuns, styleRange } from './textRuns.ts';
-import { fitVector, scaleVector, shapeVector, simplifyPoints, smoothPath } from './vector.ts';
+import { fitVector, outlineVector, scaleVector, shapeVector, simplifyPoints, smoothPath } from './vector.ts';
 
 export { fitText };
 
@@ -948,6 +949,42 @@ export class Editor {
     const id = this.doc.currentPage;
     this.transact(() => this.setPages(this.pages.map((p) => (p.id === id ? { ...p, prototypeStart: frameId ?? undefined } : p))));
     this.emit('view');
+  }
+
+  /** Ctrl/Cmd+E: rectangles, ellipses, polygons, stars and lines become editable vectors that look the same. */
+  flattenSelection() {
+    const ids = this.selection.filter((id) => !this.doc.isEffectivelyLocked(id));
+    const changed: string[] = [];
+    this.transact(() => {
+      for (const id of ids) {
+        const n = this.doc.get(id)!;
+        if (n.type === 'VECTOR') {
+          if (n.shape) {
+            this.put({ ...n, shape: undefined });
+            changed.push(id);
+          }
+          continue;
+        }
+        const v = outlineVector(n, n.type === 'LINE' ? linePoints(n) : undefined);
+        if (!v) continue;
+        const {
+          radii: _r,
+          arrowStart: _as,
+          arrowEnd: _ae,
+          startBind: _sb,
+          endBind: _eb,
+          elbow: _el,
+          route: _ro,
+          strokeSides: _ss,
+          ...rest
+        } = n;
+        let next: SceneNode = { ...rest, type: 'VECTOR', vector: v };
+        if (n.type === 'LINE') next = fitVector({ ...next, strokeAlign: 'center' });
+        this.put(next);
+        changed.push(id);
+      }
+    });
+    if (changed.length) this.emit('selection', 'view');
   }
 
   toggleOutlineMode() {
@@ -3570,6 +3607,10 @@ export class Editor {
           return false;
         case 'KeyY':
           this.toggleOutlineMode();
+          return true;
+        case 'KeyE':
+          if (shift) return false;
+          this.flattenSelection();
           return true;
         case 'KeyM':
           if (alt) {

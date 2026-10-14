@@ -199,6 +199,12 @@ export function CanvasView(props: {
       },
     },
     { label: 'Duplicate', shortcut: `${MOD}D`, disabled: !hasSel, onSelect: () => editor.duplicateSelection() },
+    {
+      label: 'Flatten',
+      shortcut: `${MOD}E`,
+      disabled: !sel.some((n) => n.type === 'RECTANGLE' || n.type === 'ELLIPSE' || n.type === 'LINE' || (n.type === 'VECTOR' && n.shape)),
+      onSelect: () => editor.flattenSelection(),
+    },
     { label: 'Select matching layers', shortcut: `${MOD}${ALT}A`, disabled: !hasSel, onSelect: () => editor.selectMatching() },
     { label: 'Delete', shortcut: 'Del', disabled: !hasSel, onSelect: () => editor.deleteSelection() },
     'separator',
