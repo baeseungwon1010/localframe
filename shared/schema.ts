@@ -62,12 +62,15 @@ const unitPoint = z.object({ x: z.number().min(-10).max(10), y: z.number().min(-
 
 export const GradientPaintSchema = z
   .object({
-    type: z.enum(['GRADIENT_LINEAR', 'GRADIENT_RADIAL']),
+    type: z.enum(['GRADIENT_LINEAR', 'GRADIENT_RADIAL', 'GRADIENT_ANGULAR', 'GRADIENT_DIAMOND']),
     stops: z
       .array(z.object({ position: z.number().min(0).max(1), color: hexColor, opacity: z.number().min(0).max(1) }).strict())
       .min(2)
       .max(16),
-    /** In the layer's unit box (0..1). Linear: start and end. Radial: centre and a point on the edge. */
+    /**
+     * In the layer's unit box (0..1). Linear: start and end. Radial, diamond: centre and a point on the
+     * edge. Angular: centre and the direction where the sweep starts.
+     */
     from: unitPoint,
     to: unitPoint,
     opacity: z.number().min(0).max(1),
@@ -83,7 +86,8 @@ export type GradientPaint = z.infer<typeof GradientPaintSchema>;
 export type Paint = z.infer<typeof PaintSchema>;
 export type StrokePaint = z.infer<typeof StrokePaintSchema>;
 export const isImagePaint = (p: Paint): p is ImagePaint => p.type === 'IMAGE';
-export const isGradientPaint = (p: Paint): p is GradientPaint => p.type === 'GRADIENT_LINEAR' || p.type === 'GRADIENT_RADIAL';
+export const isGradientPaint = (p: Paint): p is GradientPaint =>
+  p.type === 'GRADIENT_LINEAR' || p.type === 'GRADIENT_RADIAL' || p.type === 'GRADIENT_ANGULAR' || p.type === 'GRADIENT_DIAMOND';
 
 const effectLen = z.number().min(-10_000).max(10_000);
 export const ShadowEffectSchema = z

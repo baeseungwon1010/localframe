@@ -72,11 +72,92 @@ export function paintCss(p: SolidPaint, extraAlpha = 1): string {
 }
 
 /** A canvas gradient in the layer's own coordinates (unit box scaled to w x h). */
-function gradientStyle(ctx: Ctx, p: GradientPaint, w: number, h: number): CanvasGradient {
+/** Colour of a gradient at t (0..1) as RGBA bytes. */
+function sampleStops(p: GradientPaint, t: number): [number, number, number, number] {
+  const stops = [...p.stops].sort((a, b) => a.position - b.position);
+  const hex = (c: string) => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
+  let a = stops[0];
+  let b = stops[stops.length - 1];
+  if (t <= a.position) b = a;
+  else if (t >= b.position) a = b;
+  else
+    for (let i = 1; i < stops.length; i++)
+      if (t <= stops[i].position) {
+        a = stops[i - 1];
+        b = stops[i];
+        break;
+      }
+  const k = b.position > a.position ? (t - a.position) / (b.position - a.position) : 0;
+  const ca = hex(a.color);
+  const cb = hex(b.color);
+  const alpha = (a.opacity + (b.opacity - a.opacity) * k) * p.opacity;
+  return [ca[0] + (cb[0] - ca[0]) * k, ca[1] + (cb[1] - ca[1]) * k, ca[2] + (cb[2] - ca[2]) * k, alpha * 255];
+}
+
+const rasterCache = new Map<string, HTMLCanvasElement>();
+
+/**
+ * Angular and diamond gradients drawn pixel by pixel into a small canvas (up to 256 px a side) that
+ * stretches over the layer. Null where there is no canvas (tests, workers).
+ */
+export function gradientRaster(p: GradientPaint, w: number, h: number): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const cw = Math.max(1, Math.min(256, Math.ceil(w)));
+  const ch = Math.max(1, Math.min(256, Math.ceil(h)));
+  const key = JSON.stringify([p.type, p.stops, p.from, p.to, p.opacity, cw, ch, Math.round(w), Math.round(h)]);
+  const hit = rasterCache.get(key);
+  if (hit) return hit;
+  const c = document.createElement('canvas');
+  c.width = cw;
+  c.height = ch;
+  const g = c.getContext('2d');
+  if (!g) return null;
+  const img = g.createImageData(cw, ch);
+  const fx = p.from.x * w;
+  const fy = p.from.y * h;
+  const ux = p.to.x * w - fx;
+  const uy = p.to.y * h - fy;
+  const len = Math.max(0.01, Math.hypot(ux, uy));
+  const start = Math.atan2(uy, ux);
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      const dx = ((x + 0.5) * w) / cw - fx;
+      const dy = ((y + 0.5) * h) / ch - fy;
+      let t: number;
+      if (p.type === 'GRADIENT_ANGULAR') {
+        const a = Math.atan2(dy, dx) - start;
+        t = (((a / (Math.PI * 2)) % 1) + 1) % 1;
+      } else {
+        // diamond: distance measured along the gradient's axis and across it
+        t = Math.min(1, (Math.abs(dx * ux + dy * uy) + Math.abs(-dx * uy + dy * ux)) / (len * len));
+      }
+      const [r, gg, b, a] = sampleStops(p, t);
+      const i = (y * cw + x) * 4;
+      img.data[i] = r;
+      img.data[i + 1] = gg;
+      img.data[i + 2] = b;
+      img.data[i + 3] = a;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  if (rasterCache.size > 64) rasterCache.clear();
+  rasterCache.set(key, c);
+  return c;
+}
+
+function gradientStyle(ctx: Ctx, p: GradientPaint, w: number, h: number): CanvasGradient | CanvasPattern {
   const fx = p.from.x * w;
   const fy = p.from.y * h;
   const tx = p.to.x * w;
   const ty = p.to.y * h;
+  if (p.type === 'GRADIENT_ANGULAR' || p.type === 'GRADIENT_DIAMOND') {
+    const raster = gradientRaster(p, w, h);
+    const pattern = raster ? ctx.createPattern(raster, 'no-repeat') : null;
+    if (pattern && raster) {
+      pattern.setTransform(new DOMMatrix().scale(w / raster.width, h / raster.height));
+      return pattern;
+    }
+  }
   const g =
     p.type === 'GRADIENT_LINEAR'
       ? ctx.createLinearGradient(fx, fy, tx, ty)
@@ -87,7 +168,7 @@ function gradientStyle(ctx: Ctx, p: GradientPaint, w: number, h: number): Canvas
 }
 
 /** Fill or stroke style for a solid or gradient paint. */
-export function paintStyle(ctx: Ctx, p: SolidPaint | GradientPaint, w: number, h: number): string | CanvasGradient {
+export function paintStyle(ctx: Ctx, p: SolidPaint | GradientPaint, w: number, h: number): string | CanvasGradient | CanvasPattern {
   return isGradientPaint(p) ? gradientStyle(ctx, p, w, h) : paintCss(p);
 }
 

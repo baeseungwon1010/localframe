@@ -16,7 +16,12 @@ function rgba(hex: string, alpha: number): string {
 
 function gradientCss(p: GradientPaint, w: number, h: number): string {
   const stops = p.stops.map((s) => `${rgba(s.color, s.opacity * p.opacity)} ${n(s.position * 100)}%`).join(', ');
-  if (p.type === 'GRADIENT_RADIAL') {
+  if (p.type === 'GRADIENT_ANGULAR') {
+    const from = (Math.atan2((p.to.y - p.from.y) * h, (p.to.x - p.from.x) * w) * 180) / Math.PI + 90;
+    return `conic-gradient(from ${n(from)}deg at ${n(p.from.x * 100)}% ${n(p.from.y * 100)}%, ${stops})`;
+  }
+  if (p.type === 'GRADIENT_RADIAL' || p.type === 'GRADIENT_DIAMOND') {
+    // CSS has no diamond gradient: the nearest is a radial one
     const rx = Math.hypot((p.to.x - p.from.x) * w, (p.to.y - p.from.y) * h);
     return `radial-gradient(circle ${px(rx)} at ${n(p.from.x * 100)}% ${n(p.from.y * 100)}%, ${stops})`;
   }

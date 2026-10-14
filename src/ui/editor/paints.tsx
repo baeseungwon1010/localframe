@@ -5,7 +5,7 @@ import { ImagePaintRow, NumberField, PaintRow, normalizeHex } from './fields.tsx
 
 const ICON = { size: 14, strokeWidth: 1.5 };
 
-type PaintKind = 'SOLID' | 'GRADIENT_LINEAR' | 'GRADIENT_RADIAL' | 'IMAGE';
+type PaintKind = 'SOLID' | 'GRADIENT_LINEAR' | 'GRADIENT_RADIAL' | 'GRADIENT_ANGULAR' | 'GRADIENT_DIAMOND' | 'IMAGE';
 
 const kindOf = (p: Paint): PaintKind => (p.type === undefined || p.type === 'SOLID' ? 'SOLID' : p.type);
 
@@ -20,7 +20,8 @@ export function gradientCss(p: GradientPaint): string {
       return `rgba(${r},${g},${b},${s.opacity * p.opacity}) ${Math.round(s.position * 100)}%`;
     })
     .join(', ');
-  if (p.type === 'GRADIENT_RADIAL') return `radial-gradient(circle at ${p.from.x * 100}% ${p.from.y * 100}%, ${stops})`;
+  if (p.type === 'GRADIENT_ANGULAR') return `conic-gradient(from ${Math.round(angleOf(p) + 90)}deg at ${p.from.x * 100}% ${p.from.y * 100}%, ${stops})`;
+  if (p.type === 'GRADIENT_RADIAL' || p.type === 'GRADIENT_DIAMOND') return `radial-gradient(circle at ${p.from.x * 100}% ${p.from.y * 100}%, ${stops})`;
   return `linear-gradient(${Math.round(angleOf(p) + 90)}deg, ${stops})`;
 }
 
@@ -41,15 +42,14 @@ export function convertPaint(p: Paint, kind: PaintKind): Paint | null {
   if (kind === kindOf(p) || kind === 'IMAGE') return null;
   const base = isGradientPaint(p) ? p.stops[0].color : p.type === 'IMAGE' ? '#D9D9D9' : p.color;
   if (kind === 'SOLID') return { color: base, opacity: p.opacity, visible: p.visible };
-  const stops =
-    p.type === 'GRADIENT_LINEAR' || p.type === 'GRADIENT_RADIAL'
+  const stops = isGradientPaint(p)
       ? p.stops
       : [
           { position: 0, color: base, opacity: 1 },
           { position: 1, color: base, opacity: 0 },
         ];
   const g: GradientPaint = { type: kind, stops, from: { x: 0.5, y: 0 }, to: { x: 0.5, y: 1 }, opacity: p.opacity, visible: p.visible };
-  return kind === 'GRADIENT_RADIAL' ? { ...g, from: { x: 0.5, y: 0.5 }, to: { x: 1, y: 0.5 } } : g;
+  return kind === 'GRADIENT_LINEAR' ? g : { ...g, from: { x: 0.5, y: 0.5 }, to: { x: 1, y: 0.5 } };
 }
 
 function KindSelect(props: { value: PaintKind; allowImage: boolean; label: string; onChange: (k: PaintKind) => void }) {
@@ -58,6 +58,8 @@ function KindSelect(props: { value: PaintKind; allowImage: boolean; label: strin
       <option value="SOLID">Solid</option>
       <option value="GRADIENT_LINEAR">Linear</option>
       <option value="GRADIENT_RADIAL">Radial</option>
+      <option value="GRADIENT_ANGULAR">Angular</option>
+      <option value="GRADIENT_DIAMOND">Diamond</option>
       {props.allowImage && (
         <option value="IMAGE" disabled>
           Image
@@ -80,7 +82,7 @@ export function PaintEditor(props: { paint: Paint; label: string; allowImage: bo
       <KindSelect value={kind} allowImage={props.allowImage || kind === 'IMAGE'} label={label} onChange={change} />
       {paint.type === 'IMAGE' ? (
         <ImagePaintRow paint={paint} label={`${label} image`} onChange={props.onChange} onRemove={props.onRemove} />
-      ) : paint.type === 'GRADIENT_LINEAR' || paint.type === 'GRADIENT_RADIAL' ? (
+      ) : isGradientPaint(paint) ? (
         <GradientEditor paint={paint} label={label} onChange={props.onChange} onRemove={props.onRemove} />
       ) : (
         <PaintRow paint={paint as SolidPaint} label={label} onChange={props.onChange} onRemove={props.onRemove} />
@@ -98,7 +100,7 @@ function GradientEditor(props: { paint: GradientPaint; label: string; onChange: 
     <div className="gradient-editor">
       <div className="paint-row">
         <span className="swatch" style={{ background: gradientCss(paint) }} aria-hidden="true" />
-        {paint.type === 'GRADIENT_LINEAR' ? (
+        {paint.type === 'GRADIENT_LINEAR' || paint.type === 'GRADIENT_ANGULAR' ? (
           <NumberField
             label="∠"
             ariaLabel={`${label} angle`}
@@ -107,7 +109,12 @@ function GradientEditor(props: { paint: GradientPaint; label: string; onChange: 
             max={360}
             suffix="°"
             precision={0}
-            onCommit={(v) => props.onChange(withAngle(paint, v))}
+            onCommit={(v) => {
+              if (paint.type !== 'GRADIENT_ANGULAR') return props.onChange(withAngle(paint, v));
+              // angular: the centre stays, the sweep starts in the new direction
+              const r = (v * Math.PI) / 180;
+              props.onChange({ ...paint, to: { x: paint.from.x + Math.cos(r) / 2, y: paint.from.y + Math.sin(r) / 2 } });
+            }}
           />
         ) : (
           <span className="field-caption">From the centre</span>

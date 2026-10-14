@@ -5,7 +5,7 @@ import { ensureImages, imageDataUrl, imageSize } from './images.ts';
 import { instanceDoc } from './instances.ts';
 import { type Mat, type Rect, IDENTITY, localMatrix, unionRects } from './math.ts';
 import { buildPdf, type PdfPage } from './pdf.ts';
-import { arrowSize, capOf, clampRadii, drawNode, effectReach, imageRect, imagesUsed, joinOf, lineShape, sideBands } from './render.ts';
+import { arrowSize, capOf, clampRadii, gradientRaster, drawNode, effectReach, imageRect, imagesUsed, joinOf, lineShape, sideBands } from './render.ts';
 import { fontStack, layoutText, lineOffset } from './text.ts';
 import { svgPathData } from './vector.ts';
 
@@ -210,6 +210,14 @@ class SvgWriter {
     const fy = p.from.y * h;
     const tx = p.to.x * w;
     const ty = p.to.y * h;
+    // SVG has no angular or diamond gradients: they go in as an image of the gradient
+    const raster = p.type === 'GRADIENT_ANGULAR' || p.type === 'GRADIENT_DIAMOND' ? gradientRaster(p, w, h) : null;
+    if (raster) {
+      this.defs.push(
+        `<pattern id="${gid}" patternUnits="userSpaceOnUse" width="${num(w)}" height="${num(h)}"><image href="${raster.toDataURL('image/png')}" width="${num(w)}" height="${num(h)}" preserveAspectRatio="none"/></pattern>`,
+      );
+      return ` ${kind}="url(#${gid})"`;
+    }
     this.defs.push(
       p.type === 'GRADIENT_LINEAR'
         ? `<linearGradient id="${gid}" gradientUnits="userSpaceOnUse" x1="${num(fx)}" y1="${num(fy)}" x2="${num(tx)}" y2="${num(ty)}">${stops}</linearGradient>`
