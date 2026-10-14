@@ -424,6 +424,8 @@ class SvgWriter {
     const common =
       ` font-family="${family}" font-size="${num(t.fontSize)}" font-weight="${num(Number(t.fontWeight))}"` +
       (t.letterSpacing ? ` letter-spacing="${num(t.letterSpacing)}"` : '') +
+      (t.kerning === false ? ' font-kerning="none"' : '') +
+      (t.smallCaps ? ' font-variant="small-caps"' : '') +
       ' xml:space="preserve"';
     for (const line of layout.lines)
       for (const seg of line.segments)

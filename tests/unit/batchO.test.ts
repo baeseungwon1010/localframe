@@ -121,3 +121,44 @@ describe('flatten booleans', () => {
     expect(notices).toHaveLength(1);
   });
 });
+
+describe('grid layout and type options', () => {
+  it('places items in equal columns row by row and hugs the rows', () => {
+    const ed = setup();
+    const f = draw(ed, 'frame', [0, 0], [220, 100]);
+    const kids = [0, 1, 2].map((i) => draw(ed, 'rect', [10 + i * 5, 10], [40 + i * 5, 40]));
+    ed.updateNodes(kids, (n) => ({ ...n, width: 30, height: 30 }));
+    ed.setSelection([f]);
+    ed.addAutoLayout();
+    ed.updateNodes([f], (n) => ({
+      ...n,
+      width: 220,
+      layout: { ...n.layout!, mode: 'grid', columns: 2, gap: 20, counterGap: 10, padding: [10, 10, 10, 10], widthMode: 'fixed', heightMode: 'hug' },
+    }));
+    const pos = kids.map((id) => ed.doc.get(id)!).sort((a, b) => a.y - b.y || a.x - b.x).map((n) => [n.x, n.y]);
+    // cells are (200 - 20) / 2 = 90 wide
+    expect(pos).toEqual([
+      [10, 10],
+      [120, 10],
+      [10, 50],
+    ]);
+    expect(ed.doc.get(f)!.height).toBe(10 + 30 + 10 + 30 + 10);
+    valid(ed);
+  });
+
+  it('small caps and kerning reach canvas fonts and SVG', async () => {
+    const { fontString } = await import('../../src/engine/text.ts');
+    expect(fontString({ fontWeight: 400, fontSize: 12, fontFamily: 'Inter', smallCaps: true })).toContain('small-caps 400 12px');
+    const ed = setup();
+    ed.setTool('text');
+    ed.pointerDown(ptr(20, 20));
+    ed.pointerUp(ptr(20, 20));
+    const t = ed.editingText!;
+    ed.commitTextEdit('Kern me');
+    ed.updateNodes([t], (n) => ({ ...n, text: { ...n.text!, smallCaps: true, kerning: false } }));
+    const svg = svgMarkup(ed.doc, { ids: [t], background: null }).svg;
+    expect(svg).toContain('font-variant="small-caps"');
+    expect(svg).toContain('font-kerning="none"');
+    valid(ed);
+  });
+});

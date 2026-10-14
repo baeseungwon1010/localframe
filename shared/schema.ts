@@ -173,6 +173,9 @@ export const TextStyleSchema = z
     textCase: z.enum(['upper', 'lower', 'title']).optional(),
     /** Lines shown before the text ends with an ellipsis. */
     maxLines: z.number().int().min(1).max(10_000).optional(),
+    /** false turns the font's kerning off. */
+    kerning: z.boolean().optional(),
+    smallCaps: z.boolean().optional(),
     /** Per paragraph: a bulleted or numbered list item, or plain. */
     lists: z.array(z.enum(['bullet', 'number']).nullable()).max(100_000).optional(),
   })
@@ -192,8 +195,10 @@ const pad = z.number().min(0).max(10_000);
 /** Auto layout on a frame or component. */
 export const LayoutSchema = z
   .object({
-    mode: z.enum(['horizontal', 'vertical']),
+    mode: z.enum(['horizontal', 'vertical', 'grid']),
     gap: z.number().min(-10_000).max(10_000),
+    /** Grid: how many equal columns; items fill them row by row. */
+    columns: z.number().int().min(1).max(100).optional(),
     padding: z.tuple([pad, pad, pad, pad]), // top, right, bottom, left
     primaryAlign: z.enum(['start', 'center', 'end', 'space-between']),
     crossAlign: z.enum(['start', 'center', 'end', 'stretch']),

@@ -21,6 +21,7 @@ export function applyAutoLayout(frame: SceneNode, kids: SceneNode[]): { frame: S
   const L = frame.layout;
   if (!L) return { frame, kids };
   if (L.wrap && L.mode === 'horizontal') return wrapLayout(frame, L, kids);
+  if (L.mode === 'grid') return gridLayout(frame, L, kids);
   const horizontal = L.mode === 'horizontal';
   const [pt, pr, pb, pl] = L.padding;
   const padMainStart = horizontal ? pl : pt;
@@ -117,6 +118,55 @@ function sized(frame: SceneNode, width: number, height: number): SceneNode {
 }
 
 /**
+ * Grid auto layout: equal columns across the inner width, items row by row. A row is as tall as its
+ * tallest item; items that fill take their cell's width or height. `gap` runs between columns and
+ * `counterGap` between rows; `primaryAlign` places items across their cell, `crossAlign` down it.
+ */
+function gridLayout(frame: SceneNode, L: NonNullable<SceneNode['layout']>, kids: SceneNode[]): { frame: SceneNode; kids: SceneNode[] } {
+  const [pt, pr, pb, pl] = L.padding;
+  const out = new Map<string, SceneNode>(kids.map((k) => [k.id, k]));
+  const flow = kids.filter((k) => k.visible && !k.layoutChild?.absolute);
+  const cols = Math.max(1, L.columns ?? 2);
+  const colGap = L.gap;
+  const rowGap = L.counterGap ?? L.gap;
+  const inner = Math.max(0, frame.width - pl - pr);
+  const cellW = Math.max(0.01, (inner - colGap * (cols - 1)) / cols);
+  const items = flow.map((k) => {
+    let n = k;
+    if (k.layoutChild?.horizontal === 'fill' || L.crossAlign === 'stretch') {
+      n = { ...n, width: round2(clampW(n, cellW)) };
+      // text that is given a width wraps inside it
+      if (n.type === 'TEXT' && n.text && n.width !== k.width) n = fitText({ ...n, text: { ...n.text, autoResize: 'height' } });
+    }
+    return n;
+  });
+  const rows: SceneNode[][] = [];
+  items.forEach((k, i) => (rows[Math.floor(i / cols)] ??= []).push(k));
+  let y = pt;
+  for (const row of rows) {
+    const fixedHeights = row.filter((k) => k.layoutChild?.vertical !== 'fill').map((k) => k.height);
+    const rowH = fixedHeights.length ? Math.max(...fixedHeights) : Math.max(...row.map((k) => k.height));
+    row.forEach((k, col) => {
+      let n = k;
+      if (k.layoutChild?.vertical === 'fill') n = { ...n, height: round2(clampH(n, rowH)) };
+      let x = pl + col * (cellW + colGap);
+      if (L.primaryAlign === 'center') x += (cellW - n.width) / 2;
+      else if (L.primaryAlign === 'end') x += cellW - n.width;
+      let ky = y;
+      if (L.crossAlign === 'center') ky += (rowH - n.height) / 2;
+      else if (L.crossAlign === 'end') ky += rowH - n.height;
+      const nx = round2(x);
+      const ny = round2(ky);
+      if (n !== kids.find((c) => c.id === n.id) || n.x !== nx || n.y !== ny || n.rotation !== 0) out.set(n.id, { ...n, x: nx, y: ny, rotation: 0 });
+    });
+    y += rowH + rowGap;
+  }
+  const contentH = rows.length ? y - rowGap + pb : pt + pb;
+  const h = L.heightMode === 'hug' ? contentH : frame.height;
+  return { frame: sized(frame, frame.width, h), kids: kids.map((k) => out.get(k.id)!) };
+}
+
+/**
  * Horizontal auto layout that wraps: items fill a row left to right and move to a new row when the
  * next one would pass the inner width. Rows stack with `counterGap`; alignment applies per row.
  */
@@ -172,6 +222,10 @@ function wrapLayout(frame: SceneNode, L: NonNullable<SceneNode['layout']>, kids:
 export function autoLayoutIndex(frame: SceneNode, kids: SceneNode[], pos: { x: number; y: number }): number {
   const horizontal = frame.layout?.mode === 'horizontal';
   const flow = kids.filter((k) => k.visible && !k.layoutChild?.absolute);
+  if (frame.layout?.mode === 'grid') {
+    // reading order: items whose row is above, or in the same row and to the left
+    return flow.filter((k) => pos.y > k.y + k.height || (pos.y >= k.y && pos.x > k.x + k.width / 2)).length;
+  }
   let i = 0;
   for (const k of flow) {
     const mid = horizontal ? k.x + k.width / 2 : k.y + k.height / 2;

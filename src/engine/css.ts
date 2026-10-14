@@ -81,7 +81,15 @@ export function cssFor(doc: SceneDoc, node: SceneNode): string[] {
   if (node.rotation) add('transform', `rotate(${n(node.rotation)}deg)`);
   if (node.rotation) add('transform-origin', 'top left');
 
-  if (node.layout) {
+  if (node.layout?.mode === 'grid') {
+    const L = node.layout;
+    add('display', 'grid');
+    add('grid-template-columns', `repeat(${L.columns ?? 2}, minmax(0, 1fr))`);
+    add('column-gap', px(L.gap));
+    add('row-gap', px(L.counterGap ?? L.gap));
+    const [t, r, b, l] = L.padding;
+    add('padding', `${px(t)} ${px(r)} ${px(b)} ${px(l)}`);
+  } else if (node.layout) {
     const L = node.layout;
     add('display', 'flex');
     add('flex-direction', L.mode === 'horizontal' ? 'row' : 'column');
@@ -107,6 +115,8 @@ export function cssFor(doc: SceneDoc, node: SceneNode): string[] {
     if (t.italic) add('font-style', 'italic');
     add('line-height', t.lineHeight === null ? 'normal' : px(t.lineHeight));
     if (t.letterSpacing) add('letter-spacing', px(t.letterSpacing));
+    if (t.kerning === false) add('font-kerning', 'none');
+    if (t.smallCaps) add('font-variant-caps', 'small-caps');
     if (t.align !== 'left') add('text-align', t.align);
     if (t.decoration && t.decoration !== 'none') add('text-decoration', t.decoration === 'strikethrough' ? 'line-through' : 'underline');
   } else if (node.type !== 'LINE') {

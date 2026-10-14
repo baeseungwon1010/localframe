@@ -25,10 +25,12 @@ export type ResolvedStyle = {
   color: string | null;
   /** A link on this stretch (drawn underlined). */
   link: string | null;
+  smallCaps?: boolean;
 };
 
-export function fontString(t: { fontWeight: number; fontSize: number; fontFamily: string; italic?: boolean }): string {
-  return `${t.italic ? 'italic ' : ''}${t.fontWeight} ${t.fontSize}px ${fontStack(t.fontFamily)}`;
+/** A CSS font shorthand; small caps go in it so measuring and drawing use the same glyphs. */
+export function fontString(t: { fontWeight: number; fontSize: number; fontFamily: string; italic?: boolean; smallCaps?: boolean }): string {
+  return `${t.italic ? 'italic ' : ''}${t.smallCaps ? 'small-caps ' : ''}${t.fontWeight} ${t.fontSize}px ${fontStack(t.fontFamily)}`;
 }
 
 export function lineHeightPx(t: TextStyle): number {
@@ -82,6 +84,7 @@ function resolveStyles(t: TextStyle): { styles: ResolvedStyle[]; at: Uint16Array
     decoration: t.decoration ?? 'none',
     color: null,
     link: null,
+    ...(t.smallCaps ? { smallCaps: true } : {}),
   };
   const runs = (t.runs ?? []).filter((r) => r.end > r.start && r.start < t.characters.length);
   if (runs.length === 0) return { styles: [base], at: null };
@@ -109,6 +112,7 @@ function resolveStyles(t: TextStyle): { styles: ResolvedStyle[]; at: Uint16Array
           decoration: r.decoration ?? st.decoration,
           color: r.color ?? st.color,
           link: r.link ?? st.link,
+          ...(st.smallCaps ? { smallCaps: true } : {}),
         };
       }
     }

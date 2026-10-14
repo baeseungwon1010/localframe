@@ -423,6 +423,7 @@ function drawText(ctx: Ctx, n: SceneNode) {
   const t = n.text!;
   const layout = layoutText(t, t.autoResize === 'width' ? null : n.width);
   if ('letterSpacing' in ctx) (ctx as CanvasRenderingContext2D).letterSpacing = `${t.letterSpacing}px`;
+  if ('fontKerning' in ctx) (ctx as CanvasRenderingContext2D).fontKerning = t.kerning === false ? 'none' : 'normal';
   ctx.textBaseline = 'alphabetic';
   const fills = n.fills.filter((p) => p.visible && p.type !== 'IMAGE');
   for (const line of layout.lines) {

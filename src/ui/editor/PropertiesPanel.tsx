@@ -32,6 +32,7 @@ import {
   TextAlignStart,
   List,
   ListOrdered,
+  Grid3x3,
 } from 'lucide-react';
 import { type Constraints, type Layout, type LayoutChild, type Paint, type SceneNode, type TextStyle, BLEND_MODES } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
@@ -688,6 +689,24 @@ function TextSection({ editor, nodes, update }: { editor: Editor; nodes: SceneNo
         />
       </div>
       <LinkField editor={editor} current={value('link', () => undefined)} />
+      <div className="grid2">
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={nodes.every((n) => t(n).smallCaps)}
+            onChange={(e) => update((n) => fitText({ ...n, text: { ...n.text!, smallCaps: e.target.checked || undefined } }))}
+          />
+          Small caps
+        </label>
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={nodes.every((n) => t(n).kerning !== false)}
+            onChange={(e) => update((n) => fitText({ ...n, text: { ...n.text!, kerning: e.target.checked ? undefined : false } }))}
+          />
+          Kerning
+        </label>
+      </div>
       <div className="text-toggles" role="toolbar" aria-label="Text decoration">
         <IconButton label="Bulleted list" onClick={() => editor.setTextList('bullet')}>
           <List {...ICON} />
@@ -1170,8 +1189,9 @@ function AutoLayoutSection(props: { editor: Editor; nodes: SceneNode[]; update: 
               options={[
                 { value: 'vertical', label: 'Vertical', icon: <ArrowDown {...ICON} /> },
                 { value: 'horizontal', label: 'Horizontal', icon: <ArrowRight {...ICON} /> },
+                { value: 'grid', label: 'Grid', icon: <Grid3x3 {...ICON} /> },
               ]}
-              onChange={(v) => setL({ mode: v })}
+              onChange={(v) => setL({ mode: v, ...(v === 'grid' ? { columns: 2, widthMode: 'fixed' as const } : {}) })}
             />
             <NumberField label="Gap" ariaLabel="Gap between items" value={common(nodes, (n) => L(n).gap)} onCommit={(v) => setL({ gap: v })} />
             <NumberField
@@ -1229,6 +1249,26 @@ function AutoLayoutSection(props: { editor: Editor; nodes: SceneNode[]; update: 
               onChange={(v) => setL({ heightMode: v })}
             />
           </div>
+          {nodes.every((n) => L(n).mode === 'grid') && (
+            <div className="grid2">
+              <NumberField
+                label="Cols"
+                ariaLabel="Grid columns"
+                value={common(nodes, (n) => L(n).columns ?? 2)}
+                min={1}
+                max={100}
+                precision={0}
+                onCommit={(v) => setL({ columns: Math.round(v) })}
+              />
+              <NumberField
+                label="Row gap"
+                ariaLabel="Gap between grid rows"
+                value={common(nodes, (n) => L(n).counterGap ?? L(n).gap)}
+                min={0}
+                onCommit={(v) => setL({ counterGap: v })}
+              />
+            </div>
+          )}
           {nodes.every((n) => L(n).mode === 'horizontal') && (
             <div className="grid2">
               <label className="check-row">
