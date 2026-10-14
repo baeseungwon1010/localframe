@@ -1951,3 +1951,16 @@ button:disabled {
   margin: 0 0 var(--space-6);
   color: var(--color-text-muted);
 }
+
+.code-block {
+  margin: 0;
+  padding: var(--space-4);
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-hover);
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  white-space: pre;
+  user-select: text;
+}

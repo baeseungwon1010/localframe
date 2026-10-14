@@ -35,6 +35,7 @@ import type { Editor } from '../../engine/editor.ts';
 import { type ExportFormat, exportBounds, exportImage, exportPdf, exportSvg } from '../../engine/export.ts';
 import { printSvgPages } from '../print.ts';
 import { PrototypePanel } from './PrototypePanel.tsx';
+import { CodePanel } from './CodePanel.tsx';
 import { overridableTexts } from '../../engine/instances.ts';
 import { DEFAULT_LAYOUT } from '../../engine/layout.ts';
 import { solid, TYPE_LABEL } from '../../engine/nodes.ts';
@@ -61,19 +62,26 @@ export function PropertiesPanel(props: { editor: Editor; fileName: string; onPre
   const { editor } = props;
   useEditorRev(editor, 'doc', 'selection', 'pages', 'view', 'tool');
   const sel = editor.selectedNodes();
-  const proto = editor.prototypeView;
+  const [code, setCode] = useState(false);
+  const proto = editor.prototypeView && !code;
+  const tab = code ? 'code' : proto ? 'prototype' : 'design';
+  const pick = (t: 'design' | 'prototype' | 'code') => {
+    setCode(t === 'code');
+    editor.setPrototypeView(t === 'prototype');
+  };
 
   return (
     <aside className="props" aria-label="Properties">
       <div className="tabs" role="tablist" aria-label="Right panel">
-        <button type="button" role="tab" aria-selected={!proto} className={proto ? '' : 'on'} onClick={() => editor.setPrototypeView(false)}>
-          Design
-        </button>
-        <button type="button" role="tab" aria-selected={proto} className={proto ? 'on' : ''} onClick={() => editor.setPrototypeView(true)}>
-          Prototype
-        </button>
+        {(['design', 'prototype', 'code'] as const).map((t) => (
+          <button key={t} type="button" role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => pick(t)}>
+            {t === 'design' ? 'Design' : t === 'prototype' ? 'Prototype' : 'Code'}
+          </button>
+        ))}
       </div>
-      {proto ? (
+      {code ? (
+        <CodePanel editor={editor} nodes={sel} />
+      ) : proto ? (
         <PrototypePanel editor={editor} nodes={sel} onPresent={props.onPresent} />
       ) : sel.length === 0 && editor.tool === 'frame' ? (
         <FramePresets editor={editor} />
