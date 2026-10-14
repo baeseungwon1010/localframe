@@ -159,6 +159,10 @@ export const LayoutSchema = z
     crossAlign: z.enum(['start', 'center', 'end', 'stretch']),
     widthMode: z.enum(['fixed', 'hug']),
     heightMode: z.enum(['fixed', 'hug']),
+    /** Horizontal layouts only: items flow onto new rows when a row is full. */
+    wrap: z.boolean().optional(),
+    /** Space between wrapped rows. */
+    counterGap: z.number().min(0).max(10_000).optional(),
   })
   .strict();
 export type Layout = z.infer<typeof LayoutSchema>;
@@ -377,6 +381,11 @@ export const SceneNodeSchema = z
     /** Clips the layers above it in the same parent. */
     isMask: z.boolean().optional(),
     reactions: z.array(ReactionSchema).max(20).optional(),
+    /** Size limits applied by auto layout (to a hugging frame, and to its children). */
+    minWidth: z.number().min(0).max(1e6).optional(),
+    maxWidth: z.number().min(0).max(1e6).optional(),
+    minHeight: z.number().min(0).max(1e6).optional(),
+    maxHeight: z.number().min(0).max(1e6).optional(),
     /** How the layer mixes with what is below it (CSS blend mode names). */
     blendMode: z.enum(BLEND_MODES).optional(),
     fillStyleId: id.optional(),

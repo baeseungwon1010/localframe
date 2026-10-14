@@ -20,6 +20,7 @@ export const DEFAULT_LAYOUT: Layout = {
 export function applyAutoLayout(frame: SceneNode, kids: SceneNode[]): { frame: SceneNode; kids: SceneNode[] } {
   const L = frame.layout;
   if (!L) return { frame, kids };
+  if (L.wrap && L.mode === 'horizontal') return wrapLayout(frame, L, kids);
   const horizontal = L.mode === 'horizontal';
   const [pt, pr, pb, pl] = L.padding;
   const padMainStart = horizontal ? pl : pt;
@@ -37,6 +38,8 @@ export function applyAutoLayout(frame: SceneNode, kids: SceneNode[]): { frame: S
   const flow = kids.filter((k) => k.visible && !k.layoutChild?.absolute);
   const out = new Map<string, SceneNode>(kids.map((k) => [k.id, k]));
   const set = (n: SceneNode, main: number | null, cross: number | null) => {
+    if (main !== null) main = horizontal ? clampW(n, main) : clampH(n, main);
+    if (cross !== null) cross = horizontal ? clampH(n, cross) : clampW(n, cross);
     let next = n;
     if (main !== null && Math.abs(mainSize(n) - main) > 0.001) next = horizontal ? { ...next, width: main } : { ...next, height: main };
     if (cross !== null && Math.abs(crossSize(next) - cross) > 0.001 && next.type !== 'LINE')
@@ -100,10 +103,69 @@ export function applyAutoLayout(frame: SceneNode, kids: SceneNode[]): { frame: S
     cursor += mainSize(k) + gap;
   }
 
-  const w = round2(Math.max(0.01, horizontal ? frameMain : frameCross));
-  const h = round2(Math.max(0.01, horizontal ? frameCross : frameMain));
-  const nextFrame = w !== frame.width || h !== frame.height ? { ...frame, width: w, height: h } : frame;
-  return { frame: nextFrame, kids: kids.map((k) => out.get(k.id)!) };
+  return { frame: sized(frame, horizontal ? frameMain : frameCross, horizontal ? frameCross : frameMain), kids: kids.map((k) => out.get(k.id)!) };
+}
+
+const clampW = (n: SceneNode, w: number) => Math.min(n.maxWidth || Infinity, Math.max(n.minWidth ?? 0, w));
+const clampH = (n: SceneNode, h: number) => Math.min(n.maxHeight || Infinity, Math.max(n.minHeight ?? 0, h));
+
+/** The frame at its new size, within its own limits (a new object only if the size changed). */
+function sized(frame: SceneNode, width: number, height: number): SceneNode {
+  const w = round2(Math.max(0.01, clampW(frame, width)));
+  const h = round2(Math.max(0.01, clampH(frame, height)));
+  return w !== frame.width || h !== frame.height ? { ...frame, width: w, height: h } : frame;
+}
+
+/**
+ * Horizontal auto layout that wraps: items fill a row left to right and move to a new row when the
+ * next one would pass the inner width. Rows stack with `counterGap`; alignment applies per row.
+ */
+function wrapLayout(frame: SceneNode, L: NonNullable<SceneNode['layout']>, kids: SceneNode[]): { frame: SceneNode; kids: SceneNode[] } {
+  const [pt, pr, pb, pl] = L.padding;
+  const out = new Map<string, SceneNode>(kids.map((k) => [k.id, k]));
+  const flow = kids.filter((k) => k.visible && !k.layoutChild?.absolute);
+  // a wrapping layout needs a width to wrap at: a hugging one keeps its current width
+  const inner = Math.max(0, frame.width - pl - pr);
+  const rowGap = L.counterGap ?? L.gap;
+  const rows: SceneNode[][] = [];
+  let row: SceneNode[] = [];
+  let used = 0;
+  for (const k of flow) {
+    const add = (row.length ? L.gap : 0) + k.width;
+    if (row.length && used + add > inner + 0.001) {
+      rows.push(row);
+      row = [];
+      used = 0;
+    }
+    used += (row.length ? L.gap : 0) + k.width;
+    row.push(k);
+  }
+  if (row.length) rows.push(row);
+
+  let y = pt;
+  for (const r of rows) {
+    const rowH = Math.max(...r.map((k) => k.height));
+    const total = r.reduce((s, k) => s + k.width, 0);
+    let gap = L.gap;
+    let x = pl;
+    const free = inner - total - gap * (r.length - 1);
+    if (L.primaryAlign === 'space-between' && r.length > 1) gap = (inner - total) / (r.length - 1);
+    else if (L.primaryAlign === 'center') x += free / 2;
+    else if (L.primaryAlign === 'end') x += free;
+    for (const k of r) {
+      let ky = y;
+      if (L.crossAlign === 'center') ky += (rowH - k.height) / 2;
+      else if (L.crossAlign === 'end') ky += rowH - k.height;
+      const nx = round2(x);
+      const ny = round2(ky);
+      if (k.x !== nx || k.y !== ny || k.rotation !== 0) out.set(k.id, { ...k, x: nx, y: ny, rotation: 0 });
+      x += k.width + gap;
+    }
+    y += rowH + rowGap;
+  }
+  const contentH = rows.length ? y - rowGap + pb : pt + pb;
+  const h = L.heightMode === 'hug' ? contentH : frame.height;
+  return { frame: sized(frame, frame.width, h), kids: kids.map((k) => out.get(k.id)!) };
 }
 
 /** Child index where a layer dropped at `pos` (parent coordinates) belongs in an auto layout frame. */

@@ -935,9 +935,53 @@ function AutoLayoutSection(props: { editor: Editor; nodes: SceneNode[]; update: 
               onChange={(v) => setL({ heightMode: v })}
             />
           </div>
+          {nodes.every((n) => L(n).mode === 'horizontal') && (
+            <div className="grid2">
+              <label className="check-row">
+                <input type="checkbox" checked={nodes.every((n) => L(n).wrap)} onChange={(e) => setL({ wrap: e.target.checked || undefined })} />
+                Wrap to new rows
+              </label>
+              {nodes.every((n) => L(n).wrap) && (
+                <NumberField
+                  label="Row gap"
+                  ariaLabel="Gap between rows"
+                  value={common(nodes, (n) => L(n).counterGap ?? L(n).gap)}
+                  min={0}
+                  onCommit={(v) => setL({ counterGap: v })}
+                />
+              )}
+            </div>
+          )}
+          <SizeLimits nodes={nodes} update={update} />
         </>
       )}
     </Section>
+  );
+}
+
+/** Min and max width and height; 0 means no limit. */
+function SizeLimits(props: { nodes: SceneNode[]; update: (fn: (n: SceneNode) => SceneNode) => void }) {
+  const { nodes, update } = props;
+  const field = (key: 'minWidth' | 'maxWidth' | 'minHeight' | 'maxHeight', label: string, aria: string) => (
+    <NumberField
+      label={label}
+      ariaLabel={aria}
+      value={common(nodes, (n) => n[key] ?? 0)}
+      min={0}
+      max={1e6}
+      onCommit={(v) => update((n) => ({ ...n, [key]: v > 0 ? v : undefined }))}
+    />
+  );
+  return (
+    <>
+      <div className="grid2">
+        {field('minWidth', 'Min W', 'Minimum width')}
+        {field('maxWidth', 'Max W', 'Maximum width')}
+        {field('minHeight', 'Min H', 'Minimum height')}
+        {field('maxHeight', 'Max H', 'Maximum height')}
+      </div>
+      <p className="field-caption">Size limits apply in auto layout. 0 means no limit.</p>
+    </>
   );
 }
 
@@ -971,6 +1015,7 @@ function LayoutChildSection(props: { nodes: SceneNode[]; update: (fn: (n: SceneN
         <input type="checkbox" checked={nodes.every((n) => C(n).absolute)} onChange={(e) => setC({ absolute: e.target.checked })} />
         Ignore auto layout (absolute position)
       </label>
+      <SizeLimits nodes={nodes} update={update} />
     </Section>
   );
 }
