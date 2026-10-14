@@ -223,6 +223,9 @@ function shapePath(ctx: Ctx, n: SceneNode, grow = 0) {
   addShape(ctx, n, grow);
 }
 
+/** How a vector's paths fill where they overlap: even-odd leaves holes where paths cross. */
+export const ruleOf = (n: SceneNode): CanvasFillRule => (n.type === 'VECTOR' && n.vector?.fillRule === 'evenodd' ? 'evenodd' : 'nonzero');
+
 /** Open paths can only be stroked along their centre line. */
 const strokeAlignOf = (n: SceneNode) => (n.type === 'VECTOR' && !n.vector?.closed ? 'center' : n.strokeAlign);
 
@@ -249,7 +252,7 @@ export function imageFilter(p: ImagePaint): string {
 function fillImage(ctx: Ctx, n: SceneNode, p: ImagePaint) {
   const img = getImage(p.imageId);
   ctx.save();
-  ctx.clip();
+  ctx.clip(ruleOf(n));
   if (!img) {
     // placeholder while the image loads
     ctx.fillStyle = 'rgba(128, 128, 128, 0.18)';
@@ -283,7 +286,7 @@ function fillShape(ctx: Ctx, n: SceneNode) {
       continue;
     }
     ctx.fillStyle = paintStyle(ctx, p, n.width, n.height);
-    ctx.fill();
+    ctx.fill(ruleOf(n));
   }
 }
 
@@ -330,7 +333,7 @@ function strokeShape(ctx: Ctx, n: SceneNode) {
   if (align === 'center') {
     ctx.lineWidth = n.strokeWeight;
   } else if (align === 'inside') {
-    ctx.clip();
+    ctx.clip(ruleOf(n));
     ctx.lineWidth = n.strokeWeight * 2;
   } else {
     // outside: clip to everything except the shape
@@ -591,7 +594,7 @@ function silhouette(ctx: Ctx, doc: SceneDoc, k: SceneNode, opts: DrawOptions) {
       ctx.lineWidth = Math.max(1, k.strokeWeight);
       ctx.strokeStyle = '#000';
       ctx.stroke();
-    } else ctx.fill();
+    } else ctx.fill(ruleOf(k));
     ctx.restore();
     return;
   }
@@ -630,7 +633,7 @@ function drawBoolean(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions) {
         lc.restore();
       } else {
         lc.fillStyle = paintStyle(lc, p, n.width, n.height);
-        lc.fill();
+        lc.fill(ruleOf(n));
       }
     }
     if (first) {
@@ -657,7 +660,7 @@ function clipToMask(ctx: Ctx, n: SceneNode) {
   ctx.beginPath();
   if (n.type === 'RECTANGLE' || n.type === 'ELLIPSE' || n.type === 'VECTOR' || isBox(n)) addShape(ctx, n);
   else ctx.rect(0, 0, n.width, n.height);
-  ctx.clip();
+  ctx.clip(ruleOf(n));
   ctx.setTransform(t);
 }
 
@@ -686,7 +689,7 @@ function shapeShadow(ctx: Ctx, n: SceneNode, e: ShadowEffect) {
   ctx.setTransform(m.a, m.b, m.c, m.d, m.e - FAR, m.f);
   shapePath(ctx, n, e.spread);
   ctx.fillStyle = '#000';
-  ctx.fill();
+  ctx.fill(ruleOf(n));
   ctx.restore();
 }
 
@@ -695,7 +698,7 @@ function innerShadow(ctx: Ctx, n: SceneNode, e: ShadowEffect) {
   const off = deviceVector(ctx, e.x, e.y);
   ctx.save();
   shapePath(ctx, n);
-  ctx.clip();
+  ctx.clip(ruleOf(n));
   const m = ctx.getTransform();
   ctx.shadowColor = rgba(e.color, e.opacity);
   ctx.shadowBlur = e.blur * s;
@@ -848,7 +851,7 @@ function drawWithEffects(ctx: Ctx, doc: SceneDoc, n: SceneNode, effects: Effect[
       sc.drawImage(ctx.canvas, -snap.x, -snap.y);
       ctx.save();
       shapePath(ctx, n);
-      ctx.clip();
+      ctx.clip(ruleOf(n));
       const m = ctx.getTransform();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.drawImage(snap.canvas, snap.x, snap.y);

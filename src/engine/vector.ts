@@ -17,15 +17,20 @@ function segment(sink: PathSink, a: VectorPoint, b: VectorPoint) {
   }
 }
 
-/** Adds the vector's outline to a canvas path or Path2D. */
+/** Every path of a vector: the main one and any extra ones. */
+export const vectorPaths = (v: Vector): { closed: boolean; points: VectorPoint[] }[] => [{ closed: v.closed, points: v.points }, ...(v.extra ?? [])];
+
+/** Adds the vector's outline (all its paths) to a canvas path or Path2D. */
 export function tracePath(sink: PathSink, v: Vector) {
-  const pts = v.points;
-  if (pts.length === 0) return;
-  sink.moveTo(pts[0].x, pts[0].y);
-  for (let i = 1; i < pts.length; i++) segment(sink, pts[i - 1], pts[i]);
-  if (v.closed && pts.length > 1) {
-    segment(sink, pts[pts.length - 1], pts[0]);
-    sink.closePath();
+  for (const path of vectorPaths(v)) {
+    const pts = path.points;
+    if (pts.length === 0) continue;
+    sink.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) segment(sink, pts[i - 1], pts[i]);
+    if (path.closed && pts.length > 1) {
+      segment(sink, pts[pts.length - 1], pts[0]);
+      sink.closePath();
+    }
   }
 }
 
@@ -48,7 +53,7 @@ export function svgPathData(v: Vector): string {
 /** Bounds of the points and handles (always contains the curve). */
 export function vectorBounds(v: Vector): Rect {
   const pts: Point[] = [];
-  for (const p of v.points) {
+  for (const p of vectorPaths(v).flatMap((path) => path.points)) {
     pts.push(p);
     if (p.in) pts.push(p.in);
     if (p.out) pts.push(p.out);
@@ -171,17 +176,22 @@ export function shapeVector(shape: { kind: 'polygon' | 'star'; count: number; ra
   };
 }
 
-export function scaleVector(v: Vector, sx: number, sy: number): Vector {
-  const s = (p: Point) => ({ x: round2(p.x * sx), y: round2(p.y * sy) });
+/** The same vector with every point and handle (of every path) mapped. */
+function mapVector(v: Vector, f: (p: Point) => Point): Vector {
+  const pts = (list: VectorPoint[]) => list.map((p) => ({ ...f(p), ...(p.in ? { in: f(p.in) } : {}), ...(p.out ? { out: f(p.out) } : {}) }));
   return {
-    closed: v.closed,
-    points: v.points.map((p) => ({ ...s(p), ...(p.in ? { in: s(p.in) } : {}), ...(p.out ? { out: s(p.out) } : {}) })),
+    ...v,
+    points: pts(v.points),
+    ...(v.extra ? { extra: v.extra.map((path) => ({ closed: path.closed, points: pts(path.points) })) } : {}),
   };
 }
 
+export function scaleVector(v: Vector, sx: number, sy: number): Vector {
+  return mapVector(v, (p) => ({ x: round2(p.x * sx), y: round2(p.y * sy) }));
+}
+
 function shift(v: Vector, dx: number, dy: number): Vector {
-  const t = (p: Point) => ({ x: round2(p.x + dx), y: round2(p.y + dy) });
-  return { closed: v.closed, points: v.points.map((p) => ({ ...t(p), ...(p.in ? { in: t(p.in) } : {}), ...(p.out ? { out: t(p.out) } : {}) })) };
+  return mapVector(v, (p) => ({ x: round2(p.x + dx), y: round2(p.y + dy) }));
 }
 
 /**
@@ -222,7 +232,7 @@ export function hitsVector(n: SceneNode, p: Point, tolerance: number): boolean {
   tracePath(path, v);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   const filled = n.fills.some((f) => f.visible);
-  if (filled && ctx.isPointInPath(path, p.x, p.y)) return true;
+  if (filled && ctx.isPointInPath(path, p.x, p.y, v.fillRule === 'evenodd' ? 'evenodd' : 'nonzero')) return true;
   ctx.lineWidth = Math.max(n.strokeWeight, tolerance * 2);
   return ctx.isPointInStroke(path, p.x, p.y);
 }

@@ -181,7 +181,7 @@ function roundedRectPath(n: SceneNode): string {
 }
 
 function shapeElement(n: SceneNode, attrs: string): string {
-  if (n.type === 'VECTOR' && n.vector) return `<path d="${svgPathData(n.vector)}"${attrs}/>`;
+  if (n.type === 'VECTOR' && n.vector) return `<path d="${svgPathData(n.vector)}"${n.vector.fillRule === 'evenodd' ? ' fill-rule="evenodd" clip-rule="evenodd"' : ''}${attrs}/>`;
   if (n.type === 'ELLIPSE') {
     return `<ellipse cx="${num(n.width / 2)}" cy="${num(n.height / 2)}" rx="${num(n.width / 2)}" ry="${num(n.height / 2)}"${attrs}/>`;
   }

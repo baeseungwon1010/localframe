@@ -220,12 +220,18 @@ export type LayoutChild = z.infer<typeof LayoutChildSchema>;
 /** 'auto' picks the side that faces the other end of the line, every time either end moves. */
 const vpt = z.object({ x: z.number().min(-1e8).max(1e8), y: z.number().min(-1e8).max(1e8) }).strict();
 /** A path in the layer's own coordinates; `in` and `out` are absolute curve handles. */
+const vectorPoints = z.array(z.object({ x: vpt.shape.x, y: vpt.shape.y, in: vpt.optional(), out: vpt.optional() }).strict()).min(1).max(10_000);
 export const VectorSchema = z
   .object({
     closed: z.boolean(),
-    points: z.array(z.object({ x: vpt.shape.x, y: vpt.shape.y, in: vpt.optional(), out: vpt.optional() }).strict()).min(1).max(10_000),
+    points: vectorPoints,
+    /** More paths in the same layer (outlined strokes, flattened booleans); edited points are the main path's. */
+    extra: z.array(z.object({ closed: z.boolean(), points: vectorPoints }).strict()).max(200).optional(),
+    /** Where paths overlap: even-odd makes holes. */
+    fillRule: z.enum(['nonzero', 'evenodd']).optional(),
   })
-  .strict();
+  .strict()
+  .refine((v) => v.points.length + (v.extra ?? []).reduce((s, p) => s + p.points.length, 0) <= 50_000, 'too many points');
 export type Vector = z.infer<typeof VectorSchema>;
 export type VectorPoint = Vector['points'][number];
 
