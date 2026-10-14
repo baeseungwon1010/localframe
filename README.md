@@ -5,6 +5,13 @@ images, build components and auto layout, organise everything in pages and layer
 WebP, SVG, PDF or a portable file. Everything runs on your machine: no account, no cloud, no third-party
 requests.
 
+## Try it
+
+Open **https://baeseungwon1010.github.io/localframe/** to use it in your browser, with nothing to install
+and no account. The web version keeps your files in your browser's own storage on your device: nothing is
+uploaded, and other people can't see them. Clearing the site's data removes them, so export files you want
+to keep. For a copy that keeps files on disk, run it locally (below).
+
 ## Features
 
 - **Files**: create, rename, delete, import and export. Every change autosaves to a local SQLite file, and
@@ -153,12 +160,20 @@ The editor is built to be reachable only by your own browser:
 - **Page and file safety**: the built page is served with a strict Content Security Policy. Text and names
   are escaped in SVG export.
 
+## Web version
+
+`npm run build:web` builds the app for static hosting into `dist-web/`. That build stores files in the
+browser (IndexedDB) instead of talking to the local server, checks every change with the same schemas
+and limits as the server, and carries its own Content Security Policy. A push to `main` deploys it to
+GitHub Pages (`.github/workflows/pages.yml`).
+
 ## Development
 
 ```bash
 npm run typecheck
 npm test            # unit tests (engine, server)
 npm run test:e2e    # browser tests (needs: npx playwright install chromium)
+npm run test:e2e:web  # the same browser tests against the web build
 ```
 
 ```
