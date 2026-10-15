@@ -40,6 +40,8 @@ jobs:
           LOCALFRAME_BASE: ${{ vars.PAGES_BASE || format('/{0}/', github.event.repository.name) }}
           # absolute address for link previews (og:image and og:url)
           LOCALFRAME_SITE_URL: ${{ vars.SITE_URL || format('https://{0}.github.io/{1}/', github.repository_owner, github.event.repository.name) }}
+          # "Send feedback" opens a new issue here
+          LOCALFRAME_FEEDBACK_URL: https://github.com/${{ github.repository }}/issues/new
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

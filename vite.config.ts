@@ -196,7 +196,12 @@ function installableApp(): Plugin {
 export default defineConfig(({ mode }) => ({
   plugins: mode === 'web' ? [react(), woff2Only(), webCsp(), installableApp()] : [react(), woff2Only()],
   base: mode === 'web' ? (process.env.LOCALFRAME_BASE ?? '/localframe/') : '/',
-  define: mode === 'web' ? { 'import.meta.env.VITE_STORAGE': JSON.stringify('browser') } : {},
+  define: {
+    ...(mode === 'web' ? { 'import.meta.env.VITE_STORAGE': JSON.stringify('browser') } : {}),
+    // where "Send feedback" leads, and the build it reports (both set by the deploy workflow)
+    'import.meta.env.VITE_FEEDBACK_URL': JSON.stringify(process.env.LOCALFRAME_FEEDBACK_URL ?? ''),
+    'import.meta.env.VITE_BUILD': JSON.stringify((process.env.GITHUB_SHA ?? '').slice(0, 7)),
+  },
   server: {
     host: '127.0.0.1',
     port: 5173,
