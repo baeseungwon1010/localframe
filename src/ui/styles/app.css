@@ -2586,7 +2586,7 @@ button:disabled {
   .tooldock {
     max-width: calc(100% - 16px);
     overflow-x: auto;
-    bottom: var(--space-4);
+    --dock-gap: var(--space-4);
     scrollbar-width: none;
   }
 
@@ -2614,4 +2614,66 @@ button:disabled {
   .files-header .btn-label {
     display: none;
   }
+}
+
+/* ------------------------------------------------------------- the installed app */
+
+/* no rubber-band scrolling or pull-to-refresh: it's an app, not a page */
+html,
+body {
+  overscroll-behavior: none;
+}
+
+body {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* keep clear of notches, rounded corners and the home indicator (viewport-fit=cover) */
+.editor {
+  grid-template-rows: calc(var(--titlebar-h) + env(safe-area-inset-top, 0px)) minmax(0, 1fr);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+.titlebar {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.tooldock {
+  bottom: calc(var(--dock-gap, var(--space-6)) + env(safe-area-inset-bottom, 0px));
+}
+
+.files-screen {
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+
+.install-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  max-width: 64ch;
+  margin: 0 0 var(--space-6);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-6);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
+}
+
+.install-hint p {
+  margin: 0;
+}
+
+.update-banner {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--titlebar-h) + env(safe-area-inset-top, 0px) + var(--space-4));
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  max-width: calc(100% - 32px);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-6);
+  transform: translateX(-50%);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-popover);
 }

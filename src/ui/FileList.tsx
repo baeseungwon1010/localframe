@@ -1,11 +1,12 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { sampleFile } from './sampleFile.ts';
-import { FilePlus2, MoreHorizontal, Upload } from 'lucide-react';
+import { Download, FilePlus2, MoreHorizontal, Upload, X } from 'lucide-react';
 import type { FileMeta } from '../../shared/schema.ts';
 import { ApiError, api, BROWSER_STORAGE, STORAGE_DOWN } from '../api.ts';
 import { navigate } from './App.tsx';
 import { IconButton, Menu, type MenuItem, ThemeToggle, relativeTime } from './components.tsx';
 import type { Theme } from './hooks.ts';
+import { useInstall } from './pwa.ts';
 
 // exporting draws every page, so it brings the canvas engine: loaded when first used
 const ExportFileDialog = lazy(() => import('./ExportFileDialog.tsx').then((m) => ({ default: m.ExportFileDialog })));
@@ -13,6 +14,7 @@ const ExportFileDialog = lazy(() => import('./ExportFileDialog.tsx').then((m) =>
 const MAX_IMPORT_BYTES = 150 * 1024 * 1024;
 
 export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme) => void }) {
+  const app = useInstall();
   const [files, setFiles] = useState<FileMeta[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -118,6 +120,11 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
           <button type="button" className="btn primary" aria-label="New file" onClick={create}>
             <FilePlus2 size={14} strokeWidth={1.75} /> <span className="btn-label">New file</span>
           </button>
+          {app.canInstall && (
+            <button type="button" className="btn secondary" aria-label="Install app" onClick={app.install}>
+              <Download size={14} strokeWidth={1.75} /> <span className="btn-label">Install app</span>
+            </button>
+          )}
           <ThemeToggle theme={theme} setTheme={setTheme} />
           <input
             ref={importRef}
@@ -136,6 +143,17 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
             Files are saved in this browser only, on this device. Nothing is uploaded. Clearing site data removes them, so use
             Export to keep a copy.
           </p>
+        )}
+        {app.iosHint && (
+          <div className="install-hint" role="note">
+            <p>
+              Use localframe like an app, offline too: tap Share, then <strong>Add to Home Screen</strong>. Safari may clear
+              files of sites you don't visit for a while; on the Home Screen they are kept.
+            </p>
+            <IconButton label="Dismiss" onClick={app.dismissHint}>
+              <X size={14} strokeWidth={1.75} />
+            </IconButton>
+          </div>
         )}
         {error && (
           <p className="status-line error" role="alert">

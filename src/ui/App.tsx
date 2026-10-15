@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { FileList } from './FileList.tsx';
 import { useTheme } from './hooks.ts';
+import { useAppUpdate } from './pwa.ts';
 
 // the editor (canvas engine, panels, fonts) loads the first time a file is opened
 const loadEditor = () => import('./editor/EditorScreen.tsx');
@@ -25,6 +26,20 @@ export function navigate(hash: string) {
   window.location.hash = hash;
 }
 
+/** A new version has been downloaded: it takes over when you choose to reload. */
+function UpdateBanner() {
+  const update = useAppUpdate();
+  if (!update.ready) return null;
+  return (
+    <div className="update-banner" role="status">
+      <span>A new version of localframe is ready.</span>
+      <button type="button" className="btn primary small" onClick={update.apply}>
+        Reload
+      </button>
+    </div>
+  );
+}
+
 export function App() {
   const [route, setRoute] = useState<Route>(parseHash);
   const [theme, setTheme] = useTheme();
@@ -37,11 +52,16 @@ export function App() {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
-  if (route.name === 'file')
-    return (
-      <Suspense fallback={<div className="center-message" aria-busy="true">Opening file…</div>}>
-        <EditorScreen key={route.id} fileId={route.id} theme={theme} setTheme={setTheme} />
-      </Suspense>
-    );
-  return <FileList theme={theme} setTheme={setTheme} />;
+  return (
+    <>
+      {route.name === 'file' ? (
+        <Suspense fallback={<div className="center-message" aria-busy="true">Opening file…</div>}>
+          <EditorScreen key={route.id} fileId={route.id} theme={theme} setTheme={setTheme} />
+        </Suspense>
+      ) : (
+        <FileList theme={theme} setTheme={setTheme} />
+      )}
+      <UpdateBanner />
+    </>
+  );
 }
