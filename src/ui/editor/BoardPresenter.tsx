@@ -118,15 +118,24 @@ export function BoardPresenter({ editor, onClose }: { editor: Editor; onClose: (
   useEffect(() => {
     rootRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
+      // the editor underneath gets no keys while presenting (no deleting what can't be seen)
+      e.stopPropagation();
+      // Enter and Space on a focused bar button press that button
+      const onButton = e.target instanceof HTMLElement && e.target.closest('button');
+      if (onButton && (e.key === 'Enter' || e.key === ' ')) return;
       if (['ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Enter'].includes(e.key)) go(index + 1);
       else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'].includes(e.key)) go(index - 1);
       else if (e.key === 'Home') go(0);
       else if (e.key === 'End') go(slides.length - 1);
       else if (e.key === 'Escape') onClose();
       else if (e.key === 'f' || e.key === 'F') void toggleFullscreen();
-      else return;
+      else if (e.key === 'Tab') return;
+      else {
+        // shortcuts like Ctrl+Z or Delete do nothing here
+        if (e.ctrlKey || e.metaKey || e.key.length === 1 || e.key === 'Delete' || e.key === 'Backspace') e.preventDefault();
+        return;
+      }
       e.preventDefault();
-      e.stopPropagation();
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
