@@ -13,6 +13,7 @@ import { backupDue, backupFolder, canBackUpToFolder, forgetBackupFolder, lastBac
 const backupWork = () => import('./backup.ts');
 import { downloadBlob } from './download.ts';
 import { t } from './i18n.ts';
+import { forgetHistory } from './undoStore.ts';
 
 // exporting draws every page, so it brings the canvas engine: loaded when first used
 const ExportFileDialog = lazy(() => import('./ExportFileDialog.tsx').then((m) => ({ default: m.ExportFileDialog })));
@@ -216,6 +217,7 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
       onSelect: async () => {
         if (!window.confirm(t("Delete “{name}”? This can't be undone.", { name: f.name }))) return;
         await api.deleteFile(f.id);
+        void forgetHistory(f.id);
         setNotice(t('Deleted “{name}”.', { name: f.name }));
         await refresh();
       },

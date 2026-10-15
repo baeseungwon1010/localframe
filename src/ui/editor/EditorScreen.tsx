@@ -12,6 +12,7 @@ import { type Theme, loadFonts, useDiagramMode, useEditorRev, useMediaQuery } fr
 import { t } from '../i18n.ts';
 import { RenameDialog } from './framePanels.tsx';
 import { PhoneSheet } from './PhoneSheet.tsx';
+import { loadHistory, saveHistory } from '../undoStore.ts';
 import { type ShareFormat, shareView } from '../share.ts';
 import { LONG_LINK_CHARS, makeShareLink } from '../shareLink.ts';
 import { CanvasView, type Notice } from './CanvasView.tsx';
@@ -200,6 +201,10 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         if (cancelled) return;
         useImagesOf(fileId);
         editor.load(nodes, meta.pages, meta.styles, meta.variables);
+        // undo reaches back past the last visit, while the file is as that history left it
+        const saved = await loadHistory(fileId);
+        if (cancelled) return;
+        if (saved) editor.restoreHistory(saved);
         setFile(meta);
         document.title = `${meta.name} · localframe`;
         queue = new SyncQueue(fileId, meta.version, editor, () => {
@@ -373,6 +378,27 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
       document.removeEventListener('paste', onPaste);
     };
   }, [editor, file]);
+
+  // keep the undo history for the next visit, a moment after each change and when leaving
+  useEffect(() => {
+    if (!file) return;
+    let timer = 0;
+    const save = () => {
+      window.clearTimeout(timer);
+      void saveHistory(fileId, editor.historySnapshot());
+    };
+    const later = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(save, 1500);
+    };
+    const off = editor.subscribe('doc', later);
+    window.addEventListener('pagehide', save);
+    return () => {
+      off();
+      window.removeEventListener('pagehide', save);
+      save();
+    };
+  }, [editor, file, fileId]);
 
   // don't lose edits when the tab closes
   useEffect(() => {
