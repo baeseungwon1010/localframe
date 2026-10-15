@@ -754,3 +754,39 @@ test('presenting a board goes through its sections in reading order', async ({ p
   await expect(show).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test('SVG: pasted or dropped, it becomes editable shapes', async ({ page }) => {
+  const errors = await newFile(page);
+  const icon =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>';
+  // paste, as copied from an icon site
+  // (the event carries its data directly: Firefox ignores clipboardData given to the constructor)
+  const paste = (text: string) =>
+    page.evaluate((t) => {
+      const data = new DataTransfer();
+      data.setData('text/plain', t);
+      const e = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(e, 'clipboardData', { value: data });
+      document.dispatchEvent(e);
+    }, text);
+  await paste(icon);
+  await expect(page.getByRole('treeitem', { name: /^SVG/ })).toBeVisible();
+  await expect(page.getByRole('treeitem', { name: /^Ellipse|^Circle/ }).first()).toBeVisible();
+
+  // drop an .svg file on the canvas
+  const logo = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><rect id="Badge" width="100" height="50" rx="8" fill="#5B8DEF"/></svg>';
+  const box = (await page.locator('canvas').boundingBox())!;
+  const drop = await page.evaluateHandle((text) => {
+    const data = new DataTransfer();
+    data.items.add(new File([text], 'logo.svg', { type: 'image/svg+xml' }));
+    return data;
+  }, logo);
+  await page.dispatchEvent('.canvas-wrap', 'dragover', { dataTransfer: drop, clientX: box.x + 600, clientY: box.y + 400 });
+  await page.dispatchEvent('.canvas-wrap', 'drop', { dataTransfer: drop, clientX: box.x + 600, clientY: box.y + 400 });
+  await expect(page.getByRole('treeitem', { name: /^logo/ })).toBeVisible();
+  await expect(page.getByRole('treeitem', { name: /^Badge/ })).toBeVisible();
+
+  // not an SVG: a notice, nothing added
+  await paste('<svg><g>');
+  expect(errors).toEqual([]);
+});
