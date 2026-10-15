@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import '../canvasFonts.ts';
 import type { FileMeta } from '../../../shared/schema.ts';
 import { ApiError, BROWSER_STORAGE, STORAGE_DOWN, api } from '../../api.ts';
@@ -9,7 +9,6 @@ import { facesUsed } from '../../engine/text.ts';
 import { SyncQueue } from '../../engine/sync.ts';
 import { navigate } from '../App.tsx';
 import { type Theme, loadFonts, useDiagramMode, useEditorRev, useMediaQuery } from '../hooks.ts';
-import { ExportFileDialog } from '../ExportFileDialog.tsx';
 import { RenameDialog } from './framePanels.tsx';
 import { PhoneSheet } from './PhoneSheet.tsx';
 import { type ShareFormat, shareView } from '../share.ts';
@@ -18,10 +17,6 @@ import { CanvasView } from './CanvasView.tsx';
 import { LeftPanel } from './LeftPanel.tsx';
 import { PropertiesPanel } from './PropertiesPanel.tsx';
 import { TitleBar } from './TitleBar.tsx';
-import { VersionHistory } from './VersionHistory.tsx';
-import { Presenter } from './Presenter.tsx';
-import { FindReplace } from './FindReplace.tsx';
-import { QuickActions } from './QuickActions.tsx';
 import { type CommentStore, CommentPins, CommentsPanel, useComments } from './Comments.tsx';
 
 /** Properties, or the comment list in comment mode; diagram mode shows only the comment list. */
@@ -43,6 +38,11 @@ import { DOCK_TOOLS, ToolRail } from './ToolRail.tsx';
 /** Screens this narrow show the board view whatever the file's mode. */
 const NARROW = '(max-width: 760px)';
 
+const ExportFileDialog = lazy(() => import('../ExportFileDialog.tsx').then((m) => ({ default: m.ExportFileDialog })));
+const VersionHistory = lazy(() => import('./VersionHistory.tsx').then((m) => ({ default: m.VersionHistory })));
+const Presenter = lazy(() => import('./Presenter.tsx').then((m) => ({ default: m.Presenter })));
+const FindReplace = lazy(() => import('./FindReplace.tsx').then((m) => ({ default: m.FindReplace })));
+const QuickActions = lazy(() => import('./QuickActions.tsx').then((m) => ({ default: m.QuickActions })));
 const THUMB_W = 480;
 const THUMB_H = 300;
 
@@ -61,7 +61,8 @@ function makeThumbnail(editor: Editor): string | null {
     const ox = (THUMB_W - bounds.width * s) / 2 - bounds.x * s;
     const oy = (THUMB_H - bounds.height * s) / 2 - bounds.y * s;
     ctx.setTransform(s, 0, 0, s, ox, oy);
-    drawChildren(ctx, editor.doc, null);
+    // a thumbnail is small: tiny layers and text can be simplified like a zoomed-out canvas
+    drawChildren(ctx, editor.doc, null, { scale: s });
   }
   return canvas.toDataURL('image/png');
 }
@@ -462,47 +463,50 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         }}
       />
       {renaming && <RenameDialog editor={editor} onClose={() => setRenaming(false)} />}
-      {exporting && (
-        <ExportFileDialog
-          fileId={fileId}
-          fileName={file.name}
-          onClose={() => setExporting(false)}
-          beforeExport={flushAll}
-        />
-      )}
-      {palette && (
-        <QuickActions
-          editor={editor}
-          onClose={() => setPalette(false)}
-          screen={{
-            exportFile: () => setExporting(true),
-            present,
-            history: () => setHistory(true),
-            find: () => setFinding(true),
-            placeImage: () => imageInput.current?.click(),
-            rename: () => setRenaming(true),
-            diagramMode,
-            setDiagramMode: narrow ? undefined : setDiagramMode,
-            share: (f) => void share(f),
-            shareLink: BROWSER_STORAGE ? () => void shareLink() : undefined,
-          }}
-        />
-      )}
-      {finding && <FindReplace editor={editor} onClose={() => setFinding(false)} />}
-      {presenting && <Presenter editor={editor} startId={presenting.start} onClose={() => setPresenting(null)} />}
-      {history && (
-        <VersionHistory
-          fileId={fileId}
-          onClose={() => setHistory(false)}
-          beforeSave={flushAll}
-          onRestore={async (vid) => {
-            await flushAll();
-            await api.restoreVersion(fileId, vid);
-            setHistory(false);
-            setReloadKey((k) => k + 1);
-          }}
-        />
-      )}
+      {/* dialogs and the presentation load the first time they open */}
+      <Suspense fallback={null}>
+        {exporting && (
+          <ExportFileDialog
+            fileId={fileId}
+            fileName={file.name}
+            onClose={() => setExporting(false)}
+            beforeExport={flushAll}
+          />
+        )}
+        {palette && (
+          <QuickActions
+            editor={editor}
+            onClose={() => setPalette(false)}
+            screen={{
+              exportFile: () => setExporting(true),
+              present,
+              history: () => setHistory(true),
+              find: () => setFinding(true),
+              placeImage: () => imageInput.current?.click(),
+              rename: () => setRenaming(true),
+              diagramMode,
+              setDiagramMode: narrow ? undefined : setDiagramMode,
+              share: (f) => void share(f),
+              shareLink: BROWSER_STORAGE ? () => void shareLink() : undefined,
+            }}
+          />
+        )}
+        {finding && <FindReplace editor={editor} onClose={() => setFinding(false)} />}
+        {presenting && <Presenter editor={editor} startId={presenting.start} onClose={() => setPresenting(null)} />}
+        {history && (
+          <VersionHistory
+            fileId={fileId}
+            onClose={() => setHistory(false)}
+            beforeSave={flushAll}
+            onRestore={async (vid) => {
+              await flushAll();
+              await api.restoreVersion(fileId, vid);
+              setHistory(false);
+              setReloadKey((k) => k + 1);
+            }}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }
