@@ -82,14 +82,14 @@ describe('drawing', () => {
     valid(ed);
   });
 
-  it('flattens rectangles, ellipses and lines into vectors', () => {
+  it('flattens rectangles, ellipses and lines into vectors', async () => {
     const ed = setup();
     const r = draw(ed, 'rect', [0, 0], [100, 60]);
     ed.updateNodes([r], (n) => ({ ...n, radii: [10, 0, 0, 0] }));
     const e = draw(ed, 'ellipse', [200, 0], [300, 60]);
     const l = draw(ed, 'line', [400, 0], [500, 50]);
     ed.setSelection([r, e, l]);
-    ed.flattenSelection();
+    await ed.flattenSelection();
     expect(ed.doc.get(r)).toMatchObject({ type: 'VECTOR', width: 100, height: 60 });
     expect(ed.doc.get(r)!.vector!.points).toHaveLength(5); // rounded corner = 2 points
     expect(ed.doc.get(e)!.vector!.points).toHaveLength(4);

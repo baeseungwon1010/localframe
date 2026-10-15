@@ -74,7 +74,11 @@ import { canHaveChildren, createNode, fitText, keyAt, keyOnTop, keysAbove, keysO
 import { canvasMeasure } from './text.ts';
 import { type RunProps, adjustRuns, styleRange } from './textRuns.ts';
 import { fitVector, outlineVector, scaleVector, shapeVector, simplifyPoints, smoothPath } from './vector.ts';
-import { areaToVector, booleanArea, strokeArea } from './pathOps.ts';
+import type * as PathOps from './pathOps.ts';
+
+/** Outlining and boolean geometry (polygon clipping) load the first time they are needed. */
+let pathOps: typeof PathOps | null = null;
+const loadPathOps = async () => (pathOps ??= await import('./pathOps.ts'));
 import { canHaveLabel, defaultLabel, heightForLabel } from './labels.ts';
 import { STAMPS, type TemplateKind, templateBounds, templateItems } from './templates.ts';
 import { type Recognized, recognizeStroke } from './recognize.ts';
@@ -1043,7 +1047,8 @@ export class Editor {
    * Ctrl/Cmd+Shift+O: a layer's stroke becomes a filled vector of the same look. A layer without a
    * fill turns into that vector; one with a fill keeps it and gets the outlined stroke above it.
    */
-  outlineStroke() {
+  async outlineStroke() {
+    const { areaToVector, strokeArea } = await loadPathOps();
     const ids = this.selection.filter((id) => !this.doc.isEffectivelyLocked(id));
     const made: string[] = [];
     let failed = '';
@@ -1097,7 +1102,9 @@ export class Editor {
   }
 
   /** Ctrl/Cmd+E: rectangles, ellipses, polygons, stars, lines and boolean groups become editable vectors that look the same. */
-  flattenSelection() {
+  async flattenSelection() {
+    const needsOps = this.selectedNodes().some((n) => n.type === 'BOOLEAN');
+    const ops = needsOps ? await loadPathOps() : pathOps;
     const ids = this.selection.filter((id) => !this.doc.isEffectivelyLocked(id));
     const changed: string[] = [];
     let skipped = false;
@@ -1107,8 +1114,8 @@ export class Editor {
         if (n.type === 'BOOLEAN') {
           let vector: Vector | null = null;
           try {
-            const area = booleanArea(this.doc, n);
-            vector = area && areaToVector(area);
+            const area = ops!.booleanArea(this.doc, n);
+            vector = area && ops!.areaToVector(area);
           } catch {
             vector = null;
           }

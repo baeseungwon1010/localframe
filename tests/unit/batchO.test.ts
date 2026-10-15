@@ -38,12 +38,12 @@ const areaOf = (ed: Editor, id: string) => {
 void polygonClipping;
 
 describe('outline stroke', () => {
-  it('turns an inside stroke of a fill-less rectangle into a ring', () => {
+  it('turns an inside stroke of a fill-less rectangle into a ring', async () => {
     const ed = setup();
     const r = draw(ed, 'rect', [0, 0], [100, 60]);
     ed.updateNodes([r], (n) => ({ ...n, fills: [], strokes: [{ color: '#C8106E', opacity: 1, visible: true }], strokeWeight: 4, strokeAlign: 'inside' }));
     ed.setSelection([r]);
-    ed.outlineStroke();
+    await ed.outlineStroke();
     const n = ed.doc.get(r)!;
     expect(n.type).toBe('VECTOR');
     expect(n.vector!.fillRule).toBe('evenodd');
@@ -57,12 +57,12 @@ describe('outline stroke', () => {
     valid(ed);
   });
 
-  it('keeps the fill and puts the outlined stroke above it', () => {
+  it('keeps the fill and puts the outlined stroke above it', async () => {
     const ed = setup();
     const e = draw(ed, 'ellipse', [0, 0], [100, 100]);
     ed.updateNodes([e], (n) => ({ ...n, strokes: [{ color: '#000000', opacity: 1, visible: true }], strokeWeight: 10, strokeAlign: 'center' }));
     ed.setSelection([e]);
-    ed.outlineStroke();
+    await ed.outlineStroke();
     const stroke = ed.doc.get(ed.selection[0])!;
     expect(stroke.id).not.toBe(e);
     expect(ed.doc.get(e)!.strokes).toEqual([]);
@@ -72,12 +72,12 @@ describe('outline stroke', () => {
     valid(ed);
   });
 
-  it('outlines an open line with round caps', () => {
+  it('outlines an open line with round caps', async () => {
     const ed = setup();
     const l = draw(ed, 'line', [0, 0], [100, 0]);
     ed.updateNodes([l], (n) => ({ ...n, strokeWeight: 10, strokeCap: 'round' }));
     ed.setSelection([l]);
-    ed.outlineStroke();
+    await ed.outlineStroke();
     const n = ed.doc.get(ed.selection[0])!;
     expect(n.type).toBe('VECTOR');
     expect(n.width).toBeCloseTo(110, 0);
@@ -87,14 +87,14 @@ describe('outline stroke', () => {
 });
 
 describe('flatten booleans', () => {
-  it('subtracts the top shape from the bottom one into one vector', () => {
+  it('subtracts the top shape from the bottom one into one vector', async () => {
     const ed = setup();
     const a = draw(ed, 'rect', [0, 0], [100, 100]);
     const b = draw(ed, 'rect', [50, 0], [150, 100]);
     ed.setSelection([a, b]);
     ed.booleanSelection('subtract');
     const bool = ed.selection[0];
-    ed.flattenSelection();
+    await ed.flattenSelection();
     const n = ed.doc.get(bool)!;
     expect(n.type).toBe('VECTOR');
     expect(ed.doc.children(bool)).toHaveLength(0);
@@ -103,7 +103,7 @@ describe('flatten booleans', () => {
     valid(ed);
   });
 
-  it('refuses booleans with text inside and says why', () => {
+  it('refuses booleans with text inside and says why', async () => {
     const ed = setup();
     const notices: string[] = [];
     ed.onNotice = (t) => notices.push(t);
@@ -116,7 +116,7 @@ describe('flatten booleans', () => {
     ed.setSelection([a, t]);
     ed.booleanSelection('union');
     const bool = ed.selection[0];
-    ed.flattenSelection();
+    await ed.flattenSelection();
     expect(ed.doc.get(bool)!.type).toBe('BOOLEAN');
     expect(notices).toHaveLength(1);
   });
