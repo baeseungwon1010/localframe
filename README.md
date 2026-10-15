@@ -79,7 +79,9 @@ to keep. For a copy that keeps files on disk, run it locally (below).
   An empty board offers templates (flowchart, brainstorm, retrospective); sticky notes and shapes grow
   to hold their text; stamps (E) drop votes and reactions; connector text always stays upright and
   clicking it picks the connector. The bar above a selection sets text size (S/M/L/XL), and in diagram
-  mode text layers get a bar for size, bold and colour.
+  mode text layers get a bar for size, bold and colour. Elbow connectors go around shapes in their way.
+  A mind map template and **Tidy up as a tree** lay out a shape and everything its connectors lead to
+  in columns; the bar also aligns and spaces several items.
 - **Touch and phones**: two fingers pan and pinch-zoom the canvas, a double tap writes in a shape, and
   holding a finger still opens the canvas menu. Handles and buttons are easier to hit with a finger.
   Narrow screens always show the board view with the tool dock; the panels button in the title bar
