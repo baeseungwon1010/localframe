@@ -35,7 +35,14 @@ export class TouchGestures {
   /** A finger went down: 'editor' passes it on, 'pinch' means the editor's drag must be cancelled. */
   down(id: number, at: Point): 'editor' | 'pinch' | 'ignore' {
     this.points.set(id, at);
-    if (this.pinch) return 'ignore';
+    if (this.pinch) {
+      // a finger back down mid-pinch: measure from the new pair, or the view would jump
+      if (this.points.size === 2) {
+        const [a, b] = [...this.points.values()];
+        this.pinch = { centre: centre(a, b), dist: Math.max(1, dist(a, b)) };
+      }
+      return 'ignore';
+    }
     if (this.points.size === 2) {
       const [a, b] = [...this.points.values()];
       this.pinch = { centre: centre(a, b), dist: Math.max(1, dist(a, b)) };

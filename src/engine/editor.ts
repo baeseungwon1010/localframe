@@ -155,6 +155,7 @@ type Interaction =
   | { kind: 'create'; tool: Tool; start: Point; startScreen: Point; nodeId: string | null; parentId: string | null }
   | { kind: 'pen-handle' }
   | { kind: 'quick-connect'; side: 'top' | 'right' | 'bottom' | 'left' }
+  | { kind: 'stamp'; at: Point }
   | { kind: 'pencil'; nodeId: string | null; parentId: string | null; points: Point[] }
   | { kind: 'vec-point'; id: string; index: number; part: 'point' | 'in' | 'out'; start: Point; original: Vector };
 
@@ -2829,7 +2830,8 @@ export class Editor {
       return;
     }
     if (this.tool === 'stamp') {
-      this.placeStamp(p);
+      // dropped on release, so a press that turns into a pinch leaves nothing behind
+      this.interaction = { kind: 'stamp', at: p };
       return;
     }
     if (this.tool === 'comment') {
@@ -3136,6 +3138,10 @@ export class Editor {
     }
     if (it.kind === 'quick-connect') {
       this.quickConnect(it.side);
+      return;
+    }
+    if (it.kind === 'stamp') {
+      this.placeStamp(it.at);
       return;
     }
     if (it.kind === 'pencil') {

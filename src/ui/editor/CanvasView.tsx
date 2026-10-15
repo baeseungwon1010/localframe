@@ -152,6 +152,7 @@ export function CanvasView(props: {
   const pressTimer = useRef(0);
   /** When a double tap last went to the editor, so the browser's own dblclick isn't a second one. */
   const lastDoubleTap = useRef(0);
+  useEffect(() => () => window.clearTimeout(pressTimer.current), []);
 
   /** The canvas menu for what is under a screen point (right-click, or a long press). */
   const openMenuAt = (clientX: number, clientY: number, touch = false) => {
@@ -184,11 +185,13 @@ export function CanvasView(props: {
       const id = e.pointerId;
       const { clientX, clientY } = e;
       window.clearTimeout(pressTimer.current);
-      pressTimer.current = window.setTimeout(() => {
-        if (!touch.current.longPress(id)) return;
-        if (editor.isInteracting) editor.cancelInteraction();
-        openMenuAt(clientX, clientY, true);
-      }, LONG_PRESS_MS);
+      // the menu is the move tool's; with a drawing tool, holding still is just a slow start
+      if (editor.tool === 'move' && !editor.editingText)
+        pressTimer.current = window.setTimeout(() => {
+          if (!canvasRef.current || !touch.current.longPress(id)) return;
+          if (editor.isInteracting) editor.cancelInteraction();
+          openMenuAt(clientX, clientY, true);
+        }, LONG_PRESS_MS);
     }
     editor.pointerDown(toInput(e, rect()));
     e.currentTarget.style.cursor = editor.cursorAt(e.clientX - rect().left, e.clientY - rect().top);
