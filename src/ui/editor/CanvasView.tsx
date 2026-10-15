@@ -12,6 +12,7 @@ import { Rulers } from './Rulers.tsx';
 import { defaultLabel, labelMatrix, labelNode } from '../../engine/labels.ts';
 import { ToolHint } from './ToolHint.tsx';
 import { DiagramBar } from './DiagramBar.tsx';
+import { TemplatePicker } from './TemplatePicker.tsx';
 import { useEditorRev } from '../hooks.ts';
 
 function readColors(): OverlayColors {
@@ -304,11 +305,10 @@ export function CanvasView(props: {
       {editor.editingText && <TextEditor key={editor.editingText} editor={editor} id={editor.editingText} />}
       {editor.editingLabel && <LabelEditor key={editor.editingLabel} editor={editor} id={editor.editingLabel} />}
       {editor.showRulers && <Rulers editor={editor} canvasRect={rect} />}
-      {editor.doc.size === 0 && editor.tool === 'move' && (
+      {editor.doc.size === 0 && editor.tool === 'move' && props.diagram && <TemplatePicker editor={editor} />}
+      {editor.doc.size === 0 && editor.tool === 'move' && !props.diagram && (
         <p className="canvas-hint">
-          {props.diagram
-            ? 'Press N for a sticky note, or pick a shape below. The + beside a shape adds the next step.'
-            : `Press F to draw a frame, R for a rectangle, L for a line or T for text. ${MOD}/ finds any command.`}
+          Press F to draw a frame, R for a rectangle, L for a line or T for text. {MOD}/ finds any command.
         </p>
       )}
       {props.children}

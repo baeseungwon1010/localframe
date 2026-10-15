@@ -1,4 +1,5 @@
 import type { Editor, Tool } from '../../engine/editor.ts';
+import { TEMPLATES } from '../../engine/templates.ts';
 import { ALT, MOD, SHIFT } from '../components.tsx';
 
 export type Command = {
@@ -47,6 +48,7 @@ const TOOL_COMMANDS: { tool: Tool; label: string; shortcut: string; keywords?: s
   { tool: 'cylinder', label: 'Cylinder', shortcut: '', keywords: 'database storage diagram' },
   { tool: 'document', label: 'Document', shortcut: '', keywords: 'page diagram flowchart' },
   { tool: 'chevron', label: 'Chevron', shortcut: '', keywords: 'step process diagram' },
+  { tool: 'stamp', label: 'Stamp', shortcut: 'E', keywords: 'vote reaction emoji like' },
   { tool: 'comment', label: 'Comment', shortcut: 'C', keywords: 'note feedback' },
 ];
 
@@ -68,6 +70,8 @@ export function buildCommands(editor: Editor, screen: ScreenActions): Command[] 
   return [
     ...TOOL_COMMANDS.map((t) => cmd('Tools', `tool-${t.tool}`, t.label, () => editor.setTool(t.tool), always, t.shortcut || undefined, t.keywords)),
     cmd('Tools', 'image', 'Place image', screen.placeImage, always, `${MOD}${SHIFT}K`, 'picture photo upload'),
+
+    ...TEMPLATES.map((t) => cmd('Insert', `template-${t.kind}`, `Insert ${t.name.toLowerCase()} template`, () => editor.insertTemplate(t.kind), always, undefined, `board diagram start ${t.description}`)),
 
     cmd('Edit', 'undo', 'Undo', () => editor.undo(), () => (editor.canUndo ? null : 'Nothing to undo'), `${MOD}Z`),
     cmd('Edit', 'redo', 'Redo', () => editor.redo(), () => (editor.canRedo ? null : 'Nothing to redo'), `${MOD}${SHIFT}Z`),

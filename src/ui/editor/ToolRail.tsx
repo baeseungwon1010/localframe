@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { SquareRoundCorner, ChevronRight, Cylinder, Diamond, FileText, RectangleHorizontal, StickyNote, Circle, Frame, Hand, ImagePlus, MessageCircle, Minus, MousePointer2, MoveUpRight, PenTool, Pencil, Slice, Square, SquareDashed, Star, Triangle, Type } from 'lucide-react';
 import type { Editor, Tool } from '../../engine/editor.ts';
+import { STAMPS } from '../../engine/templates.ts';
 import { IconButton, MOD, Menu, SHIFT } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
 
-type Entry = { tool: Tool | 'image'; label: string; key: string; Icon: typeof Square };
+/** A tool button; stamps share the stamp tool and differ by `stamp`, drawn as their glyph. */
+type Entry = { tool: Tool | 'image'; label: string; key: string; Icon: typeof Square; stamp?: string };
 type Group = { id: string; label: string; entries: Entry[] };
 
 /** Tools in groups, like Figma's toolbar: a group shows the tool last used from it. */
@@ -74,6 +76,7 @@ const DOCK_GROUPS: Group[] = [
   { id: 'dock-arrow', label: 'Connector', entries: [{ ...entry('arrow'), label: 'Connector' }, entry('line')] },
   group('text'),
   { id: 'dock-draw', label: 'Drawing tools', entries: [entry('pencil'), entry('pen')] },
+  { id: 'dock-stamp', label: 'Stamps', entries: STAMPS.map((st, i) => ({ tool: 'stamp' as const, label: `Stamp: ${st.name.toLowerCase()}`, key: i === 0 ? 'E' : '', Icon: Square, stamp: st.glyph })) },
   { id: 'dock-section', label: 'Section', entries: [entry('section')] },
   group('comment'),
 ];
@@ -82,6 +85,8 @@ const DOCK_GROUPS: Group[] = [
 export const DOCK_TOOLS: ReadonlySet<string> = new Set(DOCK_GROUPS.flatMap((g) => g.entries.map((e) => e.tool)));
 
 const KEY = 'localframe.toolGroups';
+/** What a group remembers as its last tool (stamps by their glyph). */
+const entryId = (e: Entry) => (e.stamp ? `stamp:${e.stamp}` : e.tool);
 
 function loadLast(): Record<string, string> {
   try {
@@ -101,8 +106,9 @@ export function ToolRail({ editor, dock = false }: { editor: Editor; dock?: bool
 
   const pick = (g: Group, e: Entry) => {
     if (e.tool === 'image') editor.onRequestImage?.();
+    else if (e.stamp) editor.setStamp(e.stamp);
     else editor.setTool(e.tool);
-    const next = { ...last, [g.id]: e.tool };
+    const next = { ...last, [g.id]: entryId(e) };
     setLast(next);
     try {
       localStorage.setItem(KEY, JSON.stringify(next));
@@ -124,7 +130,8 @@ export function ToolRail({ editor, dock = false }: { editor: Editor; dock?: bool
     <div className={dock ? 'tooldock' : 'toolrail'} role="toolbar" aria-orientation={dock ? 'horizontal' : 'vertical'} aria-label="Tools" onKeyDown={onKeyDown}>
       {groups.map((g) => {
         // the group shows the active tool if it is one of its own, else the one last used from it
-        const current = g.entries.find((e) => e.tool === editor.tool) ?? g.entries.find((e) => e.tool === last[g.id]) ?? g.entries[0];
+        const isActive = (e: Entry) => e.tool === editor.tool && (!e.stamp || e.stamp === editor.stamp);
+        const current = g.entries.find(isActive) ?? g.entries.find((e) => entryId(e) === last[g.id]) ?? g.entries[0];
         const active = g.entries.some((e) => e.tool === editor.tool);
         const many = g.entries.length > 1;
         const openMenu = (el: HTMLElement) => {
@@ -154,7 +161,7 @@ export function ToolRail({ editor, dock = false }: { editor: Editor; dock?: bool
                 pressed={active}
                 onClick={() => pick(g, current)}
               >
-                <current.Icon size={16} strokeWidth={1.5} />
+                {current.stamp ? <span className="stamp-glyph" aria-hidden="true">{current.stamp}</span> : <current.Icon size={16} strokeWidth={1.5} />}
               </IconButton>
             </div>
             {many && (
@@ -178,7 +185,7 @@ export function ToolRail({ editor, dock = false }: { editor: Editor; dock?: bool
           above={open.above}
           onClose={() => setOpen(null)}
           items={open.group.entries.map((e) => ({
-            label: `${e.tool === editor.tool ? '✓ ' : ''}${e.label}`,
+            label: `${e.tool === editor.tool && (!e.stamp || e.stamp === editor.stamp) ? '✓ ' : ''}${e.stamp ? `${e.stamp}  ` : ''}${e.label}`,
             shortcut: e.key || undefined,
             onSelect: () => pick(open.group, e),
           }))}
