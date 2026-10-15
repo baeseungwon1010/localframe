@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Eye, EyeOff, Minus, Plus } from 'lucide-react';
 import { type BlurEffect, type Effect, type GradientPaint, type Paint, type SolidPaint, isGradientPaint } from '../../../shared/schema.ts';
 import { ImagePaintRow, NumberField, PaintRow, normalizeHex } from './fields.tsx';
+import { t } from '../i18n.ts';
 
 const ICON = { size: 14, strokeWidth: 1.5 };
 
@@ -54,15 +55,15 @@ export function convertPaint(p: Paint, kind: PaintKind): Paint | null {
 
 function KindSelect(props: { value: PaintKind; allowImage: boolean; label: string; onChange: (k: PaintKind) => void }) {
   return (
-    <select className="select-field kind-select" aria-label={`${props.label} type`} value={props.value} onChange={(e) => props.onChange(e.target.value as PaintKind)}>
-      <option value="SOLID">Solid</option>
-      <option value="GRADIENT_LINEAR">Linear</option>
-      <option value="GRADIENT_RADIAL">Radial</option>
-      <option value="GRADIENT_ANGULAR">Angular</option>
-      <option value="GRADIENT_DIAMOND">Diamond</option>
+    <select className="select-field kind-select" aria-label={t('{label} type', { label: props.label })} value={props.value} onChange={(e) => props.onChange(e.target.value as PaintKind)}>
+      <option value="SOLID">{t('Solid')}</option>
+      <option value="GRADIENT_LINEAR">{t('Linear')}</option>
+      <option value="GRADIENT_RADIAL">{t('Radial')}</option>
+      <option value="GRADIENT_ANGULAR">{t('Angular')}</option>
+      <option value="GRADIENT_DIAMOND">{t('Diamond')}</option>
       {props.allowImage && (
         <option value="IMAGE" disabled>
-          Image
+          {t('Image')}
         </option>
       )}
     </select>
@@ -82,13 +83,13 @@ export function PaintEditor(props: { paint: Paint; label: string; allowImage: bo
       <KindSelect value={kind} allowImage={props.allowImage || kind === 'IMAGE'} label={label} onChange={change} />
       {paint.type === 'IMAGE' ? (
         <>
-          <ImagePaintRow paint={paint} label={`${label} image`} onChange={props.onChange} onRemove={props.onRemove} />
-          <div className="image-adjust" role="group" aria-label={`${label} image adjustments`}>
+          <ImagePaintRow paint={paint} label={t('{label} image', { label })} onChange={props.onChange} onRemove={props.onRemove} />
+          <div className="image-adjust" role="group" aria-label={t('{label} image adjustments', { label })}>
             {(['exposure', 'contrast', 'saturation'] as const).map((k) => (
               <NumberField
                 key={k}
-                label={k === 'exposure' ? 'Exp' : k === 'contrast' ? 'Con' : 'Sat'}
-                ariaLabel={`${label} ${k}`}
+                label={k === 'exposure' ? t('Exp') : k === 'contrast' ? t('Con') : t('Sat')}
+                ariaLabel={k === 'exposure' ? t('{label} exposure', { label }) : k === 'contrast' ? t('{label} contrast', { label }) : t('{label} saturation', { label })}
                 value={paint.adjust?.[k] ?? 0}
                 min={-100}
                 max={100}
@@ -122,7 +123,7 @@ function GradientEditor(props: { paint: GradientPaint; label: string; onChange: 
         {paint.type === 'GRADIENT_LINEAR' || paint.type === 'GRADIENT_ANGULAR' ? (
           <NumberField
             label="∠"
-            ariaLabel={`${label} angle`}
+            ariaLabel={t('{label} angle', { label })}
             value={Math.round(angleOf(paint))}
             min={-360}
             max={360}
@@ -136,11 +137,11 @@ function GradientEditor(props: { paint: GradientPaint; label: string; onChange: 
             }}
           />
         ) : (
-          <span className="field-caption">From the centre</span>
+          <span className="field-caption">{t('From the centre')}</span>
         )}
         <NumberField
           label=""
-          ariaLabel={`${label} opacity`}
+          ariaLabel={t('{label} opacity', { label })}
           value={Math.round(paint.opacity * 100)}
           min={0}
           max={100}
@@ -151,13 +152,13 @@ function GradientEditor(props: { paint: GradientPaint; label: string; onChange: 
         <button
           type="button"
           className="mini-btn"
-          aria-label={paint.visible ? `Hide ${label}` : `Show ${label}`}
+          aria-label={paint.visible ? t('Hide {label}', { label }) : t('Show {label}', { label })}
           aria-pressed={!paint.visible}
           onClick={() => props.onChange({ ...paint, visible: !paint.visible })}
         >
           {paint.visible ? <Eye {...ICON} /> : <EyeOff {...ICON} />}
         </button>
-        <button type="button" className="mini-btn" aria-label={`Remove ${label}`} onClick={props.onRemove}>
+        <button type="button" className="mini-btn" aria-label={t('Remove {label}', { label })} onClick={props.onRemove}>
           <Minus {...ICON} />
         </button>
       </div>
@@ -167,7 +168,7 @@ function GradientEditor(props: { paint: GradientPaint; label: string; onChange: 
             key={i}
             index={i}
             stop={s}
-            label={`${label} stop ${i + 1}`}
+            label={t('{label} stop {n}', { label, n: i + 1 })}
             canRemove={stops.length > 2}
             onChange={(patch) => setStop(i, patch)}
             onRemove={() => props.onChange({ ...paint, stops: stops.filter((_, j) => j !== i) })}
@@ -184,7 +185,7 @@ function GradientEditor(props: { paint: GradientPaint; label: string; onChange: 
               props.onChange({ ...paint, stops: [...stops, { position: (a.position + b.position) / 2, color: b.color, opacity: (a.opacity + b.opacity) / 2 }] });
             }}
           >
-            <Plus {...ICON} /> Stop
+            <Plus {...ICON} /> {t('Stop')}
           </button>
         )}
       </div>
@@ -212,7 +213,7 @@ function StopRow(props: {
     <div className="stop-row">
       <NumberField
         label=""
-        ariaLabel={`${label} position`}
+        ariaLabel={t('{label} position', { label })}
         value={Math.round(stop.position * 100)}
         min={0}
         max={100}
@@ -221,11 +222,11 @@ function StopRow(props: {
         onCommit={(v) => props.onChange({ position: v / 100 })}
       />
       <label className="swatch" style={{ background: stop.color, opacity: Math.max(0.15, stop.opacity) }}>
-        <input type="color" aria-label={`${label} colour`} value={stop.color.toLowerCase()} onChange={(e) => props.onChange({ color: e.target.value.toUpperCase() })} />
+        <input type="color" aria-label={t('{label} colour', { label })} value={stop.color.toLowerCase()} onChange={(e) => props.onChange({ color: e.target.value.toUpperCase() })} />
       </label>
       <input
         className="hex-input"
-        aria-label={`${label} hex`}
+        aria-label={t('{label} hex', { label })}
         value={hex}
         maxLength={7}
         onChange={(e) => setHex(e.target.value)}
@@ -237,7 +238,7 @@ function StopRow(props: {
       />
       <NumberField
         label=""
-        ariaLabel={`${label} opacity`}
+        ariaLabel={t('{label} opacity', { label })}
         value={Math.round(stop.opacity * 100)}
         min={0}
         max={100}
@@ -245,7 +246,7 @@ function StopRow(props: {
         suffix="%"
         onCommit={(v) => props.onChange({ opacity: v / 100 })}
       />
-      <button type="button" className="mini-btn" aria-label={`Remove ${label}`} disabled={!props.canRemove} onClick={props.onRemove}>
+      <button type="button" className="mini-btn" aria-label={t('Remove {label}', { label })} disabled={!props.canRemove} onClick={props.onRemove}>
         <Minus {...ICON} />
       </button>
     </div>
@@ -274,46 +275,46 @@ function convertEffect(e: Effect, type: Effect['type']): Effect {
 
 export function EffectEditor(props: { effect: Effect; index: number; onChange: (e: Effect) => void; onRemove: () => void }) {
   const { effect: e } = props;
-  const label = `Effect ${props.index + 1}`;
+  const label = t('Effect {n}', { n: props.index + 1 });
   const [hex, setHex] = useState(e.type === 'DROP_SHADOW' || e.type === 'INNER_SHADOW' ? e.color.slice(1) : '');
   const color = e.type === 'DROP_SHADOW' || e.type === 'INNER_SHADOW' ? e.color : '';
   useEffect(() => setHex(color.slice(1)), [color]);
   return (
     <div className="effect-editor">
       <div className="effect-head">
-        <select className="select-field" aria-label={`${label} type`} value={e.type} onChange={(ev) => props.onChange(convertEffect(e, ev.target.value as Effect['type']))}>
+        <select className="select-field" aria-label={t('{label} type', { label })} value={e.type} onChange={(ev) => props.onChange(convertEffect(e, ev.target.value as Effect['type']))}>
           {Object.entries(EFFECT_LABEL).map(([v, l]) => (
             <option key={v} value={v}>
-              {l}
+              {t(l)}
             </option>
           ))}
         </select>
         <button
           type="button"
           className="mini-btn"
-          aria-label={e.visible ? `Hide ${label}` : `Show ${label}`}
+          aria-label={e.visible ? t('Hide {label}', { label }) : t('Show {label}', { label })}
           aria-pressed={!e.visible}
           onClick={() => props.onChange({ ...e, visible: !e.visible })}
         >
           {e.visible ? <Eye {...ICON} /> : <EyeOff {...ICON} />}
         </button>
-        <button type="button" className="mini-btn" aria-label={`Remove ${label}`} onClick={props.onRemove}>
+        <button type="button" className="mini-btn" aria-label={t('Remove {label}', { label })} onClick={props.onRemove}>
           <Minus {...ICON} />
         </button>
       </div>
       {e.type === 'DROP_SHADOW' || e.type === 'INNER_SHADOW' ? (
         <div className="grid2">
-          <NumberField label="X" ariaLabel={`${label} x offset`} value={e.x} onCommit={(v) => props.onChange({ ...e, x: v })} />
-          <NumberField label="Y" ariaLabel={`${label} y offset`} value={e.y} onCommit={(v) => props.onChange({ ...e, y: v })} />
-          <NumberField label="Blur" ariaLabel={`${label} blur`} value={e.blur} min={0} max={1000} onCommit={(v) => props.onChange({ ...e, blur: v })} />
-          <NumberField label="Spread" ariaLabel={`${label} spread`} value={e.spread} min={-1000} max={1000} onCommit={(v) => props.onChange({ ...e, spread: v })} />
+          <NumberField label="X" ariaLabel={t('{label} x offset', { label })} value={e.x} onCommit={(v) => props.onChange({ ...e, x: v })} />
+          <NumberField label="Y" ariaLabel={t('{label} y offset', { label })} value={e.y} onCommit={(v) => props.onChange({ ...e, y: v })} />
+          <NumberField label={t('Blur')} ariaLabel={t('{label} blur', { label })} value={e.blur} min={0} max={1000} onCommit={(v) => props.onChange({ ...e, blur: v })} />
+          <NumberField label={t('Spread')} ariaLabel={t('{label} spread', { label })} value={e.spread} min={-1000} max={1000} onCommit={(v) => props.onChange({ ...e, spread: v })} />
           <div className="paint-row compact">
             <label className="swatch" style={{ background: e.color }}>
-              <input type="color" aria-label={`${label} colour`} value={e.color.toLowerCase()} onChange={(ev) => props.onChange({ ...e, color: ev.target.value.toUpperCase() })} />
+              <input type="color" aria-label={t('{label} colour', { label })} value={e.color.toLowerCase()} onChange={(ev) => props.onChange({ ...e, color: ev.target.value.toUpperCase() })} />
             </label>
             <input
               className="hex-input"
-              aria-label={`${label} hex`}
+              aria-label={t('{label} hex', { label })}
               value={hex}
               maxLength={7}
               onChange={(ev) => setHex(ev.target.value)}
@@ -327,7 +328,7 @@ export function EffectEditor(props: { effect: Effect; index: number; onChange: (
           </div>
           <NumberField
             label=""
-            ariaLabel={`${label} opacity`}
+            ariaLabel={t('{label} opacity', { label })}
             value={Math.round(e.opacity * 100)}
             min={0}
             max={100}
@@ -338,28 +339,28 @@ export function EffectEditor(props: { effect: Effect; index: number; onChange: (
         </div>
       ) : e.type === 'NOISE' ? (
         <div className="grid2">
-          <NumberField label="Amt" ariaLabel={`${label} amount`} value={Math.round(e.amount * 100)} min={0} max={100} precision={0} suffix="%" onCommit={(v) => props.onChange({ ...e, amount: v / 100 })} />
-          <NumberField label="Size" ariaLabel={`${label} grain size`} value={e.size} min={0.5} max={20} onCommit={(v) => props.onChange({ ...e, size: v })} />
+          <NumberField label={t('Amt')} ariaLabel={t('{label} amount', { label })} value={Math.round(e.amount * 100)} min={0} max={100} precision={0} suffix="%" onCommit={(v) => props.onChange({ ...e, amount: v / 100 })} />
+          <NumberField label={t('Size')} ariaLabel={t('{label} grain size', { label })} value={e.size} min={0.5} max={20} onCommit={(v) => props.onChange({ ...e, size: v })} />
           <label className="swatch" style={{ background: e.color }}>
-            <input type="color" aria-label={`${label} colour`} value={e.color.toLowerCase()} onChange={(ev) => props.onChange({ ...e, color: ev.target.value.toUpperCase() })} />
+            <input type="color" aria-label={t('{label} colour', { label })} value={e.color.toLowerCase()} onChange={(ev) => props.onChange({ ...e, color: ev.target.value.toUpperCase() })} />
           </label>
         </div>
       ) : e.type === 'PROGRESSIVE_BLUR' ? (
         <div className="grid2">
-          <NumberField label="From" ariaLabel={`${label} start radius`} value={e.start} min={0} max={1000} onCommit={(v) => props.onChange({ ...e, start: v })} />
-          <NumberField label="To" ariaLabel={`${label} end radius`} value={e.end} min={0} max={1000} onCommit={(v) => props.onChange({ ...e, end: v })} />
-          <select className="select-field" aria-label={`${label} direction`} value={e.direction} onChange={(ev) => props.onChange({ ...e, direction: ev.target.value as typeof e.direction })}>
-            <option value="down">Top to bottom</option>
-            <option value="up">Bottom to top</option>
-            <option value="right">Left to right</option>
-            <option value="left">Right to left</option>
+          <NumberField label={t('From')} ariaLabel={t('{label} start radius', { label })} value={e.start} min={0} max={1000} onCommit={(v) => props.onChange({ ...e, start: v })} />
+          <NumberField label={t('To')} ariaLabel={t('{label} end radius', { label })} value={e.end} min={0} max={1000} onCommit={(v) => props.onChange({ ...e, end: v })} />
+          <select className="select-field" aria-label={t('{label} direction', { label })} value={e.direction} onChange={(ev) => props.onChange({ ...e, direction: ev.target.value as typeof e.direction })}>
+            <option value="down">{t('Top to bottom')}</option>
+            <option value="up">{t('Bottom to top')}</option>
+            <option value="right">{t('Left to right')}</option>
+            <option value="left">{t('Right to left')}</option>
           </select>
         </div>
       ) : (
         <div className="grid2">
           <NumberField
-            label="Blur"
-            ariaLabel={`${label} radius`}
+            label={t('Blur')}
+            ariaLabel={t('{label} radius', { label })}
             value={(e as BlurEffect).radius}
             min={0}
             max={1000}

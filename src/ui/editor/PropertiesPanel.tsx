@@ -56,6 +56,7 @@ import { DEFAULT_SHADOW, EffectEditor, PaintEditor } from './paints.tsx';
 import { ComponentSetSection, InnerLayerSection, InstanceProps, LinkProps, PropDefinitions, VariantValues } from './componentPanels.tsx';
 import { StylePicker, VariablesSection } from './assetsPanels.tsx';
 import { FramePresets, GridsSection } from './framePanels.tsx';
+import { t } from '../i18n.ts';
 
 const ICON = { size: 14, strokeWidth: 1.5 };
 
@@ -72,17 +73,17 @@ export function PropertiesPanel(props: { editor: Editor; fileName: string; onPre
   const [code, setCode] = useState(false);
   const proto = editor.prototypeView && !code;
   const tab = code ? 'code' : proto ? 'prototype' : 'design';
-  const pick = (t: 'design' | 'prototype' | 'code') => {
-    setCode(t === 'code');
-    editor.setPrototypeView(t === 'prototype');
+  const pick = (k: 'design' | 'prototype' | 'code') => {
+    setCode(k === 'code');
+    editor.setPrototypeView(k === 'prototype');
   };
 
   return (
-    <aside className="props" aria-label="Properties">
-      <div className="tabs" role="tablist" aria-label="Right panel">
-        {(['design', 'prototype', 'code'] as const).map((t) => (
-          <button key={t} type="button" role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => pick(t)}>
-            {t === 'design' ? 'Design' : t === 'prototype' ? 'Prototype' : 'Code'}
+    <aside className="props" aria-label={t('Properties')}>
+      <div className="tabs" role="tablist" aria-label={t('Right panel')}>
+        {(['design', 'prototype', 'code'] as const).map((k) => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => pick(k)}>
+            {k === 'design' ? t('Design') : k === 'prototype' ? t('Prototype') : t('Code')}
           </button>
         ))}
       </div>
@@ -114,14 +115,14 @@ function PageProps(props: { editor: Editor; fileName: string }) {
   return (
     <>
       <div className="panel-title">
-        Page<span className="panel-subtitle">{page.name}</span>
+        {t('Page')}<span className="panel-subtitle">{page.name}</span>
       </div>
       <Section title="Background">
         <div className="paint-row simple">
           <label className="swatch" style={{ background: editor.background }}>
             <input
               type="color"
-              aria-label="Background colour"
+              aria-label={t('Background colour')}
               value={editor.background.toLowerCase()}
               onChange={(e) => {
                 setHex(e.target.value.slice(1).toUpperCase());
@@ -131,7 +132,7 @@ function PageProps(props: { editor: Editor; fileName: string }) {
           </label>
           <input
             className="hex-input"
-            aria-label="Background hex"
+            aria-label={t('Background hex')}
             value={hex}
             maxLength={7}
             onChange={(e) => setHex(e.target.value)}
@@ -155,7 +156,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
   const [strokeMore, setStrokeMore] = useRemembered('strokeMore', false);
   const update = (fn: (n: SceneNode) => SceneNode) => editor.updateNodes(ids, fn);
   const single = nodes.length === 1 ? nodes[0] : null;
-  const allType = (t: SceneNode['type']) => nodes.every((n) => n.type === t);
+  const allType = (type: SceneNode['type']) => nodes.every((n) => n.type === type);
   const allLines = allType('LINE');
   const allText = allType('TEXT');
   const isBox = (n: SceneNode) => n.type === 'FRAME' || n.type === 'COMPONENT';
@@ -167,14 +168,14 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
   const inAutoLayout = nodes.every((n) => parent(n)?.layout);
   const constrained = !inAutoLayout && nodes.every((n) => { const p = parent(n); return p && isBox(p) && !p.layout; });
   const title = single?.section
-    ? 'Section'
+    ? t('Section')
     : single?.sticky
-      ? 'Sticky note'
+      ? t('Sticky note')
       : single?.shape
-      ? single.shape.kind[0].toUpperCase() + single.shape.kind.slice(1)
+      ? t(single.shape.kind[0].toUpperCase() + single.shape.kind.slice(1))
       : single
-        ? TYPE_LABEL[single.type]
-        : `${nodes.length} layers`;
+        ? t(TYPE_LABEL[single.type])
+        : t('{n} layers', { n: nodes.length });
   const canAlign = nodes.length > 1 || (single !== null && single.parentId !== null);
 
   return (
@@ -185,29 +186,29 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
       </div>
 
       {canAlign && (
-        <div className="align-bar" role="toolbar" aria-label="Align">
-          <IconButton label="Align left" onClick={() => editor.align('left')}>
+        <div className="align-bar" role="toolbar" aria-label={t('Align')}>
+          <IconButton label={t('Align left')} onClick={() => editor.align('left')}>
             <AlignStartVertical {...ICON} />
           </IconButton>
-          <IconButton label="Align horizontal centres" onClick={() => editor.align('hcenter')}>
+          <IconButton label={t('Align horizontal centres')} onClick={() => editor.align('hcenter')}>
             <AlignCenterVertical {...ICON} />
           </IconButton>
-          <IconButton label="Align right" onClick={() => editor.align('right')}>
+          <IconButton label={t('Align right')} onClick={() => editor.align('right')}>
             <AlignEndVertical {...ICON} />
           </IconButton>
-          <IconButton label="Align top" onClick={() => editor.align('top')}>
+          <IconButton label={t('Align top')} onClick={() => editor.align('top')}>
             <AlignStartHorizontal {...ICON} />
           </IconButton>
-          <IconButton label="Align vertical centres" onClick={() => editor.align('vcenter')}>
+          <IconButton label={t('Align vertical centres')} onClick={() => editor.align('vcenter')}>
             <AlignCenterHorizontal {...ICON} />
           </IconButton>
-          <IconButton label="Align bottom" onClick={() => editor.align('bottom')}>
+          <IconButton label={t('Align bottom')} onClick={() => editor.align('bottom')}>
             <AlignEndHorizontal {...ICON} />
           </IconButton>
-          <IconButton label="Distribute horizontally" disabled={nodes.length < 3} onClick={() => editor.distribute('x')}>
+          <IconButton label={t('Distribute horizontally')} disabled={nodes.length < 3} onClick={() => editor.distribute('x')}>
             <AlignHorizontalSpaceAround {...ICON} />
           </IconButton>
-          <IconButton label="Distribute vertically" disabled={nodes.length < 3} onClick={() => editor.distribute('y')}>
+          <IconButton label={t('Distribute vertically')} disabled={nodes.length < 3} onClick={() => editor.distribute('y')}>
             <AlignVerticalSpaceAround {...ICON} />
           </IconButton>
         </div>
@@ -223,16 +224,16 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
       )}
       {single && single.type !== 'COMPONENT' && single.type !== 'COMPONENT_SET' && <LinkProps editor={editor} layer={single} />}
       {(nodes.length > 1 || single?.type === 'BOOLEAN') && (
-        <div className="align-bar boolean-bar" role="toolbar" aria-label="Boolean operations">
+        <div className="align-bar boolean-bar" role="toolbar" aria-label={t('Boolean operations')}>
           {(
             [
-              ['union', 'Union', SquaresUnite],
-              ['subtract', 'Subtract', SquaresSubtract],
-              ['intersect', 'Intersect', SquaresIntersect],
-              ['exclude', 'Exclude', SquaresExclude],
+              ['union', 'Union selection', SquaresUnite],
+              ['subtract', 'Subtract selection', SquaresSubtract],
+              ['intersect', 'Intersect selection', SquaresIntersect],
+              ['exclude', 'Exclude selection', SquaresExclude],
             ] as const
           ).map(([op, label, Icon]) => (
-            <IconButton key={op} label={`${label} selection`} pressed={single?.booleanOp === op} onClick={() => editor.booleanSelection(op)}>
+            <IconButton key={op} label={t(label)} pressed={single?.booleanOp === op} onClick={() => editor.booleanSelection(op)}>
               <Icon {...ICON} />
             </IconButton>
           ))}
@@ -242,7 +243,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
         <Section title="Path">
           <div className="grid2">
             <button type="button" className="btn secondary full" onClick={() => editor.startVectorEdit(single.id)}>
-              Edit points
+              {t('Edit points')}
             </button>
             <label className="check-row">
               <input
@@ -250,7 +251,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
                 checked={!!single.vector?.closed}
                 onChange={(e) => update((n) => (n.vector ? { ...n, vector: { ...n.vector, closed: e.target.checked } } : n))}
               />
-              Closed
+              {t('Closed')}
             </label>
           </div>
         </Section>
@@ -262,7 +263,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
           <NumberField label="Y" ariaLabel="Y" value={common(nodes, (n) => n.y)} onCommit={(v) => update((n) => ({ ...n, y: v }))} />
           <NumberField
             label={<RotateCw {...ICON} />}
-            ariaLabel="Rotation"
+            ariaLabel={t('Rotation')}
             value={common(nodes, (n) => n.rotation)}
             suffix="°"
             min={-360}
@@ -276,7 +277,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
         title={allLines ? 'Line' : 'Size'}
         action={
           !allLines && (
-            <IconButton label={keepAspect ? 'Unlock aspect ratio' : 'Lock aspect ratio'} pressed={keepAspect} onClick={() => setKeepAspect(!keepAspect)}>
+            <IconButton label={keepAspect ? t('Unlock aspect ratio') : t('Lock aspect ratio')} pressed={keepAspect} onClick={() => setKeepAspect(!keepAspect)}>
               {keepAspect ? <Link2 {...ICON} /> : <Link2Off {...ICON} />}
             </IconButton>
           )
@@ -285,7 +286,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
         <div className="grid2">
           <NumberField
             label={allLines ? 'L' : 'W'}
-            ariaLabel={allLines ? 'Length' : 'Width'}
+            ariaLabel={allLines ? t('Length') : t('Width')}
             value={common(nodes, (n) => n.width)}
             min={allLines ? 0 : 0.01}
             onCommit={(v) => editor.transact(() => ids.forEach((id) => editor.setSize(id, v, null, keepAspect)))}
@@ -293,7 +294,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
           {!allLines && (
             <NumberField
               label="H"
-              ariaLabel="Height"
+              ariaLabel={t('Height')}
               value={common(nodes, (n) => n.height)}
               min={0.01}
               onCommit={(v) => editor.transact(() => ids.forEach((id) => editor.setSize(id, null, v, keepAspect)))}
@@ -306,18 +307,18 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
         <Section
           title="Corner radius"
           action={
-            <IconButton label={corners ? 'Same radius for all corners' : 'Separate radius per corner'} pressed={corners} onClick={() => setCorners(!corners)}>
+            <IconButton label={corners ? t('Same radius for all corners') : t('Separate radius per corner')} pressed={corners} onClick={() => setCorners(!corners)}>
               <Scan {...ICON} />
             </IconButton>
           }
         >
           {corners ? (
             <div className="grid2">
-              {(['Top left', 'Top right', 'Bottom right', 'Bottom left'] as const).map((label, i) => (
+              {(['Top left radius', 'Top right radius', 'Bottom right radius', 'Bottom left radius'] as const).map((label, i) => (
                 <NumberField
                   key={label}
                   label={['TL', 'TR', 'BR', 'BL'][i]}
-                  ariaLabel={`${label} radius`}
+                  ariaLabel={t(label)}
                   value={common(nodes, (n) => (n.radii ?? [0, 0, 0, 0])[i])}
                   min={0}
                   onCommit={(v) =>
@@ -334,7 +335,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
             <div className="grid2">
               <NumberField
                 label="R"
-                ariaLabel="Corner radius"
+                ariaLabel={t('Corner radius')}
                 value={uniformRadius(nodes)}
                 min={0}
                 onCommit={(v) => update((n) => ({ ...n, radii: [v, v, v, v] }))}
@@ -357,7 +358,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
               checked={nodes.every((n) => n.clipsContent)}
               onChange={(e) => update((n) => ({ ...n, clipsContent: e.target.checked }))}
             />
-            Clip content
+            {t('Clip content')}
           </label>
         </Section>
       )}
@@ -370,8 +371,8 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
       <Section title="Layer">
         <div className="grid2">
           <NumberField
-            label="Opacity"
-            ariaLabel="Layer opacity"
+            label={t('Opacity')}
+            ariaLabel={t('Layer opacity')}
             value={common(nodes, (n) => Math.round(n.opacity * 100))}
             min={0}
             max={100}
@@ -380,9 +381,9 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
             onCommit={(v) => update((n) => ({ ...n, opacity: v / 100 }))}
           />
           <SelectField
-            label="Blend mode"
+            label={t('Blend mode')}
             value={common(nodes, (n) => n.blendMode ?? 'normal')}
-            options={BLEND_MODES.map((m) => ({ value: m, label: m === 'normal' ? 'Normal' : m[0].toUpperCase() + m.slice(1).replace('-', ' ') }))}
+            options={BLEND_MODES.map((m) => ({ value: m, label: t(m === 'normal' ? 'Normal' : m[0].toUpperCase() + m.slice(1).replace('-', ' ')) }))}
             onChange={(v) => update((n) => ({ ...n, blendMode: v === 'normal' ? undefined : v }))}
           />
         </div>
@@ -390,7 +391,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
           {single && (
             <label className="check-row">
               <input type="checkbox" checked={!!single.isMask} onChange={() => editor.useAsMask()} />
-              Use as mask
+              {t('Use as mask')}
             </label>
           )}
         </div>
@@ -422,37 +423,37 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
       >
         <div className="grid2">
           <NumberField
-            label="Weight"
-            ariaLabel="Stroke weight"
+            label={t('Weight')}
+            ariaLabel={t('Stroke weight')}
             value={common(nodes, (n) => n.strokeWeight)}
             min={0}
             max={1000}
             onCommit={(v) => update((n) => ({ ...n, strokeWeight: v }))}
           />
           <button type="button" className="mini-btn wide more-btn" aria-expanded={strokeMore} onClick={() => setStrokeMore(!strokeMore)}>
-            {strokeMore ? 'Fewer options' : 'More stroke options'}
+            {strokeMore ? t('Fewer options') : t('More stroke options')}
           </button>
         </div>
         {strokeMore && (
           <div className="grid2">
           {!allLines && (
             <SelectField
-              label="Stroke position"
+              label={t('Stroke position')}
               value={common(nodes, (n) => n.strokeAlign)}
               options={[
-                { value: 'inside', label: 'Inside' },
-                { value: 'center', label: 'Center' },
-                { value: 'outside', label: 'Outside' },
+                { value: 'inside', label: t('Inside') },
+                { value: 'center', label: t('Center') },
+                { value: 'outside', label: t('Outside') },
               ]}
               onChange={(v) => update((n) => (n.type === 'LINE' ? n : { ...n, strokeAlign: v }))}
             />
           )}
           <SelectField
-            label="Stroke style"
+            label={t('Stroke style')}
             value={common(nodes, (n) => (n.strokeDash.length ? 'dashed' : 'solid'))}
             options={[
-              { value: 'solid', label: 'Solid' },
-              { value: 'dashed', label: 'Dashed' },
+              { value: 'solid', label: t('Solid') },
+              { value: 'dashed', label: t('Dashed') },
             ]}
             onChange={(v) =>
               update((n) => ({ ...n, strokeDash: v === 'dashed' ? [Math.max(4, n.strokeWeight * 3), Math.max(4, n.strokeWeight * 2)] : [] }))
@@ -460,24 +461,24 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
           />
           {nodes.every((n) => n.type === 'LINE' || n.type === 'VECTOR') && (
             <SelectField
-              label="Line ends"
+              label={t('Line ends')}
               value={common(nodes, (n) => n.strokeCap ?? (n.type === 'VECTOR' ? 'round' : 'none'))}
               options={[
-                { value: 'none', label: 'Ends: flat' },
-                { value: 'round', label: 'Ends: round' },
-                { value: 'square', label: 'Ends: square' },
+                { value: 'none', label: t('Ends: flat') },
+                { value: 'round', label: t('Ends: round') },
+                { value: 'square', label: t('Ends: square') },
               ]}
               onChange={(v) => update((n) => ({ ...n, strokeCap: v }))}
             />
           )}
           {!allLines && (
             <SelectField
-              label="Corners"
+              label={t('Corners')}
               value={common(nodes, (n) => n.strokeJoin ?? (n.type === 'VECTOR' ? 'round' : 'miter'))}
               options={[
-                { value: 'miter', label: 'Join: miter' },
-                { value: 'round', label: 'Join: round' },
-                { value: 'bevel', label: 'Join: bevel' },
+                { value: 'miter', label: t('Join: miter') },
+                { value: 'round', label: t('Join: round') },
+                { value: 'bevel', label: t('Join: bevel') },
               ]}
               onChange={(v) => update((n) => ({ ...n, strokeJoin: v }))}
             />
@@ -499,7 +500,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
                   }))
                 }
               />
-              Different weight per side
+              {t('Different weight per side')}
             </label>
             {nodes.every((n) => n.strokeSides) && (
               <div className="grid2">
@@ -507,7 +508,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
                   <NumberField
                     key={side}
                     label={side[0]}
-                    ariaLabel={`${side} stroke weight`}
+                    ariaLabel={side === 'Top' ? t('Top stroke weight') : side === 'Right' ? t('Right stroke weight') : side === 'Bottom' ? t('Bottom stroke weight') : t('Left stroke weight')}
                     value={common(nodes, (n) => n.strokeSides![i])}
                     min={0}
                     max={1000}
@@ -524,9 +525,9 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
         )}
         {allLines && (
           <div className="arrow-row">
-            <span className="field-caption">Arrows</span>
+            <span className="field-caption">{t('Arrows')}</span>
             <IconButton
-              label="Arrow at start"
+              label={t('Arrow at start')}
               pressed={nodes.every((n) => n.arrowStart)}
               onClick={() => {
                 const on = !nodes.every((n) => n.arrowStart);
@@ -536,7 +537,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
               <ArrowLeft {...ICON} />
             </IconButton>
             <IconButton
-              label="Arrow at end"
+              label={t('Arrow at end')}
               pressed={nodes.every((n) => n.arrowEnd)}
               onClick={() => {
                 const on = !nodes.every((n) => n.arrowEnd);
@@ -546,7 +547,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
               <ArrowRight {...ICON} />
             </IconButton>
             <IconButton
-              label="Elbow line"
+              label={t('Elbow line')}
               pressed={nodes.every((n) => n.elbow)}
               onClick={() => {
                 const on = !nodes.every((n) => n.elbow);
@@ -561,7 +562,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
 
       <EffectsSection editor={editor} nodes={nodes} update={update} />
 
-      <ExportSection key={ids.join(',')} editor={editor} ids={ids} name={single ? single.name : 'Selection'} pageBackground={false} />
+      <ExportSection key={ids.join(',')} editor={editor} ids={ids} name={single ? single.name : 'Selection'} shownName={single ? single.name : t('Selection')} pageBackground={false} />
     </>
   );
 }
@@ -572,26 +573,26 @@ function ConstraintsSection({ nodes, update }: { nodes: SceneNode[]; update: (fn
     <Section folded title="Constraints">
       <div className="grid2">
         <SelectField
-          label="Horizontal constraint"
+          label={t('Horizontal constraint')}
           value={common(nodes, (n) => get(n).horizontal)}
           options={[
-            { value: 'left', label: 'Left' },
-            { value: 'right', label: 'Right' },
-            { value: 'leftRight', label: 'Left and right' },
-            { value: 'center', label: 'Center' },
-            { value: 'scale', label: 'Scale' },
+            { value: 'left', label: t('Left') },
+            { value: 'right', label: t('Right') },
+            { value: 'leftRight', label: t('Left and right') },
+            { value: 'center', label: t('Center') },
+            { value: 'scale', label: t('Scale') },
           ]}
           onChange={(v) => update((n) => ({ ...n, constraints: { ...get(n), horizontal: v } }))}
         />
         <SelectField
-          label="Vertical constraint"
+          label={t('Vertical constraint')}
           value={common(nodes, (n) => get(n).vertical)}
           options={[
-            { value: 'top', label: 'Top' },
-            { value: 'bottom', label: 'Bottom' },
-            { value: 'topBottom', label: 'Top and bottom' },
-            { value: 'center', label: 'Center' },
-            { value: 'scale', label: 'Scale' },
+            { value: 'top', label: t('Top') },
+            { value: 'bottom', label: t('Bottom') },
+            { value: 'topBottom', label: t('Top and bottom') },
+            { value: 'center', label: t('Center') },
+            { value: 'scale', label: t('Scale') },
           ]}
           onChange={(v) => update((n) => ({ ...n, constraints: { ...get(n), vertical: v } }))}
         />
@@ -601,7 +602,7 @@ function ConstraintsSection({ nodes, update }: { nodes: SceneNode[]; update: (fn
 }
 
 function TextSection({ editor, nodes, update }: { editor: Editor; nodes: SceneNode[]; update: (fn: (n: SceneNode) => SceneNode) => void }) {
-  const t = (n: SceneNode) => n.text!;
+  const tx = (n: SceneNode) => n.text!;
   const setText = (patch: Partial<TextStyle>) => update((n) => ({ ...n, text: { ...n.text!, ...patch } }));
   // while editing with text selected, font settings apply to the selection
   const editing = editor.editingText ? editor.doc.get(editor.editingText) : undefined;
@@ -614,39 +615,39 @@ function TextSection({ editor, nodes, update }: { editor: Editor; nodes: SceneNo
     }
     return common(nodes, whole);
   };
-  const weight = value('fontWeight', (n) => t(n).fontWeight);
-  const italic = value('italic', (n) => !!t(n).italic);
-  const deco = value('decoration', (n) => t(n).decoration ?? 'none');
+  const weight = value('fontWeight', (n) => tx(n).fontWeight);
+  const italic = value('italic', (n) => !!tx(n).italic);
+  const deco = value('decoration', (n) => tx(n).decoration ?? 'none');
   return (
     <Section title={sel ? 'Text (selected)' : 'Text'} action={<StylePicker editor={editor} nodes={nodes} field="text" />}>
-      <FontPicker value={value('fontFamily', (n) => t(n).fontFamily) as typeof MIXED | string} onChange={(v) => editor.styleText({ fontFamily: v })} />
+      <FontPicker value={value('fontFamily', (n) => tx(n).fontFamily) as typeof MIXED | string} onChange={(v) => editor.styleText({ fontFamily: v })} />
       <div className="grid2">
         <SelectField
-          label="Font weight"
+          label={t('Font weight')}
           value={weight as typeof MIXED | number}
-          options={FONT_WEIGHTS.map((w) => ({ value: w.value, label: w.label }))}
+          options={FONT_WEIGHTS.map((w) => ({ value: w.value, label: t(w.label) }))}
           onChange={(v) => editor.styleText({ fontWeight: v })}
         />
         <NumberField
-          label="Size"
-          ariaLabel="Font size"
-          value={value('fontSize', (n) => t(n).fontSize) as typeof MIXED | number}
+          label={t('Size')}
+          ariaLabel={t('Font size')}
+          value={value('fontSize', (n) => tx(n).fontSize) as typeof MIXED | number}
           min={1}
           max={2000}
           onCommit={(v) => editor.styleText({ fontSize: v })}
         />
         <NumberField
-          label="Line"
-          ariaLabel="Line height"
-          value={common(nodes, (n) => t(n).lineHeight ?? Math.round(t(n).fontSize * 120) / 100)}
+          label={t('Line')}
+          ariaLabel={t('Line height')}
+          value={common(nodes, (n) => tx(n).lineHeight ?? Math.round(tx(n).fontSize * 120) / 100)}
           min={0}
           max={4000}
           onCommit={(v) => setText({ lineHeight: v })}
         />
         <NumberField
-          label="Letter"
-          ariaLabel="Letter spacing"
-          value={common(nodes, (n) => t(n).letterSpacing)}
+          label={t('Letter')}
+          ariaLabel={t('Letter spacing')}
+          value={common(nodes, (n) => tx(n).letterSpacing)}
           min={-200}
           max={2000}
           step={0.1}
@@ -655,50 +656,50 @@ function TextSection({ editor, nodes, update }: { editor: Editor; nodes: SceneNo
       </div>
       <div className="grid2">
         <Segmented
-          label="Text align"
-          value={common(nodes, (n) => t(n).align)}
+          label={t('Text align')}
+          value={common(nodes, (n) => tx(n).align)}
           options={[
-            { value: 'left', label: 'Align left', icon: <TextAlignStart {...ICON} /> },
-            { value: 'center', label: 'Align center', icon: <TextAlignCenter {...ICON} /> },
-            { value: 'right', label: 'Align right', icon: <TextAlignEnd {...ICON} /> },
+            { value: 'left', label: t('Align left'), icon: <TextAlignStart {...ICON} /> },
+            { value: 'center', label: t('Align center'), icon: <TextAlignCenter {...ICON} /> },
+            { value: 'right', label: t('Align right'), icon: <TextAlignEnd {...ICON} /> },
           ]}
           onChange={(v) => setText({ align: v })}
         />
         <SelectField
-          label="Resizing"
-          value={common(nodes, (n) => t(n).autoResize)}
+          label={t('Resizing')}
+          value={common(nodes, (n) => tx(n).autoResize)}
           options={[
-            { value: 'width', label: 'Auto width' },
-            { value: 'height', label: 'Auto height' },
-            { value: 'none', label: 'Fixed size' },
+            { value: 'width', label: t('Auto width') },
+            { value: 'height', label: t('Auto height') },
+            { value: 'none', label: t('Fixed size') },
           ]}
           onChange={(v) => setText({ autoResize: v })}
         />
         <NumberField
-          label="Para"
-          ariaLabel="Paragraph spacing"
-          value={common(nodes, (n) => t(n).paragraphSpacing ?? 0)}
+          label={t('Para')}
+          ariaLabel={t('Paragraph spacing')}
+          value={common(nodes, (n) => tx(n).paragraphSpacing ?? 0)}
           min={0}
           max={10_000}
           onCommit={(v) => update((n) => fitText({ ...n, text: { ...n.text!, paragraphSpacing: v > 0 ? v : undefined } }))}
         />
         <NumberField
-          label="Lines"
-          ariaLabel="Maximum lines (0 for no limit)"
-          value={common(nodes, (n) => t(n).maxLines ?? 0)}
+          label={t('Lines')}
+          ariaLabel={t('Maximum lines (0 for no limit)')}
+          value={common(nodes, (n) => tx(n).maxLines ?? 0)}
           min={0}
           max={10_000}
           precision={0}
           onCommit={(v) => update((n) => fitText({ ...n, text: { ...n.text!, maxLines: v >= 1 ? Math.round(v) : undefined } }))}
         />
         <SelectField
-          label="Text case"
-          value={common(nodes, (n) => t(n).textCase ?? 'none')}
+          label={t('Text case')}
+          value={common(nodes, (n) => tx(n).textCase ?? 'none')}
           options={[
-            { value: 'none', label: 'As typed' },
-            { value: 'upper', label: 'UPPER CASE' },
-            { value: 'lower', label: 'lower case' },
-            { value: 'title', label: 'Title Case' },
+            { value: 'none', label: t('As typed') },
+            { value: 'upper', label: t('UPPER CASE') },
+            { value: 'lower', label: t('lower case') },
+            { value: 'title', label: t('Title Case') },
           ]}
           onChange={(v) => update((n) => fitText({ ...n, text: { ...n.text!, textCase: v === 'none' ? undefined : v } }))}
         />
@@ -708,48 +709,48 @@ function TextSection({ editor, nodes, update }: { editor: Editor; nodes: SceneNo
         <label className="check-row">
           <input
             type="checkbox"
-            checked={nodes.every((n) => t(n).smallCaps)}
+            checked={nodes.every((n) => tx(n).smallCaps)}
             onChange={(e) => update((n) => fitText({ ...n, text: { ...n.text!, smallCaps: e.target.checked || undefined } }))}
           />
-          Small caps
+          {t('Small caps')}
         </label>
         <label className="check-row">
           <input
             type="checkbox"
-            checked={nodes.every((n) => t(n).kerning !== false)}
+            checked={nodes.every((n) => tx(n).kerning !== false)}
             onChange={(e) => update((n) => fitText({ ...n, text: { ...n.text!, kerning: e.target.checked ? undefined : false } }))}
           />
-          Kerning
+          {t('Kerning')}
         </label>
       </div>
-      <div className="text-toggles" role="toolbar" aria-label="Text decoration">
-        <IconButton label="Bulleted list" onClick={() => editor.setTextList('bullet')}>
+      <div className="text-toggles" role="toolbar" aria-label={t('Text decoration')}>
+        <IconButton label={t('Bulleted list')} onClick={() => editor.setTextList('bullet')}>
           <List {...ICON} />
         </IconButton>
-        <IconButton label="Numbered list" onClick={() => editor.setTextList('number')}>
+        <IconButton label={t('Numbered list')} onClick={() => editor.setTextList('number')}>
           <ListOrdered {...ICON} />
         </IconButton>
-        <IconButton label="Bold" shortcut={`${MOD}B`} pressed={weight === 700} onClick={() => editor.styleText({ fontWeight: weight === 700 ? 400 : 700 })}>
+        <IconButton label={t('Bold')} shortcut={`${MOD}B`} pressed={weight === 700} onClick={() => editor.styleText({ fontWeight: weight === 700 ? 400 : 700 })}>
           <Bold {...ICON} />
         </IconButton>
-        <IconButton label="Italic" shortcut={`${MOD}I`} pressed={italic === true} onClick={() => editor.styleText({ italic: italic !== true })}>
+        <IconButton label={t('Italic')} shortcut={`${MOD}I`} pressed={italic === true} onClick={() => editor.styleText({ italic: italic !== true })}>
           <Italic {...ICON} />
         </IconButton>
-        <IconButton label="Underline" shortcut={`${MOD}U`} pressed={deco === 'underline'} onClick={() => editor.styleText({ decoration: deco === 'underline' ? 'none' : 'underline' })}>
+        <IconButton label={t('Underline')} shortcut={`${MOD}U`} pressed={deco === 'underline'} onClick={() => editor.styleText({ decoration: deco === 'underline' ? 'none' : 'underline' })}>
           <Underline {...ICON} />
         </IconButton>
         <IconButton
-          label="Strikethrough"
+          label={t('Strikethrough')}
           pressed={deco === 'strikethrough'}
           onClick={() => editor.styleText({ decoration: deco === 'strikethrough' ? 'none' : 'strikethrough' })}
         >
           <Strikethrough {...ICON} />
         </IconButton>
         {sel && (
-          <label className="swatch range-color" title="Color of the selected text">
+          <label className="swatch range-color" title={t('Color of the selected text')}>
             <input
               type="color"
-              aria-label="Selected text colour"
+              aria-label={t('Selected text colour')}
               value={(typeof value('color', () => undefined) === 'string' ? (value('color', () => undefined) as string) : '#1b1d21').toLowerCase()}
               onChange={(e) => editor.styleText({ color: e.target.value.toUpperCase() })}
             />
@@ -768,14 +769,14 @@ function LinkField({ editor, current }: { editor: Editor; current: string | unde
   const [error, setError] = useState(false);
   return (
     <label className="dialog-field">
-      <span>Link</span>
+      <span>{t('Link')}</span>
       <input
         className={`hex-input override-input ${error ? 'invalid' : ''}`}
         key={shown}
         defaultValue={shown}
-        placeholder={current === MIXED || current === 'mixed' ? 'Mixed' : 'https://…'}
+        placeholder={current === MIXED || current === 'mixed' ? t('Mixed') : 'https://…'}
         maxLength={2000}
-        aria-label="Link"
+        aria-label={t('Link')}
         aria-invalid={error}
         onKeyDown={(e) => {
           e.stopPropagation();
@@ -803,10 +804,10 @@ function FontPicker({ value, onChange }: { value: string | typeof MIXED; onChang
       <input
         className="hex-input override-input"
         list="font-families"
-        aria-label="Font"
+        aria-label={t('Font')}
         key={String(value)}
         defaultValue={value === MIXED ? '' : value}
-        placeholder={value === MIXED ? 'Mixed' : 'Font'}
+        placeholder={value === MIXED ? t('Mixed') : t('Font')}
         maxLength={100}
         style={value === MIXED ? undefined : { fontFamily: fontStack(value) }}
         onKeyDown={(e) => {
@@ -827,7 +828,7 @@ function FontPicker({ value, onChange }: { value: string | typeof MIXED; onChang
         <button
           type="button"
           className="mini-btn wide"
-          title="Lists the fonts installed on this computer (the browser asks first)"
+          title={t('Lists the fonts installed on this computer (the browser asks first)')}
           onClick={async () => {
             try {
               const fonts = await (window as unknown as { queryLocalFonts: () => Promise<{ family: string }[]> }).queryLocalFonts();
@@ -837,7 +838,7 @@ function FontPicker({ value, onChange }: { value: string | typeof MIXED; onChang
             }
           }}
         >
-          Local fonts
+          {t('Local fonts')}
         </button>
       )}
     </div>
@@ -858,7 +859,7 @@ function PaintsSection(props: {
   if (props.hidden) return null;
   const { nodes, get, set, update } = props;
   const paints = common(nodes, get);
-  const label = props.title.toLowerCase();
+  const isFill = props.title === 'Fill';
   const add = () => update((n) => set(n, [...get(n), props.defaultPaint]));
   return (
     <Section
@@ -866,20 +867,20 @@ function PaintsSection(props: {
       action={
         <div className="inline-actions">
           {props.style}
-          <IconButton label={`Add ${label}`} onClick={paints === MIXED ? () => update((n) => set(n, [props.defaultPaint])) : add}>
+          <IconButton label={isFill ? t('Add fill') : t('Add stroke')} onClick={paints === MIXED ? () => update((n) => set(n, [props.defaultPaint])) : add}>
             <Plus {...ICON} />
           </IconButton>
         </div>
       }
     >
       {paints === MIXED ? (
-        <p className="field-caption">Mixed. Click + to replace them with one {label}.</p>
+        <p className="field-caption">{isFill ? t('Mixed. Click + to replace them with one fill.') : t('Mixed. Click + to replace them with one stroke.')}</p>
       ) : (
         paints.map((p, i) => {
-          const label = paints.length > 1 ? `${props.title} ${i + 1}` : props.title;
+          const label = paints.length > 1 ? t('{name} {n}', { name: t(props.title), n: i + 1 }) : t(props.title);
           const onChange = (next: Paint) => update((n) => set(n, get(n).map((q, j) => (j === i ? next : q))));
           const onRemove = () => update((n) => set(n, get(n).filter((_, j) => j !== i)));
-          return <PaintEditor key={i} paint={p} label={label} allowImage={props.title === 'Fill'} onChange={onChange} onRemove={onRemove} />;
+          return <PaintEditor key={i} paint={p} label={label} allowImage={isFill} onChange={onChange} onRemove={onRemove} />;
         })
       )}
       {(paints === MIXED || paints.length > 0) && props.children}
@@ -896,7 +897,7 @@ function EffectsSection({ editor, nodes, update }: { editor: Editor; nodes: Scen
         <div className="inline-actions">
           <StylePicker editor={editor} nodes={nodes} field="effect" />
         <IconButton
-          label="Add effect"
+          label={t('Add effect')}
           onClick={() => update((n) => ({ ...n, effects: effects === MIXED ? [DEFAULT_SHADOW] : [...(n.effects ?? []), DEFAULT_SHADOW].slice(0, 8) }))}
         >
           <Plus {...ICON} />
@@ -905,7 +906,7 @@ function EffectsSection({ editor, nodes, update }: { editor: Editor; nodes: Scen
       }
     >
       {effects === MIXED ? (
-        <p className="field-caption">Mixed. Click + to replace them with one shadow.</p>
+        <p className="field-caption">{t('Mixed. Click + to replace them with one shadow.')}</p>
       ) : effects.length === 0 ? null : (
         effects.map((e, i) => (
           <EffectEditor
@@ -930,8 +931,10 @@ const EXPORT_FORMATS: { value: ExportFormat | 'print'; label: string }[] = [
   { value: 'print', label: 'Vector PDF (print)' },
 ];
 
-function ExportSection(props: { editor: Editor; ids: string[]; name: string; pageBackground: boolean }) {
+/** `name` names the files; `shownName` (if given) is shown on the button instead. */
+function ExportSection(props: { editor: Editor; ids: string[]; name: string; shownName?: string; pageBackground: boolean }) {
   const { editor, ids } = props;
+  const shownName = props.shownName ?? props.name;
   const [format, setFormat] = useState<ExportFormat | 'print'>('png');
   const [scale, setScale] = useState(2);
   const [busy, setBusy] = useState(false);
@@ -959,9 +962,9 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
       );
       if (!out) throw new Error('Nothing to export');
       downloadBlob(out.blob, out.filename);
-      setMessage(`Exported ${out.filename}`);
+      setMessage(t('Exported {name}', { name: out.filename }));
     } catch (e) {
-      setMessage(`Couldn't export: ${e instanceof Error ? e.message : 'unknown error'}`);
+      setMessage(t("Couldn't export: {error}", { error: e instanceof Error ? t(e.message) : t('unknown error') }));
     } finally {
       setBusy(false);
     }
@@ -974,7 +977,7 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
         title="Export"
         action={
           single && settings.length < 10 ? (
-            <IconButton label="Add export setting" onClick={() => setSettings([...settings, { format: 'png', scale: 2, suffix: '@2x' }])}>
+            <IconButton label={t('Add export setting')} onClick={() => setSettings([...settings, { format: 'png', scale: 2, suffix: '@2x' }])}>
               <Plus {...ICON} />
             </IconButton>
           ) : undefined
@@ -982,17 +985,17 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
       >
         {single &&
           settings.map((s, i) => (
-            <div className="export-row" key={i} role="group" aria-label={`Export setting ${i + 1}`}>
+            <div className="export-row" key={i} role="group" aria-label={t('Export setting {n}', { n: i + 1 })}>
               <SelectField
-                label="Scale"
+                label={t('Scale')}
                 value={s.scale}
                 options={[0.5, 1, 1.5, 2, 3, 4].map((v) => ({ value: v, label: `${v}x` }))}
                 onChange={(v) => setSettings(settings.map((x, j) => (j === i ? { ...x, scale: v } : x)))}
               />
               <input
                 className="hex-input override-input"
-                aria-label="File name suffix"
-                placeholder="Suffix"
+                aria-label={t('File name suffix')}
+                placeholder={t('Suffix')}
                 maxLength={40}
                 defaultValue={s.suffix}
                 key={`${i}-${s.suffix}`}
@@ -1006,19 +1009,19 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
                 }}
               />
               <SelectField
-                label="Format"
+                label={t('Format')}
                 value={s.format}
                 options={EXPORT_FORMATS.filter((f) => f.value !== 'print') as { value: ExportFormat; label: string }[]}
                 onChange={(v) => setSettings(settings.map((x, j) => (j === i ? { ...x, format: v } : x)))}
               />
-              <IconButton label={`Remove export setting ${i + 1}`} onClick={() => setSettings(settings.filter((_, j) => j !== i))}>
+              <IconButton label={t('Remove export setting {n}', { n: i + 1 })} onClick={() => setSettings(settings.filter((_, j) => j !== i))}>
                 <Minus {...ICON} />
               </IconButton>
             </div>
           ))}
-        {!single && <p className="field-caption">{withSettings.length} of the selected layers have export settings.</p>}
+        {!single && <p className="field-caption">{t('{n} of the selected layers have export settings.', { n: withSettings.length })}</p>}
         <button type="button" className="btn secondary full" disabled={busy} onClick={runSettings}>
-          {busy ? 'Exporting…' : `Export ${props.name}`}
+          {busy ? t('Exporting…') : t('Export {name}', { name: shownName })}
         </button>
         {message && (
           <p className="field-caption" role="status">
@@ -1043,7 +1046,7 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
         if (!b) throw new Error('Nothing to export');
         const bg = target.background ?? editor.background;
         await printSvgPages([{ svg: await exportSvg(editor.doc, { ...target, background: bg }), width: b.width, height: b.height }], props.name);
-        setMessage('Sent to the print dialog');
+        setMessage(t('Sent to the print dialog'));
         return;
       }
       if (format === 'svg') {
@@ -1058,7 +1061,7 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
       }
       setMessage(`Exported ${filename}`);
     } catch (e) {
-      setMessage(`Couldn't export: ${e instanceof Error ? e.message : 'unknown error'}`);
+      setMessage(t("Couldn't export: {error}", { error: e instanceof Error ? t(e.message) : t('unknown error') }));
     } finally {
       setBusy(false);
     }
@@ -1070,7 +1073,7 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
         title="Export"
       action={
         single ? (
-          <IconButton label="Add export setting" onClick={() => setSettings([{ format: 'png', scale: 1, suffix: '' }])}>
+          <IconButton label={t('Add export setting')} onClick={() => setSettings([{ format: 'png', scale: 1, suffix: '' }])}>
             <Plus {...ICON} />
           </IconButton>
         ) : undefined
@@ -1078,15 +1081,15 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
     >
       <div className="grid2">
         <SelectField
-          label="Export scale"
+          label={t('Export scale')}
           value={format === 'svg' ? 1 : scale}
           options={[1, 2, 3, 4].map((s) => ({ value: s, label: `${s}x` }))}
           onChange={(v) => setScale(v)}
         />
-        <SelectField label="Export format" value={format} options={EXPORT_FORMATS} onChange={(v) => setFormat(v)} />
+        <SelectField label={t('Export format')} value={format} options={EXPORT_FORMATS.map((f) => (f.value === 'print' ? { ...f, label: t(f.label) } : f))} onChange={(v) => setFormat(v)} />
       </div>
       <button type="button" className="btn secondary full" disabled={empty || busy} onClick={run}>
-        {empty ? 'Nothing to export yet' : busy ? 'Exporting…' : `Export ${props.name}`}
+        {empty ? t('Nothing to export yet') : busy ? t('Exporting…') : t('Export {name}', { name: shownName })}
       </button>
       {message && (
         <p className="field-caption" role="status">
@@ -1103,10 +1106,11 @@ function ComponentSection({ editor, node }: { editor: Editor; node: SceneNode })
     return (
       <Section title="Component">
         <p className="field-caption">
-          <Component {...ICON} className="component-ink" /> Main component. {count === 0 ? 'No instances yet.' : `${count} instance${count === 1 ? '' : 's'} follow its changes.`}
+          <Component {...ICON} className="component-ink" /> {t('Main component.')}{' '}
+          {count === 0 ? t('No instances yet.') : count === 1 ? t('1 instance follow its changes.') : t('{n} instances follow its changes.', { n: count })}
         </p>
         <button type="button" className="btn secondary full" onClick={() => editor.createInstance(node.id)}>
-          Create instance
+          {t('Create instance')}
         </button>
       </Section>
     );
@@ -1116,32 +1120,32 @@ function ComponentSection({ editor, node }: { editor: Editor; node: SceneNode })
   const overrides = node.overrides ?? {};
   return (
     <Section title="Instance">
-      <p className="field-caption">{comp ? <>Instance of “{comp.name}”.</> : 'The main component was removed.'}</p>
+      <p className="field-caption">{comp ? t('Instance of “{name}”.', { name: comp.name }) : t('The main component was removed.')}</p>
       <div className="grid2">
         <button type="button" className="btn secondary full" disabled={!comp} onClick={() => editor.goToMainComponent(node.id)}>
-          Go to main
+          {t('Go to main')}
         </button>
         <button type="button" className="btn secondary full" onClick={() => editor.detachInstances([node.id])}>
-          Detach
+          {t('Detach')}
         </button>
       </div>
       {texts.length > 0 && (
         <div className="override-list">
-          <span className="field-caption">Text in this instance</span>
-          {texts.map((t) => (
+          <span className="field-caption">{t('Text in this instance')}</span>
+          {texts.map((tt) => (
             <OverrideText
-              key={t.id}
-              label={t.name}
-              placeholder={t.text!.characters}
-              value={overrides[t.id]?.characters ?? t.text!.characters}
-              onCommit={(v) => editor.setOverride(node.id, t.id, v === t.text!.characters ? null : { characters: v })}
+              key={tt.id}
+              label={tt.name}
+              placeholder={tt.text!.characters}
+              value={overrides[tt.id]?.characters ?? tt.text!.characters}
+              onCommit={(v) => editor.setOverride(node.id, tt.id, v === tt.text!.characters ? null : { characters: v })}
             />
           ))}
         </div>
       )}
       {Object.keys(overrides).length > 0 && (
         <button type="button" className="btn secondary full" onClick={() => editor.resetOverrides([node.id])}>
-          Reset all changes
+          {t('Reset all changes')}
         </button>
       )}
     </Section>
@@ -1157,7 +1161,7 @@ function OverrideText(props: { label: string; value: string; placeholder: string
         className="hex-input override-input"
         value={text}
         rows={Math.min(4, Math.max(1, text.split('\n').length))}
-        aria-label={`Text of ${props.label}`}
+        aria-label={t('Text of {name}', { name: props.label })}
         onChange={(e) => setText(e.target.value)}
         onBlur={() => text !== props.value && props.onCommit(text)}
         onKeyDown={(e) => {
@@ -1187,11 +1191,11 @@ function AutoLayoutSection(props: { editor: Editor; nodes: SceneNode[]; update: 
       title="Auto layout"
       action={
         all ? (
-          <IconButton label="Remove auto layout" onClick={() => editor.removeAutoLayout(nodes.map((n) => n.id))}>
+          <IconButton label={t('Remove auto layout')} onClick={() => editor.removeAutoLayout(nodes.map((n) => n.id))}>
             <span aria-hidden="true">−</span>
           </IconButton>
         ) : (
-          <IconButton label="Add auto layout" shortcut="Shift+A" onClick={() => editor.addAutoLayout()}>
+          <IconButton label={t('Add auto layout')} shortcut="Shift+A" onClick={() => editor.addAutoLayout()}>
             <Plus {...ICON} />
           </IconButton>
         )
@@ -1201,67 +1205,67 @@ function AutoLayoutSection(props: { editor: Editor; nodes: SceneNode[]; update: 
         <>
           <div className="grid2">
             <Segmented
-              label="Direction"
+              label={t('Direction')}
               value={common(nodes, (n) => L(n).mode)}
               options={[
-                { value: 'vertical', label: 'Vertical', icon: <ArrowDown {...ICON} /> },
-                { value: 'horizontal', label: 'Horizontal', icon: <ArrowRight {...ICON} /> },
-                { value: 'grid', label: 'Grid', icon: <Grid3x3 {...ICON} /> },
+                { value: 'vertical', label: t('Vertical'), icon: <ArrowDown {...ICON} /> },
+                { value: 'horizontal', label: t('Horizontal'), icon: <ArrowRight {...ICON} /> },
+                { value: 'grid', label: t('Grid'), icon: <Grid3x3 {...ICON} /> },
               ]}
               onChange={(v) => setL({ mode: v, ...(v === 'grid' ? { columns: 2, widthMode: 'fixed' as const } : {}) })}
             />
-            <NumberField label="Gap" ariaLabel="Gap between items" value={common(nodes, (n) => L(n).gap)} onCommit={(v) => setL({ gap: v })} />
+            <NumberField label={t('Gap')} ariaLabel={t('Gap between items')} value={common(nodes, (n) => L(n).gap)} onCommit={(v) => setL({ gap: v })} />
             <NumberField
-              label="H pad"
-              ariaLabel="Horizontal padding"
+              label={t('H pad')}
+              ariaLabel={t('Horizontal padding')}
               value={pad(nodes, 1, 3)}
               min={0}
               onCommit={(v) => update((n) => (n.layout ? { ...n, layout: { ...n.layout, padding: [n.layout.padding[0], v, n.layout.padding[2], v] } } : n))}
             />
             <NumberField
-              label="V pad"
-              ariaLabel="Vertical padding"
+              label={t('V pad')}
+              ariaLabel={t('Vertical padding')}
               value={pad(nodes, 0, 2)}
               min={0}
               onCommit={(v) => update((n) => (n.layout ? { ...n, layout: { ...n.layout, padding: [v, n.layout.padding[1], v, n.layout.padding[3]] } } : n))}
             />
             <SelectField
-              label="Distribute items"
+              label={t('Distribute items')}
               value={common(nodes, (n) => L(n).primaryAlign)}
               options={[
-                { value: 'start', label: 'Pack at start' },
-                { value: 'center', label: 'Pack in center' },
-                { value: 'end', label: 'Pack at end' },
-                { value: 'space-between', label: 'Space between' },
+                { value: 'start', label: t('Pack at start') },
+                { value: 'center', label: t('Pack in center') },
+                { value: 'end', label: t('Pack at end') },
+                { value: 'space-between', label: t('Space between') },
               ]}
               onChange={(v) => setL({ primaryAlign: v })}
             />
             <SelectField
-              label="Align items"
+              label={t('Align items')}
               value={common(nodes, (n) => L(n).crossAlign)}
               options={[
-                { value: 'start', label: 'Align start' },
-                { value: 'center', label: 'Align center' },
-                { value: 'end', label: 'Align end' },
-                { value: 'stretch', label: 'Stretch' },
+                { value: 'start', label: t('Align start') },
+                { value: 'center', label: t('Align center') },
+                { value: 'end', label: t('Align end') },
+                { value: 'stretch', label: t('Stretch') },
               ]}
               onChange={(v) => setL({ crossAlign: v })}
             />
             <SelectField
-              label="Width sizing"
+              label={t('Width sizing')}
               value={common(nodes, (n) => L(n).widthMode)}
               options={[
-                { value: 'hug', label: 'W: Hug contents' },
-                { value: 'fixed', label: 'W: Fixed' },
+                { value: 'hug', label: t('W: Hug contents') },
+                { value: 'fixed', label: t('W: Fixed') },
               ]}
               onChange={(v) => setL({ widthMode: v })}
             />
             <SelectField
-              label="Height sizing"
+              label={t('Height sizing')}
               value={common(nodes, (n) => L(n).heightMode)}
               options={[
-                { value: 'hug', label: 'H: Hug contents' },
-                { value: 'fixed', label: 'H: Fixed' },
+                { value: 'hug', label: t('H: Hug contents') },
+                { value: 'fixed', label: t('H: Fixed') },
               ]}
               onChange={(v) => setL({ heightMode: v })}
             />
@@ -1269,8 +1273,8 @@ function AutoLayoutSection(props: { editor: Editor; nodes: SceneNode[]; update: 
           {nodes.every((n) => L(n).mode === 'grid') && (
             <div className="grid2">
               <NumberField
-                label="Cols"
-                ariaLabel="Grid columns"
+                label={t('Cols')}
+                ariaLabel={t('Grid columns')}
                 value={common(nodes, (n) => L(n).columns ?? 2)}
                 min={1}
                 max={100}
@@ -1278,8 +1282,8 @@ function AutoLayoutSection(props: { editor: Editor; nodes: SceneNode[]; update: 
                 onCommit={(v) => setL({ columns: Math.round(v) })}
               />
               <NumberField
-                label="Row gap"
-                ariaLabel="Gap between grid rows"
+                label={t('Row gap')}
+                ariaLabel={t('Gap between grid rows')}
                 value={common(nodes, (n) => L(n).counterGap ?? L(n).gap)}
                 min={0}
                 onCommit={(v) => setL({ counterGap: v })}
@@ -1290,12 +1294,12 @@ function AutoLayoutSection(props: { editor: Editor; nodes: SceneNode[]; update: 
             <div className="grid2">
               <label className="check-row">
                 <input type="checkbox" checked={nodes.every((n) => L(n).wrap)} onChange={(e) => setL({ wrap: e.target.checked || undefined })} />
-                Wrap to new rows
+                {t('Wrap to new rows')}
               </label>
               {nodes.every((n) => L(n).wrap) && (
                 <NumberField
-                  label="Row gap"
-                  ariaLabel="Gap between rows"
+                  label={t('Row gap')}
+                  ariaLabel={t('Gap between rows')}
                   value={common(nodes, (n) => L(n).counterGap ?? L(n).gap)}
                   min={0}
                   onCommit={(v) => setL({ counterGap: v })}
@@ -1319,44 +1323,46 @@ function LabelSection({ editor, node, update }: { editor: Editor; node: SceneNod
       title={node.type === 'LINE' ? 'Connector text' : 'Shape text'}
       action={
         <button type="button" className="mini-btn wide" onClick={() => editor.startLabelEdit(node.id)}>
-          {l?.characters ? 'Edit' : 'Add text'}
+          {l?.characters ? t('Edit') : t('Add text')}
         </button>
       }
     >
       {l?.characters ? (
         <>
           <div className="grid2">
-            <NumberField label="Size" ariaLabel="Shape text size" value={l.fontSize} min={1} max={2000} onCommit={(v) => set({ fontSize: v })} />
+            <NumberField label={t('Size')} ariaLabel={t('Shape text size')} value={l.fontSize} min={1} max={2000} onCommit={(v) => set({ fontSize: v })} />
             <SelectField
-              label="Shape text weight"
+              label={t('Shape text weight')}
               value={l.fontWeight}
-              options={FONT_WEIGHTS.map((w) => ({ value: w.value, label: w.label }))}
+              options={FONT_WEIGHTS.map((w) => ({ value: w.value, label: t(w.label) }))}
               onChange={(v) => set({ fontWeight: v })}
             />
             <label className="paint-row compact">
               <span className="swatch" style={{ background: node.labelColor ?? '#1B1D21' }}>
                 <input
                   type="color"
-                  aria-label="Shape text colour"
+                  aria-label={t('Shape text colour')}
                   value={(node.labelColor ?? '#1B1D21').toLowerCase()}
                   onChange={(e) => update((n) => ({ ...n, labelColor: e.target.value.toUpperCase() }))}
                 />
               </span>
             </label>
             <Segmented
-              label="Shape text align"
+              label={t('Shape text align')}
               value={l.align}
               options={[
-                { value: 'left', label: 'Align left', icon: <TextAlignStart {...ICON} /> },
-                { value: 'center', label: 'Align center', icon: <TextAlignCenter {...ICON} /> },
-                { value: 'right', label: 'Align right', icon: <TextAlignEnd {...ICON} /> },
+                { value: 'left', label: t('Align left'), icon: <TextAlignStart {...ICON} /> },
+                { value: 'center', label: t('Align center'), icon: <TextAlignCenter {...ICON} /> },
+                { value: 'right', label: t('Align right'), icon: <TextAlignEnd {...ICON} /> },
               ]}
               onChange={(v) => set({ align: v })}
             />
           </div>
         </>
       ) : (
-        <p className="field-caption">Double-click the {node.type === 'LINE' ? 'connector' : 'shape'} or press Enter to write in it.</p>
+        <p className="field-caption">
+          {node.type === 'LINE' ? t('Double-click the connector or press Enter to write in it.') : t('Double-click the shape or press Enter to write in it.')}
+        </p>
       )}
     </Section>
   );
@@ -1370,8 +1376,8 @@ function ShapeSection({ node, update }: { node: SceneNode; update: (fn: (n: Scen
     <Section title={shape.kind === 'star' ? 'Star' : 'Polygon'}>
       <div className="grid2">
         <NumberField
-          label={shape.kind === 'star' ? 'Points' : 'Sides'}
-          ariaLabel={shape.kind === 'star' ? 'Star points' : 'Polygon sides'}
+          label={shape.kind === 'star' ? t('Points') : t('Sides')}
+          ariaLabel={shape.kind === 'star' ? t('Star points') : t('Polygon sides')}
           value={shape.count}
           min={3}
           max={60}
@@ -1379,10 +1385,10 @@ function ShapeSection({ node, update }: { node: SceneNode; update: (fn: (n: Scen
           onCommit={(v) => set({ count: Math.round(v) })}
         />
         {shape.kind === 'star' && (
-          <NumberField label="Ratio" ariaLabel="Inner radius ratio" value={Math.round(shape.ratio * 100)} min={1} max={100} precision={0} suffix="%" onCommit={(v) => set({ ratio: v / 100 })} />
+          <NumberField label={t('Ratio')} ariaLabel={t('Inner radius ratio')} value={Math.round(shape.ratio * 100)} min={1} max={100} precision={0} suffix="%" onCommit={(v) => set({ ratio: v / 100 })} />
         )}
       </div>
-      <p className="field-caption">Editing its points turns it into a plain vector.</p>
+      <p className="field-caption">{t('Editing its points turns it into a plain vector.')}</p>
     </Section>
   );
 }
@@ -1403,12 +1409,12 @@ function SizeLimits(props: { nodes: SceneNode[]; update: (fn: (n: SceneNode) => 
   return (
     <>
       <div className="grid2">
-        {field('minWidth', 'Min W', 'Minimum width')}
-        {field('maxWidth', 'Max W', 'Maximum width')}
-        {field('minHeight', 'Min H', 'Minimum height')}
-        {field('maxHeight', 'Max H', 'Maximum height')}
+        {field('minWidth', t('Min W'), t('Minimum width'))}
+        {field('maxWidth', t('Max W'), t('Maximum width'))}
+        {field('minHeight', t('Min H'), t('Minimum height'))}
+        {field('maxHeight', t('Max H'), t('Maximum height'))}
       </div>
-      <p className="field-caption">Size limits apply in auto layout. 0 means no limit.</p>
+      <p className="field-caption">{t('Size limits apply in auto layout. 0 means no limit.')}</p>
     </>
   );
 }
@@ -1421,27 +1427,27 @@ function LayoutChildSection(props: { nodes: SceneNode[]; update: (fn: (n: SceneN
     <Section title="In auto layout">
       <div className="grid2">
         <SelectField
-          label="Width in layout"
+          label={t('Width in layout')}
           value={common(nodes, (n) => C(n).horizontal)}
           options={[
-            { value: 'fixed', label: 'W: Fixed' },
-            { value: 'fill', label: 'W: Fill container' },
+            { value: 'fixed', label: t('W: Fixed') },
+            { value: 'fill', label: t('W: Fill container') },
           ]}
           onChange={(v) => setC({ horizontal: v })}
         />
         <SelectField
-          label="Height in layout"
+          label={t('Height in layout')}
           value={common(nodes, (n) => C(n).vertical)}
           options={[
-            { value: 'fixed', label: 'H: Fixed' },
-            { value: 'fill', label: 'H: Fill container' },
+            { value: 'fixed', label: t('H: Fixed') },
+            { value: 'fill', label: t('H: Fill container') },
           ]}
           onChange={(v) => setC({ vertical: v })}
         />
       </div>
       <label className="check-row">
         <input type="checkbox" checked={nodes.every((n) => C(n).absolute)} onChange={(e) => setC({ absolute: e.target.checked })} />
-        Ignore auto layout (absolute position)
+        {t('Ignore auto layout (absolute position)')}
       </label>
       <SizeLimits nodes={nodes} update={update} />
     </Section>
@@ -1449,27 +1455,28 @@ function LayoutChildSection(props: { nodes: SceneNode[]; update: (fn: (n: SceneN
 }
 
 function ConnectorSection({ editor, line }: { editor: Editor; line: SceneNode }) {
-  const name = (id: string | undefined) => (id ? (editor.doc.get(id)?.name ?? 'a removed layer') : '');
-  const side = (a: string | undefined) => (a === 'auto' || !a ? 'nearest side' : `${a} side`);
+  const name = (id: string | undefined) => (id ? (editor.doc.get(id)?.name ?? t('a removed layer')) : '');
+  const side = (a: string | undefined) =>
+    a === 'top' ? t('top side') : a === 'right' ? t('right side') : a === 'bottom' ? t('bottom side') : a === 'left' ? t('left side') : t('nearest side');
   return (
     <Section title="Connector">
       {line.startBind && (
         <div className="bind-row">
           <span className="field-caption">
-            Start on “{name(line.startBind.nodeId)}”, {side(line.startBind.anchor)}
+            {t('Start on “{name}”, {side}', { name: name(line.startBind.nodeId), side: side(line.startBind.anchor) })}
           </span>
           <button type="button" className="mini-btn wide" onClick={() => editor.updateNodes([line.id], (n) => ({ ...n, startBind: undefined }))}>
-            Detach
+            {t('Detach')}
           </button>
         </div>
       )}
       {line.endBind && (
         <div className="bind-row">
           <span className="field-caption">
-            End on “{name(line.endBind.nodeId)}”, {side(line.endBind.anchor)}
+            {t('End on “{name}”, {side}', { name: name(line.endBind.nodeId), side: side(line.endBind.anchor) })}
           </span>
           <button type="button" className="mini-btn wide" onClick={() => editor.updateNodes([line.id], (n) => ({ ...n, endBind: undefined }))}>
-            Detach
+            {t('Detach')}
           </button>
         </div>
       )}

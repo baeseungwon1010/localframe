@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Eye, EyeOff, Minus } from 'lucide-react';
 import type { ImagePaint, SolidPaint } from '../../../shared/schema.ts';
 import { getImage } from '../../engine/images.ts';
+import { t } from '../i18n.ts';
 
 export const MIXED = Symbol('mixed');
 export type Maybe<T> = T | typeof MIXED;
@@ -152,7 +153,7 @@ export function NumberField(props: {
         inputMode="decimal"
         aria-label={props.ariaLabel}
         value={text}
-        placeholder={value === MIXED ? 'Mixed' : undefined}
+        placeholder={value === MIXED ? t('Mixed') : undefined}
         disabled={props.disabled}
         onFocus={(e) => {
           focused.current = true;
@@ -214,14 +215,14 @@ export function PaintRow(props: {
       <label className="swatch" style={{ background: paint.color, opacity: paint.visible ? 1 : 0.4 }}>
         <input
           type="color"
-          aria-label={`${label} colour`}
+          aria-label={t('{label} colour', { label })}
           value={paint.color.toLowerCase()}
           onChange={(e) => props.onChange({ ...paint, color: e.target.value.toUpperCase() })}
         />
       </label>
       <input
         className="hex-input"
-        aria-label={`${label} hex`}
+        aria-label={t('{label} hex', { label })}
         value={hex}
         maxLength={7}
         onChange={(e) => setHex(e.target.value)}
@@ -233,7 +234,7 @@ export function PaintRow(props: {
       />
       <NumberField
         label=""
-        ariaLabel={`${label} opacity`}
+        ariaLabel={t('{label} opacity', { label })}
         value={Math.round(paint.opacity * 100)}
         min={0}
         max={100}
@@ -244,13 +245,13 @@ export function PaintRow(props: {
       <button
         type="button"
         className="mini-btn"
-        aria-label={paint.visible ? `Hide ${label}` : `Show ${label}`}
+        aria-label={paint.visible ? t('Hide {label}', { label }) : t('Show {label}', { label })}
         aria-pressed={!paint.visible}
         onClick={() => props.onChange({ ...paint, visible: !paint.visible })}
       >
         {paint.visible ? <Eye size={14} strokeWidth={1.5} /> : <EyeOff size={14} strokeWidth={1.5} />}
       </button>
-      <button type="button" className="mini-btn" aria-label={`Remove ${label}`} onClick={props.onRemove}>
+      <button type="button" className="mini-btn" aria-label={t('Remove {label}', { label })} onClick={props.onRemove}>
         <Minus size={14} strokeWidth={1.5} />
       </button>
     </div>
@@ -266,20 +267,20 @@ export function ImagePaintRow(props: { paint: ImagePaint; label: string; onChang
       <span className="swatch image-swatch" style={img ? { backgroundImage: `url(${JSON.stringify(img.src)})` } : undefined} aria-hidden="true" />
       <select
         className="select-field"
-        aria-label={`${label} fit`}
+        aria-label={t('{label} fit', { label })}
         value={paint.scaleMode}
         onChange={(e) => props.onChange({ ...paint, scaleMode: e.target.value as ImagePaint['scaleMode'] })}
       >
-        <option value="fill">Fill</option>
-        <option value="fit">Fit</option>
-        <option value="stretch">Stretch</option>
-        <option value="crop">Crop</option>
-        <option value="tile">Tile</option>
+        <option value="fill">{t('Fill')}</option>
+        <option value="fit">{t('Fit')}</option>
+        <option value="stretch">{t('Stretch')}</option>
+        <option value="crop">{t('Crop')}</option>
+        <option value="tile">{t('Tile')}</option>
       </select>
       {paint.scaleMode === 'tile' && (
         <NumberField
           label=""
-          ariaLabel={`${label} tile size`}
+          ariaLabel={t('{label} tile size', { label })}
           value={Math.round((paint.tileScale ?? 1) * 100)}
           min={1}
           max={10_000}
@@ -291,7 +292,7 @@ export function ImagePaintRow(props: { paint: ImagePaint; label: string; onChang
       {paint.scaleMode === 'crop' && (
         <NumberField
           label=""
-          ariaLabel={`${label} zoom`}
+          ariaLabel={t('{label} zoom', { label })}
           value={Math.round((paint.crop?.scale ?? 1) * 100)}
           min={100}
           max={1000}
@@ -302,7 +303,7 @@ export function ImagePaintRow(props: { paint: ImagePaint; label: string; onChang
       )}
       <NumberField
         label=""
-        ariaLabel={`${label} opacity`}
+        ariaLabel={t('{label} opacity', { label })}
         value={Math.round(paint.opacity * 100)}
         min={0}
         max={100}
@@ -313,13 +314,13 @@ export function ImagePaintRow(props: { paint: ImagePaint; label: string; onChang
       <button
         type="button"
         className="mini-btn"
-        aria-label={paint.visible ? `Hide ${label}` : `Show ${label}`}
+        aria-label={paint.visible ? t('Hide {label}', { label }) : t('Show {label}', { label })}
         aria-pressed={!paint.visible}
         onClick={() => props.onChange({ ...paint, visible: !paint.visible })}
       >
         {paint.visible ? <Eye size={14} strokeWidth={1.5} /> : <EyeOff size={14} strokeWidth={1.5} />}
       </button>
-      <button type="button" className="mini-btn" aria-label={`Remove ${label}`} onClick={props.onRemove}>
+      <button type="button" className="mini-btn" aria-label={t('Remove {label}', { label })} onClick={props.onRemove}>
         <Minus size={14} strokeWidth={1.5} />
       </button>
     </div>
@@ -340,8 +341,11 @@ const foldChoice: Record<string, boolean> = (() => {
 /**
  * A properties section; its title folds it away, and that is remembered for every layer.
  * `folded` sections (rarely needed ones) start closed until opened once.
+ * `title` is the English title: it is remembered by it, and shown translated. `label` shows other
+ * text instead (a title made with a layer name, already translated).
  */
-export function Section(props: { title: string; action?: ReactNode; children?: ReactNode; folded?: boolean }) {
+export function Section(props: { title: string; label?: string; action?: ReactNode; children?: ReactNode; folded?: boolean }) {
+  const shown = props.label ?? t(props.title);
   const [closed, setClosed] = useState(() => foldChoice[props.title] ?? !!props.folded);
   const toggle = () => {
     const next = !closed;
@@ -354,16 +358,16 @@ export function Section(props: { title: string; action?: ReactNode; children?: R
     }
   };
   return (
-    <section className={`prop-section ${closed ? 'folded' : ''}`} aria-label={props.title}>
+    <section className={`prop-section ${closed ? 'folded' : ''}`} aria-label={shown}>
       <div className="prop-head">
         <h3>
           {props.children ? (
-            <button type="button" className="fold-btn" aria-expanded={!closed} aria-label={`${props.title} section`} onClick={toggle}>
+            <button type="button" className="fold-btn" aria-expanded={!closed} aria-label={t('{title} section', { title: shown })} onClick={toggle}>
               <ChevronDown size={12} strokeWidth={2} aria-hidden="true" className="fold-icon" />
-              {props.title}
+              {shown}
             </button>
           ) : (
-            props.title
+            shown
           )}
         </h3>
         {/* adding something to a folded section opens it */}
@@ -420,7 +424,7 @@ export function SelectField<T extends string | number>(props: {
     >
       {props.value === MIXED && (
         <option value="__mixed" disabled>
-          Mixed
+          {t('Mixed')}
         </option>
       )}
       {props.options.map((o) => (
