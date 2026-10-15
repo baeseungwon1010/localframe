@@ -83,6 +83,7 @@ import { canHaveLabel, defaultLabel, heightForLabel } from './labels.ts';
 import { STAMPS, type TemplateKind, templateBounds, templateItems } from './templates.ts';
 import { type Recognized, recognizeStroke } from './recognize.ts';
 import { tr } from './translate.ts';
+import { importSvg } from './svgImport.ts';
 import { CONNECTOR_COLOR, DEFAULT_SHAPE_COLOR, DEFAULT_STICKY_COLOR, DIAGRAM_COLORS, isDiagramItem, withDiagramColor } from './diagramColors.ts';
 
 export { fitText };
@@ -2714,6 +2715,26 @@ export class Editor {
     });
     this.emit('view');
     return true;
+  }
+
+  /**
+   * Turns SVG text into editable layers (see svgImport.ts): a frame holding the drawing, centred
+   * on `at` (world) or the middle of the view, selected. Throws with a message for the person
+   * when the text isn't a usable SVG.
+   */
+  importSvgText(text: string, name: string, at?: Point): string {
+    const nodes = importSvg(this.doc, text, { parentId: null, at: { x: 0, y: 0 }, name });
+    const root = nodes[0];
+    const c = at ?? this.toWorld(this.viewSize.width / 2, this.viewSize.height / 2);
+    const placed = { ...root, x: round2(c.x - root.width / 2), y: round2(c.y - root.height / 2) };
+    this.transact(() => {
+      this.put(placed);
+      for (const n of nodes.slice(1)) this.put(n);
+    });
+    this.setTool('move');
+    this.setSelection([root.id]);
+    this.emit('view', 'selection');
+    return root.id;
   }
 
   /** Starts typing in a shape or on a connector (double-click or Enter), like FigJam. */

@@ -338,4 +338,12 @@ export const editorChrome: Record<string, string> = {
   Next: '다음',
   'Full screen': '전체 화면',
   'Close presentation': '발표 끝내기',
+  // SVG import
+  "Couldn't import “{name}”: {error}": '“{name}”을(를) 가져오지 못했어요: {error}',
+  '“{name}” is larger than 5 MB, which is the SVG limit.': '“{name}”은(는) SVG 한도인 5MB보다 커요.',
+  'Only PNG, JPEG, WebP, GIF and SVG files can be placed.': 'PNG, JPEG, WebP, GIF, SVG 파일만 넣을 수 있어요.',
+  "This isn't an SVG file.": 'SVG 파일이 아니에요.',
+  'This SVG is too large to import.': '이 SVG는 너무 커서 가져올 수 없어요.',
+  'This SVG is nested too deeply to import.': '이 SVG는 너무 깊게 중첩되어 가져올 수 없어요.',
+  'This SVG could not be imported.': '이 SVG는 가져올 수 없어요.',
 };

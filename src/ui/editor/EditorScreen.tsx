@@ -76,7 +76,12 @@ function isTypingTarget(t: EventTarget | null) {
 }
 
 const VIEW_KEY = (id: string) => `localframe.view.${id}`;
-const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif';
+const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml,.svg';
+/** Larger SVG files than this aren't read (the importer refuses them anyway). */
+const MAX_SVG_BYTES = 5 * 1024 * 1024;
+const isSvgFile = (f: File) => f.type === 'image/svg+xml' || /\.svg$/i.test(f.name);
+/** Pasted text that is an SVG drawing (copied from a design tool or an icon site). */
+const looksLikeSvg = (text: string) => /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(text);
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; theme: Theme; setTheme: (t: Theme) => void }) {
@@ -168,10 +173,24 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   const [reloadKey, setReloadKey] = useState(0);
 
   /** Uploads image files and places them on the canvas (at a point, or in the middle of the view). */
+  /** SVG text as editable layers, or a notice saying why not. */
+  const importSvg = (text: string, name: string, at?: { x: number; y: number }) => {
+    try {
+      editor.importSvgText(text, name, at);
+    } catch (e) {
+      setNotice({ text: "Couldn't import “{name}”: {error}", vars: { name, error: e instanceof Error ? t(e.message) : t('unknown error') } });
+    }
+  };
+
   const placeImages = async (files: File[], at?: { x: number; y: number }) => {
-    const images = files.filter((f) => /^image\/(png|jpeg|webp|gif)$/.test(f.type));
+    // SVG files become shapes; other images are placed as pictures
+    for (const f of files.filter(isSvgFile)) {
+      if (f.size > MAX_SVG_BYTES) setNotice({ text: '“{name}” is larger than 5 MB, which is the SVG limit.', vars: { name: f.name } });
+      else importSvg(await f.text(), f.name.replace(/\.svg$/i, '') || 'SVG', at);
+    }
+    const images = files.filter((f) => !isSvgFile(f) && /^image\/(png|jpeg|webp|gif)$/.test(f.type));
     if (images.length === 0) {
-      if (files.length) setNotice({ text: 'Only PNG, JPEG, WebP and GIF images can be placed.' });
+      if (files.length && !files.some(isSvgFile)) setNotice({ text: 'Only PNG, JPEG, WebP, GIF and SVG files can be placed.' });
       return;
     }
     let offset = 0;
@@ -357,7 +376,10 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         return;
       }
       const text = e.clipboardData?.getData('text/plain');
-      if (text) {
+      if (text && looksLikeSvg(text)) {
+        e.preventDefault();
+        importSvg(text, 'SVG');
+      } else if (text) {
         editor.pasteText(text);
         e.preventDefault();
       }
