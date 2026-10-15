@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildZip, crc32, readZip } from '../../src/engine/zip.ts';
-import { backupDue } from '../../src/ui/backup.ts';
+import { backupDue } from '../../src/ui/backupStatus.ts';
 import type { FileMeta } from '../../shared/schema.ts';
 
 const enc = new TextEncoder();

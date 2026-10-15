@@ -7,20 +7,10 @@ import { navigate } from './App.tsx';
 import { IconButton, Menu, type MenuItem, ThemeToggle, relativeTime } from './components.tsx';
 import type { Theme } from './hooks.ts';
 import { useInstall } from './pwa.ts';
-import {
-  backUpToFolder,
-  backupDue,
-  backupFolder,
-  canBackUpToFolder,
-  chooseBackupFolder,
-  folderReady,
-  forgetBackupFolder,
-  lastBackup,
-  makeBackup,
-  markBackedUp,
-  restoreBackup,
-  snoozeBackupReminder,
-} from './backup.ts';
+import { backupDue, backupFolder, canBackUpToFolder, forgetBackupFolder, lastBackup, markBackedUp, snoozeBackupReminder } from './backupStatus.ts';
+
+/** Backing up and restoring (ZIP writing and reading) load when first used. */
+const backupWork = () => import('./backup.ts');
 import { downloadBlob } from './download.ts';
 
 // exporting draws every page, so it brings the canvas engine: loaded when first used
@@ -67,7 +57,9 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
       const list = await api.listFiles().catch(() => [] as FileMeta[]);
       const last = lastBackup()?.getTime() ?? 0;
       const changed = list.some((f) => Date.parse(f.updatedAt) > last);
-      if (!changed || !(await folderReady(dir))) return;
+      if (!changed) return;
+      const { backUpToFolder, folderReady } = await backupWork();
+      if (cancelled || !(await folderReady(dir))) return;
       const n = await backUpToFolder(dir, false).catch(() => null);
       if (!cancelled && n !== null) setNotice(`Backed up ${n} ${n === 1 ? 'file' : 'files'} to the “${dir.name}” folder.`);
     })();
@@ -79,6 +71,7 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
   const backUpNow = async () => {
     setBusy(true);
     try {
+      const { backUpToFolder, makeBackup } = await backupWork();
       if (folder) {
         const n = await backUpToFolder(folder, true);
         if (n === null) return setError(`Couldn't write to the “${folder.name}” folder: permission was not given.`);
@@ -101,6 +94,7 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
     if (!file) return;
     setBusy(true);
     try {
+      const { restoreBackup } = await backupWork();
       const { restored, failed } = await restoreBackup(file);
       setNotice(
         `Restored ${restored.length} ${restored.length === 1 ? 'file' : 'files'}${failed.length ? `; ${failed.length} could not be read: ${failed.join(', ')}` : ''}.`,
@@ -134,6 +128,7 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
                 label: 'Back up to a folder automatically…',
                 onSelect: async () => {
                   try {
+                    const { backUpToFolder, chooseBackupFolder } = await backupWork();
                     const dir = await chooseBackupFolder();
                     if (!dir) return;
                     setFolder(dir);
