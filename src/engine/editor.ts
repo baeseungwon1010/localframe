@@ -82,6 +82,7 @@ const loadPathOps = async () => (pathOps ??= await import('./pathOps.ts'));
 import { canHaveLabel, defaultLabel, heightForLabel } from './labels.ts';
 import { STAMPS, type TemplateKind, templateBounds, templateItems } from './templates.ts';
 import { type Recognized, recognizeStroke } from './recognize.ts';
+import { tr } from './translate.ts';
 import { CONNECTOR_COLOR, DEFAULT_SHAPE_COLOR, DEFAULT_STICKY_COLOR, DIAGRAM_COLORS, isDiagramItem, withDiagramColor } from './diagramColors.ts';
 
 export { fitText };
@@ -2531,7 +2532,7 @@ export class Editor {
             startBind: { nodeId: from.id, anchor: it.fromSide },
             endBind: { nodeId: ids.get(it.to)!, anchor: it.toSide },
           };
-          const settled = settleLine(this.doc, it.text ? { ...n, label: { ...defaultLabel(n), characters: it.text } } : n);
+          const settled = settleLine(this.doc, it.text ? { ...n, label: { ...defaultLabel(n), characters: tr(it.text) } } : n);
           this.put(settled);
           top.push(settled.id);
           continue;
@@ -2539,7 +2540,7 @@ export class Editor {
         const parentId = 'parent' in it && it.parent ? ids.get(it.parent)! : null;
         const geom = { x: parentId ? it.x : ox + it.x, y: parentId ? it.y : oy + it.y, width: it.w, height: it.h };
         if (it.kind === 'section') {
-          const s = { ...this.asShape(createNode(this.doc, 'FRAME', null, geom), 'section'), name: it.name };
+          const s = { ...this.asShape(createNode(this.doc, 'FRAME', null, geom), 'section'), name: tr(it.name) };
           this.put(s);
           ids.set(it.key, s.id);
           top.push(s.id);
@@ -2553,7 +2554,7 @@ export class Editor {
         }
         const color = DIAGRAM_COLORS.find((d) => d.id === it.color);
         if (color) n = withDiagramColor(n, color);
-        n = { ...n, label: { ...(n.label ?? defaultLabel(n)), characters: it.text } };
+        n = { ...n, label: { ...(n.label ?? defaultLabel(n)), characters: tr(it.text) } };
         n = { ...n, height: heightForLabel(n) };
         this.put(n);
         ids.set(it.key, n.id);

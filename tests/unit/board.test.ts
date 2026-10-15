@@ -100,7 +100,7 @@ describe('diagram boards', () => {
     const ed = setup();
     ed.insertTemplate('retro');
     const sections = [...ed.doc.all()].filter((n) => n.section);
-    expect(sections.map((s) => s.name)).toEqual(['Went well', 'To improve', 'Actions']);
+    expect(sections.map((s) => s.name)).toEqual(['Went well', 'To improve', 'Action items']);
     for (const s of sections) expect(ed.doc.children(s.id).every((id) => ed.doc.get(id)!.sticky)).toBe(true);
   });
 
@@ -172,7 +172,7 @@ describe('diagram boards', () => {
     const all = [...ed.doc.all()];
     const byText = (t: string) => all.find((n) => n.label?.characters === t)!;
     const root = byText('Main idea');
-    const branches = ['Goals', 'People', 'Timeline', 'Risks'].map(byText);
+    const branches = ['Goals', 'People', 'Schedule', 'Risks'].map(byText);
     const leaves = ['Must have', 'Nice to have', 'Who decides', 'First step', 'Deadline'].map(byText);
     expect(new Set(branches.map((b) => b.x)).size).toBe(1);
     expect(new Set(leaves.map((l) => l.x)).size).toBe(1);

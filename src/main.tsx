@@ -12,7 +12,11 @@ import './ui/styles/tokens.css';
 import './ui/styles/app.css';
 import { App } from './ui/App.tsx';
 import { startApp } from './ui/pwa.ts';
+import { setTranslator } from './engine/translate.ts';
+import { t } from './ui/i18n.ts';
 
+// text the engine writes for people (template notes) follows the interface language
+setTranslator((en) => t(en));
 startApp();
 
 createRoot(document.getElementById('root')!).render(

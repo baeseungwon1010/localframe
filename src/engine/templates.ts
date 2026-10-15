@@ -88,7 +88,7 @@ function retro(): TemplateItem[] {
   const columns: [string, string][] = [
     ['Went well', 'green'],
     ['To improve', 'pink'],
-    ['Actions', 'blue'],
+    ['Action items', 'blue'],
   ];
   return columns.flatMap(([name, color], c): TemplateItem[] => [
     { key: `col${c}`, kind: 'section', name, x: c * 360, y: 0, w: 320, h: 520 },
@@ -111,7 +111,7 @@ function mindmap(): TemplateItem[] {
   const branches: [string, string, string[]][] = [
     ['Goals', 'blue', ['Must have', 'Nice to have']],
     ['People', 'pink', ['Who decides']],
-    ['Timeline', 'orange', ['First step', 'Deadline']],
+    ['Schedule', 'orange', ['First step', 'Deadline']],
     ['Risks', 'red', []],
   ];
   const items: TemplateItem[] = [{ key: 'root', kind: 'ellipse', x: 0, y: 160, w: 180, h: 80, text: 'Main idea', color: 'violet' }];
