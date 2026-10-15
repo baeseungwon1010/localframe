@@ -234,6 +234,27 @@ In the web version, **Share as link** makes a link that carries the whole file (
 after the `#`, which browsers never send to a server; whoever opens it sees a preview and can save their
 own copy.
 
+The browser tests run in Chromium locally; `E2E_BROWSERS=firefox npm run test:e2e` runs them in
+Firefox, and the "Browser tests" workflow runs them in Firefox and WebKit (Safari's engine) on every
+push.
+
+### Custom domain
+
+The web version runs at `https://<owner>.github.io/<repo>/` for free. To serve it from your own
+domain instead (the domain itself is the only cost):
+
+1. At your domain's DNS provider, point it at GitHub Pages: for a subdomain such as
+   `app.example.com`, a `CNAME` record to `<owner>.github.io`; for the bare domain, `A` records to
+   `185.199.108.153`, `185.199.109.153`, `185.199.110.153` and `185.199.111.153` (and `AAAA` records
+   to `2606:50c0:8000::153` to `2606:50c0:8003::153` for IPv6).
+2. In the repository's Settings → Pages, enter the domain under Custom domain, wait for the DNS check,
+   then tick Enforce HTTPS.
+3. In Settings → Secrets and variables → Actions → Variables, add `PAGES_BASE` = `/` and `SITE_URL` =
+   `https://app.example.com/` (with the trailing slash), then re-run the "Deploy web version" workflow.
+
+Files people made at the old address stay there: browsers keep storage per address, so ask them to
+use Backup on the old address and restore it on the new one.
+
 ## Development
 
 ```bash
