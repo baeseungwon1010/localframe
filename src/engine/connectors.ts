@@ -2,7 +2,8 @@ import type { Binding, SceneNode } from '../../shared/schema.ts';
 import type { SceneDoc } from './doc.ts';
 import { lineEnds, lineFromEnds } from './geometry.ts';
 import { hitDeepest } from './hit.ts';
-import { type Point, DEG, apply, invert, round2 } from './math.ts';
+import { type Point, type Rect, DEG, apply, invert, round2 } from './math.ts';
+import { pathBlocked, routeAround } from './route.ts';
 
 type Side = 'top' | 'right' | 'bottom' | 'left';
 const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
@@ -108,6 +109,46 @@ export function elbowRoute(a: Point, da: Point, padA: number, b: Point, db: Poin
   return out.slice(1, -1);
 }
 
+/**
+ * Shapes on the line's page a connector should go around: drawn layers, not text, lines or the
+ * frames, sections and groups that hold them (their contents count instead).
+ */
+function obstaclesFor(doc: SceneDoc, line: SceneNode): { id: string; rect: Rect }[] {
+  const out: { id: string; rect: Rect }[] = [];
+  const walk = (ids: string[], depth: number) => {
+    for (const id of ids) {
+      const n = doc.get(id);
+      if (!n || !n.visible || n.id === line.id || n.slice || n.type === 'LINE' || n.type === 'TEXT') continue;
+      if (n.type === 'FRAME' || n.type === 'GROUP' || n.type === 'COMPONENT_SET' || n.section) {
+        if (depth < 4) walk(doc.children(id), depth + 1);
+        continue;
+      }
+      out.push({ id, rect: doc.worldBounds(id) });
+      if (out.length > 400) return;
+    }
+  };
+  walk(doc.pageChildren(doc.pageOf(line.id)), 0);
+  return out;
+}
+
+const shrink = (r: Rect, d: number): Rect => ({ x: r.x + d, y: r.y + d, width: Math.max(0, r.width - d * 2), height: Math.max(0, r.height - d * 2) });
+
+/**
+ * An elbow route from a to b: the simple one when it is clear, else one around the shapes in the
+ * way (the connected shapes included), else the simple one after all.
+ */
+function elbowAvoiding(doc: SceneDoc, line: SceneNode, ends: Binding[], a: Point, da: Point, padA: number, b: Point, db: Point, padB: number): Point[] {
+  const simple = elbowRoute(a, da, padA, b, db, padB);
+  const all = obstaclesFor(doc, line);
+  if (!all.length) return simple;
+  const bound = new Set(ends.map((e) => e.nodeId));
+  const others = all.filter((o) => !bound.has(o.id)).map((o) => shrink(o.rect, -2));
+  // the connected shapes only matter between the two short stubs that leave them
+  const own = all.filter((o) => bound.has(o.id)).map((o) => shrink(o.rect, 1));
+  if (!pathBlocked([a, ...simple, b], others) && !pathBlocked(simple, own)) return simple;
+  return routeAround(all.map((o) => o.rect), a, da, padA, b, db, padB) ?? simple;
+}
+
 /** Re-places a line so its bound ends sit on their layers. Returns the same object if nothing moved. */
 export function settleLine(doc: SceneDoc, line: SceneNode): SceneNode {
   if (line.type !== 'LINE') return line;
@@ -126,7 +167,8 @@ export function settleLine(doc: SceneDoc, line: SceneNode): SceneNode {
   const toParent = invert(pw);
   let next = lineFromEnds(line, apply(toParent, a), apply(toParent, b));
   if (line.elbow) {
-    const world = elbowRoute(a, sa ? SIDE_DIR[sa.side] : freeDir(a, b), sa ? ELBOW_PAD : 0, b, sb ? SIDE_DIR[sb.side] : freeDir(b, a), sb ? ELBOW_PAD : 0);
+    const ends = [line.startBind, line.endBind].filter((x): x is Binding => !!x);
+    const world = elbowAvoiding(doc, line, ends, a, sa ? SIDE_DIR[sa.side] : freeDir(a, b), sa ? ELBOW_PAD : 0, b, sb ? SIDE_DIR[sb.side] : freeDir(b, a), sb ? ELBOW_PAD : 0);
     // into the line's own coordinates: parent space, then undo its position and rotation
     const r = -next.rotation * DEG;
     const route = world.slice(0, 8).map((w) => {

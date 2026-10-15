@@ -751,9 +751,28 @@ export class Editor {
       }
       return false;
     };
+    // elbow connectors also go around other shapes: one that moved (or grew) near a connector, or
+    // away from one that detours, re-routes it
+    const moved: Rect[] = [];
+    for (const id of changed) {
+      const m = doc.get(id);
+      if (m && m.type !== 'LINE' && m.type !== 'TEXT' && moved.length < 200) moved.push(doc.worldBounds(id));
+    }
+    const lineBox = (n: SceneNode): Rect => {
+      const w = doc.world(n.id);
+      const pts = linePoints(n).map((q) => apply(w, q));
+      const xs = pts.map((q) => q.x);
+      const ys = pts.map((q) => q.y);
+      return { x: Math.min(...xs) - 40, y: Math.min(...ys) - 40, width: Math.max(...xs) - Math.min(...xs) + 80, height: Math.max(...ys) - Math.min(...ys) + 80 };
+    };
+    // a deleted shape may have been the one a connector went around
+    const removed = [...changed].some((id) => !doc.has(id));
+    const nearMoved = (n: SceneNode) =>
+      !!n.elbow &&
+      (((n.route?.length ?? 0) > 3 && (moved.length > 0 || removed)) || (moved.length > 0 && moved.some((r) => rectsIntersect(r, lineBox(n)))));
     for (const n of doc.all()) {
       if (n.type !== 'LINE' || (!n.startBind && !n.endBind && !n.elbow && !n.route)) continue;
-      if (!changed.has(n.id) && !near(n.startBind?.nodeId) && !near(n.endBind?.nodeId) && !near(n.id)) continue;
+      if (!changed.has(n.id) && !near(n.startBind?.nodeId) && !near(n.endBind?.nodeId) && !near(n.id) && !nearMoved(n)) continue;
       let line = n;
       const page = doc.pageOf(n.id);
       const valid = (b: Binding | undefined) => b && doc.has(b.nodeId) && b.nodeId !== n.id && doc.pageOf(b.nodeId) === page;
