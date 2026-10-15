@@ -243,7 +243,13 @@ push.
 Paste SVG (as copied from a design tool or an icon site) or drop or pick an `.svg` file, and it becomes
 editable layers in a frame: paths with every command and arcs, rectangles, circles, lines, text,
 groups and transforms, fills, strokes, gradients, styles from `<style>` and `style=""`, and `<use>`.
-Clip paths, masks, filters, patterns and embedded images are left out.
+Clip paths, masks, filters, patterns and embedded images are left out. Imports are bounded (size,
+nesting, work and text), so a hostile file is refused quickly instead of freezing the page.
+
+**Icons**: the icon button (shape tools, or the dock on a board) searches Lucide's 1,800+ icons, built
+into the app (ISC License, shown in the picker), and adds one as editable layers. **Copy as PNG** and
+**Copy as SVG** (canvas menu, or the command palette) put the selection on the clipboard for chats,
+documents and other design tools.
 
 ### Boards and history
 
