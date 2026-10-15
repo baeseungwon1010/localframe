@@ -89,11 +89,12 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   // a phone has no room for the panels: it always gets the board view
   const narrow = useMediaQuery(NARROW);
   const diagramMode = diagramChoice || narrow;
-  const setDiagramMode = (on: boolean) => {
-    // a tool the dock doesn't offer would be stuck on with no button to see it by
-    if (on && !DOCK_TOOLS.has(editor.tool)) editor.setTool('move');
-    setDiagramModeRaw(on);
-  };
+  const setDiagramMode = (on: boolean) => setDiagramModeRaw(on);
+  // a tool the dock doesn't offer would be stuck on with no button to see it by (also when a
+  // window narrows into the board view)
+  useEffect(() => {
+    if (diagramMode && !DOCK_TOOLS.has(editor.tool)) editor.setTool('move');
+  }, [diagramMode, editor]);
   const [presenting, setPresenting] = useState<{ start: string | null } | null>(null);
   const present = () => setPresenting({ start: presentFrom(editor) });
   const comments = useComments(fileId);
