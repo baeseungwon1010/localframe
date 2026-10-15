@@ -238,6 +238,15 @@ The browser tests run in Chromium locally; `E2E_BROWSERS=firefox npm run test:e2
 Firefox, and the "Browser tests" workflow runs them in Firefox and WebKit (Safari's engine) on every
 push.
 
+### Languages
+
+The interface is in English and Korean: it follows the browser's language, and the language button
+on the file list (or the title bar's ⋯ menu) switches it. Text the app writes into files, such as a
+template's notes, uses the language too; layer names stay as they are. Code is written in English
+and the English text is the key: `t('New file')` in `src/ui/i18n.ts`, with the Korean in
+`src/ui/i18n/ko/` and the terms in `src/ui/i18n/GLOSSARY.md`. A test opens the main screens in
+Korean and fails on any text without a translation.
+
 ### Custom domain
 
 The web version runs at `https://<owner>.github.io/<repo>/` for free. To serve it from your own
