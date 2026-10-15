@@ -733,3 +733,24 @@ test('undo reaches back past a reload', async ({ page }) => {
   await expect(page.getByRole('treeitem', { name: /^Rectangle 1/ })).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test('presenting a board goes through its sections in reading order', async ({ page }) => {
+  const errors = await newFile(page);
+  await page.getByRole('group', { name: 'Editor mode' }).getByRole('button', { name: 'Diagram' }).click();
+  await page.getByRole('region', { name: 'Start with a template' }).getByRole('button', { name: /Retrospective/ }).click();
+  await page.getByRole('button', { name: /Present/ }).first().click();
+  const show = page.getByRole('dialog', { name: 'Present board' });
+  await expect(show).toBeVisible();
+  await expect(show.getByText('1 / 3')).toBeVisible();
+  await expect(show.getByText('Went well')).toBeVisible();
+  await page.keyboard.press('ArrowRight');
+  await expect(show.getByText('2 / 3')).toBeVisible();
+  await expect(show.getByText('To improve')).toBeVisible();
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: 'test-results/board-present.png' });
+  await page.keyboard.press('End');
+  await expect(show.getByText('3 / 3')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(show).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
