@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import type { Editor, Tool } from '../../engine/editor.ts';
-import { ALT, SHIFT } from '../components.tsx';
+import { ALT as ALT_KEY, SHIFT as SHIFT_KEY } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
 
 const KEY = 'localframe.hideToolHints';
+// key names as words in a sentence ("Shift keeps it square"), without the shortcut "+"
+const SHIFT = `${SHIFT_KEY.replace(/\+$/, '')} `;
+const ALT = `${ALT_KEY.replace(/\+$/, '')} `;
 
 const TOOL_HINTS: Partial<Record<Tool, string>> = {
   frame: `Drag to draw a frame, or pick a size on the right. ${SHIFT}keeps it square, ${ALT}draws from the centre.`,
