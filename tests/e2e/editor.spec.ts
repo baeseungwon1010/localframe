@@ -691,3 +691,28 @@ test('diagram mode: a text bar for size, bold and colour', async ({ page }) => {
   await expect(shapes.getByRole('button', { name: 'Large text', exact: true })).toHaveAttribute('aria-pressed', 'true');
   expect(errors).toEqual([]);
 });
+
+test('mind map: template, tidy up, align, and connectors that go around shapes', async ({ page }) => {
+  const errors = await newFile(page);
+  await page.getByRole('group', { name: 'Editor mode' }).getByRole('button', { name: 'Diagram' }).click();
+  await page.getByRole('region', { name: 'Start with a template' }).getByRole('button', { name: /Mind map/ }).click();
+  await page.screenshot({ path: 'test-results/mindmap.png' });
+
+  // Design mode's layer list picks shapes precisely
+  await page.getByRole('group', { name: 'Editor mode' }).getByRole('button', { name: 'Design' }).click();
+  await page.getByRole('treeitem', { name: /^Circle 1/ }).click();
+  await page.getByRole('group', { name: 'Editor mode' }).getByRole('button', { name: 'Diagram' }).click();
+  const bar = page.getByRole('toolbar', { name: 'Diagram colours' });
+  await expect(bar.getByRole('button', { name: 'Tidy up as a tree' })).toBeVisible();
+  await bar.getByRole('button', { name: 'Tidy up as a tree' }).click();
+
+  // two shapes: align them
+  await page.getByRole('group', { name: 'Editor mode' }).getByRole('button', { name: 'Design' }).click();
+  await page.getByRole('treeitem', { name: /^Box 1/ }).click();
+  await page.getByRole('treeitem', { name: /^Box 2/ }).click({ modifiers: ['Shift'] });
+  await page.getByRole('group', { name: 'Editor mode' }).getByRole('button', { name: 'Diagram' }).click();
+  await bar.getByRole('button', { name: 'Align and space' }).click();
+  await page.getByRole('menuitem', { name: 'Align left' }).click();
+  await expect(page.getByRole('menu', { name: 'Align and space' })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});

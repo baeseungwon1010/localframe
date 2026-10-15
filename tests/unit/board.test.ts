@@ -5,6 +5,8 @@ import { apply, matRotation, multiply } from '../../src/engine/math.ts';
 import { STAMPS, TEMPLATES } from '../../src/engine/templates.ts';
 import { isBold, textColorOf, textSizeOf, withBold, withTextColor, withTextSize } from '../../src/engine/diagramColors.ts';
 import { hitDeepest } from '../../src/engine/hit.ts';
+import { linePoints } from '../../src/engine/geometry.ts';
+import { pathBlocked } from '../../src/engine/route.ts';
 import { SceneNodeSchema, validateTree } from '../../shared/schema.ts';
 
 const ptr = (sx: number, sy: number): PointerInput => ({ sx, sy, button: 0, shift: false, alt: false, mod: false });
@@ -161,5 +163,72 @@ describe('diagram boards', () => {
     const linePt = apply(ed.doc.world(yes.id), { x: ln.x + ln.width / 2, y: ln.y + ln.height / 2 });
     expect(Math.abs(p.x - linePt.x)).toBeGreaterThan(5);
     expect(hitDeepest(ed.doc, p, 0.5)).toBe(yes.id);
+  });
+
+  it('a mind map is tidied as a tree: one column per level, branches apart, connectors right to left', () => {
+    const ed = setup();
+    ed.insertTemplate('mindmap');
+    valid(ed);
+    const all = [...ed.doc.all()];
+    const byText = (t: string) => all.find((n) => n.label?.characters === t)!;
+    const root = byText('Main idea');
+    const branches = ['Goals', 'People', 'Timeline', 'Risks'].map(byText);
+    const leaves = ['Must have', 'Nice to have', 'Who decides', 'First step', 'Deadline'].map(byText);
+    expect(new Set(branches.map((b) => b.x)).size).toBe(1);
+    expect(new Set(leaves.map((l) => l.x)).size).toBe(1);
+    expect(branches[0].x).toBeGreaterThan(root.x + root.width);
+    expect(leaves[0].x).toBeGreaterThan(branches[0].x + branches[0].width);
+    // no two shapes in a column overlap
+    for (const col of [branches, leaves]) {
+      const sorted = [...col].sort((a, b) => a.y - b.y);
+      for (let i = 1; i < sorted.length; i++) expect(sorted[i].y).toBeGreaterThanOrEqual(sorted[i - 1].y + sorted[i - 1].height);
+    }
+    // the root sits in the middle of its branches
+    const top = Math.min(...branches.map((b) => b.y));
+    const bottom = Math.max(...branches.map((b) => b.y + b.height));
+    expect(Math.abs((top + bottom) / 2 - (root.y + root.height / 2))).toBeLessThan(60);
+    for (const l of all.filter((n) => n.type === 'LINE')) expect([l.startBind?.anchor, l.endBind?.anchor]).toEqual(['right', 'left']);
+
+    // a branch dragged out of place: Tidy up puts it back; the root is the one selected
+    ed.doc.set({ ...branches[1], x: branches[1].x + 300, y: branches[1].y + 400 });
+    ed.setSelection([root.id]);
+    expect(ed.canTidyTree()).toBe(true);
+    ed.tidyTree();
+    expect(ed.doc.get(branches[1].id)!.x).toBe(branches[0].x);
+    ed.setSelection([leaves[0].id]);
+    expect(ed.canTidyTree()).toBe(false);
+  });
+
+  it('an elbow connector re-routes around a shape moved into its way', () => {
+    const ed = setup();
+    ed.setTool('box');
+    const draw = (x: number) => {
+      ed.setTool('box');
+      ed.pointerDown(ptr(x, 300));
+      ed.pointerUp(ptr(x, 300));
+      return ed.selection[0];
+    };
+    const a = draw(100);
+    const c = draw(600);
+    const blocker = draw(350);
+    // move the blocker away, connect, then move it back between them
+    ed.updateNodes([blocker], (n) => ({ ...n, y: n.y + 400 }));
+    ed.setSelection([a]);
+    ed.quickConnect('right');
+    const extra = ed.editingLabel!;
+    ed.commitLabelEdit('');
+    const line = [...ed.doc.all()].find((n) => n.type === 'LINE')!;
+    // point the connector at c instead, and drop the shape quick connect made
+    ed.updateNodes([line.id], (n) => ({ ...n, endBind: { nodeId: c, anchor: 'left' } }));
+    ed.setSelection([extra]);
+    ed.deleteSelection();
+    expect(ed.doc.get(line.id)).toBeDefined();
+    const straight = ed.doc.get(line.id)!.route?.length ?? 0;
+    ed.updateNodes([blocker], (n) => ({ ...n, y: n.y - 400 }));
+    const routed = ed.doc.get(line.id)!;
+    expect((routed.route?.length ?? 0)).toBeGreaterThan(straight);
+    const w = ed.doc.world(routed.id);
+    const pts = linePoints(routed).map((p) => apply(w, p));
+    expect(pathBlocked(pts, [ed.doc.worldBounds(blocker)])).toBe(false);
   });
 });
