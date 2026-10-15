@@ -164,7 +164,7 @@ test('pages, images, components, connectors and PDF export', async ({ page }) =>
   await drag([600, 300], [700, 360]);
   await page.keyboard.press('Shift+L');
   await drag([350, 330], [650, 330]);
-  await expect(page.getByRole('region', { name: 'Connector' })).toContainText('Start on “Rectangle 1”');
+  await expect(page.getByRole('region', { name: 'Connector', exact: true })).toContainText('Start on “Rectangle 1”');
 
   // an image through the file picker
   const png = Buffer.from(
@@ -552,5 +552,39 @@ test('friendlier start: sample file, quick actions, tool groups and tips', async
   await expect(page.getByLabel('Layer opacity')).toBeHidden();
   await page.getByRole('button', { name: 'Layer section' }).click();
   await expect(page.getByLabel('Layer opacity')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('diagram like FigJam: text in shapes, quick connect, sticky notes', async ({ page }) => {
+  const errors = await newFile(page);
+  const { at, drag } = await canvasHelpers(page);
+  await page.keyboard.press('r');
+  await drag([120, 200], [280, 280]);
+  await page.mouse.dblclick(...at(200, 240));
+  await page.getByRole('textbox', { name: 'Shape text' }).fill('Sign in');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('region', { name: 'Shape text' })).toBeVisible();
+
+  // "+" on the right: a new shape and an arrow, ready for its text
+  await page.mouse.click(...at(280 + 22, 240));
+  await page.getByRole('textbox', { name: 'Shape text' }).fill('Dashboard');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('treeitem', { name: /^Arrow 1/ })).toBeVisible();
+
+  // and another below the second shape (it sits at 360..520)
+  await page.getByRole('treeitem', { name: /^Rectangle 2/ }).click();
+  await page.mouse.click(...at(440, 280 + 22));
+  await page.getByRole('textbox', { name: 'Shape text' }).fill('Has data?');
+  await page.keyboard.press('Escape');
+
+  await page.keyboard.press('n');
+  await page.mouse.click(...at(700, 120));
+  await page.getByRole('textbox', { name: 'Shape text' }).fill('Remember: empty states');
+  await page.keyboard.press('Escape');
+  await page.mouse.click(...at(900, 650));
+  await page.screenshot({ path: 'test-results/diagram.png' });
+  await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
+  await page.reload();
+  await expect(page.getByRole('treeitem', { name: /^Sticky 1/ })).toBeVisible();
   expect(errors).toEqual([]);
 });
