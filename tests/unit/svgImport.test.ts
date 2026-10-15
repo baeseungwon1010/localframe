@@ -368,3 +368,56 @@ describe('importSvg', () => {
     expect(doc.children(nodes[0].id).map((id) => doc.get(id)!.type)).toEqual(['RECTANGLE']);
   });
 });
+
+describe('SVG import against hostile input (stays fast, never freezes the page)', () => {
+  const run = (svg: string) => {
+    const doc = new SceneDoc();
+    doc.load([], 'page-1');
+    const t0 = performance.now();
+    let error: unknown = null;
+    try {
+      importSvg(doc, svg, { parentId: null, at: { x: 0, y: 0 }, name: 'x' });
+    } catch (e) {
+      error = e;
+    }
+    return { ms: performance.now() - t0, error };
+  };
+
+  it('long numbers with junk after them', () => {
+    expect(run(`<svg xmlns="http://www.w3.org/2000/svg" width="${'1'.repeat(40_000)}!" height="10"><rect width="5" height="5"/></svg>`).ms).toBeLessThan(500);
+  });
+
+  it('unclosed transforms', () => {
+    expect(run(`<svg xmlns="http://www.w3.org/2000/svg"><g transform="${'rotate('.repeat(30_000)}"><rect width="5" height="5"/></g></svg>`).ms).toBeLessThan(500);
+  });
+
+  it('a <use> fan-out of a long text, and heavy CSS, are refused as too large', () => {
+    const spans = '<tspan>words to repeat </tspan>'.repeat(9000);
+    const fan = `<svg xmlns="http://www.w3.org/2000/svg"><defs><text id="t">${spans}</text></defs>${'<use href="#t"/>'.repeat(20)}</svg>`;
+    const a = run(fan);
+    expect(a.ms).toBeLessThan(3000);
+    expect(String(a.error)).toMatch(/too large/);
+    const css = `<svg xmlns="http://www.w3.org/2000/svg"><style>${Array.from({ length: 1000 }, (_, i) => `g * .c${i}{fill:red}`).join('')}</style>${'<rect width="1" height="1"/>'.repeat(9000)}</svg>`;
+    const b = run(css);
+    expect(b.ms).toBeLessThan(3000);
+  });
+
+  it('absurd arc radii and unit names give no NaN', () => {
+    const r = run(`<svg xmlns="http://www.w3.org/2000/svg" width="10constructor" height="10"><path d="M0 0 A1e-200 1e-200 0 0 1 10 10 A1e200 1e200 0 0 1 20 0" stroke="#000"/></svg>`);
+    expect(r.error).toBeNull();
+  });
+});
+
+describe('telling pasted SVG from other text', () => {
+  it('knows SVG after declarations and comments, and is quick on anything', async () => {
+    const { looksLikeSvg } = await import('../../src/ui/svgPaste.ts');
+    expect(looksLikeSvg('<svg viewBox="0 0 1 1"></svg>')).toBe(true);
+    expect(looksLikeSvg('<?xml version="1.0"?>\n<!-- made by a tool -->\n<!DOCTYPE svg>\n<svg>')).toBe(true);
+    expect(looksLikeSvg('hello <svg>')).toBe(false);
+    expect(looksLikeSvg('<svgx>')).toBe(false);
+    const t0 = performance.now();
+    expect(looksLikeSvg(`${'<!---->'.repeat(5000)}x`)).toBe(false);
+    expect(looksLikeSvg(`<!--${'-'.repeat(200_000)}`)).toBe(false);
+    expect(performance.now() - t0).toBeLessThan(200);
+  });
+});

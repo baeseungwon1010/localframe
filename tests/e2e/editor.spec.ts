@@ -750,8 +750,12 @@ test('presenting a board goes through its sections in reading order', async ({ p
   await page.screenshot({ path: 'test-results/board-present.png' });
   await page.keyboard.press('End');
   await expect(show.getByText('3 / 3')).toBeVisible();
+  // the editor underneath gets no keys: Delete doesn't remove the selected board
+  await page.keyboard.press('Delete');
   await page.keyboard.press('Escape');
   await expect(show).toHaveCount(0);
+  await page.getByRole('group', { name: 'Editor mode' }).getByRole('button', { name: 'Design' }).click();
+  await expect(page.getByRole('treeitem', { name: /^Went well/ })).toBeVisible();
   expect(errors).toEqual([]);
 });
 

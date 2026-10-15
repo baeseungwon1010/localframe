@@ -56,4 +56,29 @@ describe('undo history across visits', () => {
     expect(JSON.stringify(small).length).toBeLessThanOrEqual(2000);
     expect(ed.historySnapshot(1).undo).toHaveLength(1);
   });
+
+  it('is dropped when pages changed elsewhere, and only takes pages, styles and variables from a step', () => {
+    const ed = drawTwo();
+    ed.addPage();
+    const saved = structuredClone(ed.historySnapshot());
+    // another tab removed the page this history added
+    const next = new Editor();
+    next.load(reloaded(ed), ed.pages.slice(0, 1));
+    expect(next.restoreHistory(saved)).toBe(false);
+    // a damaged step's file state is refused
+    const bad = structuredClone(saved);
+    (bad.undo[bad.undo.length - 1] as { fileBefore?: unknown }).fileBefore = { pages: 'garbage', styles: [], variables: {} };
+    const again = new Editor();
+    again.load(reloaded(ed), ed.pages);
+    expect(again.restoreHistory(bad)).toBe(false);
+  });
+
+  it('saving stays quick: each step is measured once', () => {
+    const ed = drawTwo();
+    for (let i = 0; i < 50; i++) ed.updateNodes([ed.selection[0]], (n) => ({ ...n, x: n.x + 1 }));
+    ed.historySnapshot();
+    const t0 = performance.now();
+    for (let i = 0; i < 100; i++) ed.historySnapshot();
+    expect(performance.now() - t0).toBeLessThan(200);
+  });
 });
