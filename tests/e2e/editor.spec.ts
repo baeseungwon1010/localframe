@@ -596,3 +596,40 @@ test('diagram like FigJam: text in shapes, quick connect, sticky notes', async (
   await expect(page.getByRole('treeitem', { name: /^Sticky 1/ })).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test('diagram mode: just the board and a tool dock, kept for the file', async ({ page }) => {
+  const errors = await newFile(page);
+  await page.getByRole('group', { name: 'Editor mode' }).getByRole('button', { name: 'Diagram' }).click();
+  await expect(page.getByRole('complementary', { name: 'Layers and pages' })).toHaveCount(0);
+  await expect(page.getByRole('complementary', { name: 'Properties' })).toHaveCount(0);
+  await expect(page.getByText('Press N for a sticky note')).toBeVisible();
+
+  // the canvas grew into the panels' room
+  const { at, drag } = await canvasHelpers(page);
+  const dock = page.getByRole('toolbar', { name: 'Tools' });
+  await dock.getByRole('button', { name: 'Rounded box' }).click();
+  await drag([200, 200], [360, 280]);
+  await page.mouse.dblclick(...at(280, 240));
+  await page.getByRole('textbox', { name: 'Shape text' }).fill('Idea');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('toolbar', { name: 'Diagram colours' })).toBeVisible();
+
+  // shapes are a menu above the dock
+  await dock.getByRole('button', { name: 'More diagram shapes' }).click();
+  await page.getByRole('menuitem', { name: 'Diamond' }).click();
+  await expect(dock.getByRole('button', { name: 'Diamond' })).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('v');
+
+  // comments still open their list on the right
+  await dock.getByRole('button', { name: 'Comment' }).click();
+  await expect(page.getByRole('complementary', { name: 'Comments' })).toBeVisible();
+  await page.keyboard.press('v');
+  await page.screenshot({ path: 'test-results/diagram-mode.png' });
+
+  await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
+  await page.reload();
+  await expect(page.locator('.tooldock')).toBeVisible();
+  await page.getByRole('group', { name: 'Editor mode' }).getByRole('button', { name: 'Design' }).click();
+  await expect(page.getByRole('treeitem', { name: /^Box 1/ })).toBeVisible();
+  expect(errors).toEqual([]);
+});
