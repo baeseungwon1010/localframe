@@ -602,7 +602,7 @@ test('diagram mode: just the board and a tool dock, kept for the file', async ({
   await page.getByRole('group', { name: 'Editor mode' }).getByRole('button', { name: 'Diagram' }).click();
   await expect(page.getByRole('complementary', { name: 'Layers and pages' })).toHaveCount(0);
   await expect(page.getByRole('complementary', { name: 'Properties' })).toHaveCount(0);
-  await expect(page.getByText('Press N for a sticky note')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Start with a template' })).toBeVisible();
 
   // the canvas grew into the panels' room
   const { at, drag } = await canvasHelpers(page);
@@ -631,5 +631,34 @@ test('diagram mode: just the board and a tool dock, kept for the file', async ({
   await expect(page.locator('.tooldock')).toBeVisible();
   await page.getByRole('group', { name: 'Editor mode' }).getByRole('button', { name: 'Design' }).click();
   await expect(page.getByRole('treeitem', { name: /^Box 1/ })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('boards: start from a template, notes grow as you write, and stamps', async ({ page }) => {
+  const errors = await newFile(page);
+  await page.getByRole('group', { name: 'Editor mode' }).getByRole('button', { name: 'Diagram' }).click();
+  await page.getByRole('region', { name: 'Start with a template' }).getByRole('button', { name: /Retrospective/ }).click();
+  await expect(page.getByRole('region', { name: 'Start with a template' })).toHaveCount(0);
+
+  // a stamp on the board
+  const { at } = await canvasHelpers(page);
+  const dock = page.getByRole('toolbar', { name: 'Tools' });
+  await dock.getByRole('button', { name: 'More stamps' }).click();
+  await page.getByRole('menuitem', { name: /heart/ }).click();
+  await page.mouse.click(...at(80, 80));
+  await page.keyboard.press('Escape');
+
+  // a sticky note that grows with its text
+  await page.keyboard.press('n');
+  await page.mouse.click(...at(1000, 600));
+  await page.getByRole('textbox', { name: 'Shape text' }).fill('Write as much as you need on a sticky note. It grows downwards as you write, so every word of a long thought stays on the note instead of spilling over its edge, however much there is to say about it.');
+  await page.keyboard.press('Escape');
+  await page.screenshot({ path: 'test-results/board.png' });
+
+  await page.getByRole('group', { name: 'Editor mode' }).getByRole('button', { name: 'Design' }).click();
+  await expect(page.getByRole('treeitem', { name: /^Went well/ })).toBeVisible();
+  await expect(page.getByRole('treeitem', { name: /^Stamp 1/ })).toBeVisible();
+  await page.getByRole('treeitem', { name: /^Sticky 13/ }).click();
+  expect(Number(await page.getByLabel('Height', { exact: true }).inputValue())).toBeGreaterThan(200);
   expect(errors).toEqual([]);
 });
