@@ -28,7 +28,8 @@ const solid = (color: string) => ({ color, opacity: 1, visible: true });
 /** Is this layer part of a diagram (it gets the colour bar)? */
 export function isDiagramItem(n: SceneNode): boolean {
   if (n.sticky) return true;
-  if (n.type === 'VECTOR' && n.shape && n.shape.kind !== 'polygon' && n.shape.kind !== 'star') return true;
+  // polygons and stars are design shapes, unless they hold text (a drawn triangle on a board)
+  if (n.type === 'VECTOR' && n.shape && ((n.shape.kind !== 'polygon' && n.shape.kind !== 'star') || n.label !== undefined)) return true;
   if (n.type === 'LINE') return !!(n.startBind || n.endBind || n.label);
   // boxes from the diagram tools carry a (possibly empty) text
   return (n.type === 'RECTANGLE' || n.type === 'ELLIPSE') && n.label !== undefined;

@@ -49,7 +49,9 @@ export function ToolHint({ editor }: { editor: Editor }) {
     ? `Drag points and handles. ${ALT}drag a handle to break the curve. Enter or Esc to finish.`
     : editor.cropping
       ? 'Drag to move the image in its shape; set the zoom on the right. Enter or Esc to finish.'
-      : TOOL_HINTS[editor.tool];
+      : editor.tool === 'pencil' && editor.recognizeShapes
+        ? `Draw a box, circle, diamond or triangle and it becomes a clean shape; a line between shapes connects them. ${SHIFT}keeps it as drawn.`
+        : TOOL_HINTS[editor.tool];
   if (!text) return null;
   return (
     <div className="tool-hint" role="status">

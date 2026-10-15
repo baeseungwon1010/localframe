@@ -77,6 +77,7 @@ import { fitVector, outlineVector, scaleVector, shapeVector, simplifyPoints, smo
 import { areaToVector, booleanArea, strokeArea } from './pathOps.ts';
 import { canHaveLabel, defaultLabel, heightForLabel } from './labels.ts';
 import { STAMPS, type TemplateKind, templateBounds, templateItems } from './templates.ts';
+import { type Recognized, recognizeStroke } from './recognize.ts';
 import { CONNECTOR_COLOR, DEFAULT_SHAPE_COLOR, DEFAULT_STICKY_COLOR, DIAGRAM_COLORS, isDiagramItem, withDiagramColor } from './diagramColors.ts';
 
 export { fitText };
@@ -3272,8 +3273,9 @@ export class Editor {
     if (it.kind === 'pencil') {
       // a click without a stroke draws nothing; a stroke is simplified and smoothed
       if (it.nodeId) {
-        const tidy = smoothPath(simplifyPoints(it.points, 1.5 / this.viewport.zoom));
-        this.placeStroke(it.nodeId, it.parentId, tidy);
+        const shape = this.recognizeShapes && !e.shift ? recognizeStroke(it.points) : null;
+        if (shape) this.placeRecognized(it.nodeId, it.parentId, shape);
+        else this.placeStroke(it.nodeId, it.parentId, smoothPath(simplifyPoints(it.points, 1.5 / this.viewport.zoom)));
         this.end();
       }
       this.emit('view', 'selection');
@@ -3439,6 +3441,52 @@ export class Editor {
   }
 
   /** Writes a freehand stroke (world points) into its vector layer. */
+  /** On a board, pencil strokes that look like shapes become them (see recognize.ts). */
+  recognizeShapes = false;
+
+  /**
+   * Replaces a pencil stroke with the clean shape it looks like: a diagram box, ellipse, diamond
+   * or triangle in the stroke's place, or a line, which connects the shapes its ends are on.
+   */
+  private placeRecognized(nodeId: string, parentId: string | null, shape: Recognized) {
+    this.drop(nodeId);
+    const toParent = invert(parentId === null ? IDENTITY : this.doc.world(parentId));
+    let node: SceneNode;
+    if (shape.kind === 'line') {
+      const tol = this.hitTolerance();
+      const skip = new Set<string>();
+      const startBind = bindingAt(this.doc, shape.from, tol, skip) ?? undefined;
+      const endBind = bindingAt(this.doc, shape.to, tol, skip) ?? undefined;
+      const base = createNode(this.doc, 'LINE', parentId, { x: 0, y: 0, width: 1, height: 0 });
+      const line = lineFromEnds(base, apply(toParent, shape.from), apply(toParent, shape.to));
+      const bound = startBind || endBind;
+      node = settleLine(this.doc, {
+        ...line,
+        name: nextName(this.doc, bound ? 'Arrow' : 'Line'),
+        strokes: [solid(CONNECTOR_COLOR)],
+        strokeWeight: 2,
+        arrowEnd: !!bound,
+        startBind,
+        endBind,
+      });
+    } else {
+      const tl = apply(toParent, { x: shape.box.x, y: shape.box.y });
+      const geom = { x: round2(tl.x), y: round2(tl.y), width: round2(Math.max(8, shape.box.width)), height: round2(Math.max(8, shape.box.height)) };
+      if (shape.kind === 'ellipse') {
+        node = { ...createNode(this.doc, 'ELLIPSE', parentId, geom), name: nextName(this.doc, 'Circle') };
+        node = { ...node, fills: [solid(DEFAULT_SHAPE_COLOR.fill)], strokes: [solid(DEFAULT_SHAPE_COLOR.stroke)], strokeWeight: 2, strokeAlign: 'inside', label: { ...defaultLabel(node), characters: '' } };
+      } else if (shape.kind === 'triangle') {
+        node = this.asShape(createNode(this.doc, 'VECTOR', parentId, geom), 'polygon');
+        node = { ...node, name: nextName(this.doc, 'Triangle'), fills: [solid(DEFAULT_SHAPE_COLOR.fill)], strokes: [solid(DEFAULT_SHAPE_COLOR.stroke)], strokeWeight: 2, strokeAlign: 'inside', label: { ...defaultLabel(node), characters: '' } };
+      } else {
+        const tool: Tool = shape.kind === 'rect' ? 'box' : 'diamond';
+        node = this.asShape(createNode(this.doc, TOOL_TYPE[tool]!, parentId, geom), tool);
+      }
+    }
+    this.put(node);
+    this.selection = [node.id];
+  }
+
   private placeStroke(nodeId: string, parentId: string | null, points: VectorPoint[]) {
     const n = this.doc.get(nodeId);
     if (!n) return;

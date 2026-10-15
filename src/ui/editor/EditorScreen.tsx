@@ -98,6 +98,8 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   // window narrows into the board view)
   useEffect(() => {
     if (diagramMode && !DOCK_TOOLS.has(editor.tool)) editor.setTool('move');
+    // on a board, drawn boxes, circles and lines become clean shapes
+    editor.recognizeShapes = diagramMode;
   }, [diagramMode, editor]);
   const [presenting, setPresenting] = useState<{ start: string | null } | null>(null);
   const present = () => setPresenting({ start: presentFrom(editor) });
