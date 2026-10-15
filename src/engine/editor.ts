@@ -131,6 +131,17 @@ export type CommitInfo = { patches: Patch[]; pagesChanged: boolean; stylesChange
 
 const sameJson = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
 
+/** Equal as data, whatever the order of keys (storage may hand objects back reordered). */
+function sameData(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a).filter((k) => (a as Record<string, unknown>)[k] !== undefined);
+  const kb = Object.keys(b).filter((k) => (b as Record<string, unknown>)[k] !== undefined);
+  if (ka.length !== kb.length) return false;
+  return ka.every((k) => sameData((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+}
+
 function styledValueOf(n: SceneNode, f: StyleField): unknown {
   if (f === 'fill') return n.fills;
   if (f === 'stroke') return n.strokes;
@@ -664,6 +675,54 @@ export class Editor {
       stylesChanged: !!a && !!b && !sameJson(a.styles, b.styles),
       variablesChanged: !!a && !!b && !sameJson(a.variables, b.variables),
     };
+  }
+
+  /**
+   * The undo and redo history, newest last, as plain data to keep across visits: at most `max`
+   * steps each, dropping the oldest until it fits in `maxChars` of JSON.
+   */
+  historySnapshot(max = 100, maxChars = 8_000_000): { undo: HistoryEntry[]; redo: HistoryEntry[] } {
+    let undo = this.undoStack.slice(-max);
+    let redo = this.redoStack.slice(-max);
+    const size = () => JSON.stringify({ undo, redo }).length;
+    while ((undo.length || redo.length) && size() > maxChars) {
+      if (undo.length >= redo.length) undo = undo.slice(1);
+      else redo = redo.slice(1);
+    }
+    return { undo, redo };
+  }
+
+  /**
+   * Takes back a saved undo history, if it still fits the file: every layer it touches must be as
+   * its newest step left it (else the file changed elsewhere since, and the history is dropped).
+   * Every layer in it is checked against the schema. Returns whether it was used.
+   */
+  restoreHistory(saved: unknown): boolean {
+    const h = saved as { undo?: unknown; redo?: unknown } | null;
+    if (!h || !Array.isArray(h.undo) || !Array.isArray(h.redo) || h.undo.length + h.redo.length > 1000) return false;
+    const entryOk = (e: unknown): e is HistoryEntry => {
+      const x = e as HistoryEntry;
+      if (!x || !Array.isArray(x.patches) || !Array.isArray(x.selBefore) || !Array.isArray(x.selAfter) || x.patches.length > 100_000) return false;
+      return x.patches.every(
+        (p) =>
+          p &&
+          typeof p.id === 'string' &&
+          (p.before === null || SceneNodeSchema.safeParse(p.before).success) &&
+          (p.after === null || SceneNodeSchema.safeParse(p.after).success),
+      );
+    };
+    if (!h.undo.every(entryOk) || !h.redo.every(entryOk)) return false;
+    const undo = h.undo as HistoryEntry[];
+    // every layer the history touches must be as its newest step left it; anything else means
+    // the file changed elsewhere, and undoing would overwrite that change
+    const latest = new Map<string, SceneNode | null>();
+    for (const e of undo) for (const p of e.patches) latest.set(p.id, p.after);
+    for (const [id, after] of latest) if (!sameData(this.doc.get(id) ?? null, after)) return false;
+    // redo starts empty: it would need the same care in the other direction, for little use
+    this.undoStack = undo;
+    this.redoStack = [];
+    this.emit('doc');
+    return true;
   }
 
   undo() {
