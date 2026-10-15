@@ -15,7 +15,7 @@ import { getImage } from './images.ts';
 import { instanceDoc } from './instances.ts';
 import { type Point, type Rect, boundsOfPoints, localMatrix, rectsIntersect } from './math.ts';
 import { linePoints } from './geometry.ts';
-import { labelNode } from './labels.ts';
+import { labelMatrix, labelNode } from './labels.ts';
 import { fontString, layoutText, lineOffset } from './text.ts';
 import { tracePath } from './vector.ts';
 
@@ -612,13 +612,14 @@ function drawLabel(ctx: Ctx, n: SceneNode, opts: DrawOptions) {
   if (!ln) return;
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
+  const m = labelMatrix(n, ln);
+  ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
   if (n.type === 'LINE') {
     ctx.fillStyle = '#FFFFFF';
     ctx.beginPath();
-    ctx.roundRect(ln.x - 6, ln.y - 3, ln.width + 12, ln.height + 6, 4);
+    ctx.roundRect(-6, -3, ln.width + 12, ln.height + 6, 4);
     ctx.fill();
   }
-  ctx.translate(ln.x, ln.y);
   drawText(ctx, ln);
   ctx.restore();
 }

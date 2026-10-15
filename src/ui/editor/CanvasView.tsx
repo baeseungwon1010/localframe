@@ -9,7 +9,7 @@ import { fontStack, layoutText, lineHeightPx } from '../../engine/text.ts';
 import { adjustRuns, rangeValue } from '../../engine/textRuns.ts';
 import { ALT, MOD, Menu, type MenuItem, SHIFT } from '../components.tsx';
 import { Rulers } from './Rulers.tsx';
-import { defaultLabel, labelNode } from '../../engine/labels.ts';
+import { defaultLabel, labelMatrix, labelNode } from '../../engine/labels.ts';
 import { ToolHint } from './ToolHint.tsx';
 import { DiagramBar } from './DiagramBar.tsx';
 import { useEditorRev } from '../hooks.ts';
@@ -351,7 +351,7 @@ function LabelEditor({ editor, id }: { editor: Editor; id: string }) {
   const styled = node.label ? node : { ...node, label: defaultLabel(node) };
   const ln = labelNode(styled, value || ' ')!;
   const t = ln.text!;
-  const m = multiply(editor.viewMatrix, multiply(editor.doc.world(id), [1, 0, 0, 1, ln.x, ln.y]));
+  const m = multiply(editor.viewMatrix, multiply(editor.doc.world(id), labelMatrix(styled, ln)));
   return (
     <textarea
       ref={ref}

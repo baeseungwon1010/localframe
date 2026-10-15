@@ -8,7 +8,7 @@ import { buildPdf, type PdfPage } from './pdf.ts';
 import { ELBOW_RADIUS, arrowSize, capOf, clampRadii, gradientRaster, imageFilter, tracePolyline, drawNode, effectReach, imageRect, imagesUsed, joinOf, lineShape, sideBands } from './render.ts';
 import { fontStack, layoutText, lineOffset } from './text.ts';
 import { svgPathData } from './vector.ts';
-import { labelNode } from './labels.ts';
+import { labelMatrix, labelNode } from './labels.ts';
 
 /** What to export: these layers on this background, cut to `clip` (a slice's area) when given. */
 export type ExportTarget = { ids: string[]; background: string | null; clip?: Rect };
@@ -592,11 +592,8 @@ class SvgWriter {
     // text inside shapes and on connectors
     const ln = n.label?.characters ? labelNode(n) : null;
     if (ln) {
-      const pill =
-        n.type === 'LINE'
-          ? `<rect x="${num(ln.x - 6)}" y="${num(ln.y - 3)}" width="${num(ln.width + 12)}" height="${num(ln.height + 6)}" rx="4" fill="#FFFFFF"/>`
-          : '';
-      body += `${pill}<g transform="translate(${num(ln.x)} ${num(ln.y)})">${this.text(ln)}</g>`;
+      const pill = n.type === 'LINE' ? `<rect x="-6" y="-3" width="${num(ln.width + 12)}" height="${num(ln.height + 6)}" rx="4" fill="#FFFFFF"/>` : '';
+      body += `<g${matrixAttr(labelMatrix(n, ln))}>${pill}${this.text(ln)}</g>`;
     }
     const effects = (n.effects ?? []).filter((e) => e.visible && e.type !== 'BACKGROUND_BLUR');
     if (effects.length) body = `<g${this.filter(n, effects)}>${body}</g>`;

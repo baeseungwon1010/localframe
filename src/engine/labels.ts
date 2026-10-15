@@ -1,6 +1,6 @@
 import type { SceneNode, TextStyle } from '../../shared/schema.ts';
 import { linePoints } from './geometry.ts';
-import type { Point } from './math.ts';
+import { type Mat, type Point, multiply, rotateDeg, translate } from './math.ts';
 import { layoutText } from './text.ts';
 
 /** Shapes and lines that can hold text. */
@@ -102,4 +102,44 @@ export function labelNode(n: SceneNode, characters = n.label?.characters ?? ''):
   const x = (n.width - width) / 2 + shift;
   const y = n.sticky ? pad : (n.height - layout.height) / 2;
   return { ...base, x, y, width, height: layout.height, text: { ...t, autoResize: 'height' } };
+}
+
+/** How much of a shape's height text may use (a diamond's middle is short, a cylinder has a rim). */
+function heightFactor(n: SceneNode): number {
+  if (n.type === 'ELLIPSE') return 0.72;
+  switch (n.shape?.kind) {
+    case 'diamond':
+      return 0.55;
+    case 'cylinder':
+      return 0.7;
+    case 'document':
+      return 0.85;
+    case 'polygon':
+    case 'star':
+      return 0.6;
+    default:
+      return 1;
+  }
+}
+
+/**
+ * The height a shape needs so its text fits inside (never less than it has): sticky notes and
+ * diagram shapes grow downwards as you write, like on a whiteboard. Lines don't grow.
+ */
+export function heightForLabel(n: SceneNode, characters = n.label?.characters ?? ''): number {
+  if (n.type === 'LINE' || !canHaveLabel(n) || !characters.trim()) return n.height;
+  const ln = labelNode(n.label ? n : { ...n, label: defaultLabel(n) }, characters);
+  if (!ln) return n.height;
+  const pad = n.sticky ? 16 : 8;
+  const need = Math.ceil(ln.height / heightFactor(n) + pad * 2);
+  return Math.min(100_000, Math.max(n.height, need));
+}
+
+/**
+ * Where a label is drawn, in its layer's coordinates. Text on a connector stays upright however
+ * the line runs (a line going down is a turned layer), turning back about the label's centre.
+ */
+export function labelMatrix(n: SceneNode, ln: SceneNode): Mat {
+  if (n.type !== 'LINE' || !n.rotation) return [1, 0, 0, 1, ln.x, ln.y];
+  return multiply(multiply(translate(ln.x + ln.width / 2, ln.y + ln.height / 2), rotateDeg(-n.rotation)), translate(-ln.width / 2, -ln.height / 2));
 }
