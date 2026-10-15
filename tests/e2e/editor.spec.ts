@@ -523,3 +523,34 @@ test('presenting: smart animate and a scrolling screen', async ({ page }) => {
   await page.keyboard.press('Escape');
   expect(errors).toEqual([]);
 });
+
+test('friendlier start: sample file, quick actions, tool groups and tips', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.goto('/');
+  await page.getByRole('button', { name: /sample file/i }).first().click();
+  await expect(page.getByRole('treeitem', { name: 'Home' })).toBeVisible();
+  // text layers carry their text as their name
+  await expect(page.getByRole('treeitem', { name: 'Good morning' })).toBeVisible();
+
+  await page.keyboard.press('Control+/');
+  const palette = page.getByRole('dialog', { name: 'Quick actions' });
+  await page.getByRole('combobox', { name: 'Search commands' }).fill('ellipse');
+  await page.keyboard.press('Enter');
+  await expect(palette).toBeHidden();
+  await expect(page.getByRole('status').filter({ hasText: 'Drag to draw an ellipse' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'More shape tools' }).click();
+  await page.getByRole('menuitem', { name: /Star/ }).click();
+  await expect(page.getByRole('button', { name: 'Star', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.screenshot({ path: 'test-results/friendly.png' });
+  await page.keyboard.press('v');
+
+  // a section folds and stays folded
+  await page.getByRole('treeitem', { name: 'Home' }).click();
+  await page.getByRole('button', { name: 'Layer section' }).click();
+  await expect(page.getByLabel('Layer opacity')).toBeHidden();
+  await page.getByRole('button', { name: 'Layer section' }).click();
+  await expect(page.getByLabel('Layer opacity')).toBeVisible();
+  expect(errors).toEqual([]);
+});
