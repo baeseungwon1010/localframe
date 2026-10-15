@@ -77,7 +77,9 @@ to keep. For a copy that keeps files on disk, run it locally (below).
   diagram items recolours them. **Diagram mode** (the Design / Diagram switch in the title bar) hides the
   panels and puts the board tools in a dock at the bottom; each file remembers its mode in the browser.
   An empty board offers templates (flowchart, brainstorm, retrospective); sticky notes and shapes grow
-  to hold their text; stamps (E) drop votes and reactions; connector text always stays upright.
+  to hold their text; stamps (E) drop votes and reactions; connector text always stays upright and
+  clicking it picks the connector. The bar above a selection sets text size (S/M/L/XL), and in diagram
+  mode text layers get a bar for size, bold and colour.
 - **Touch and phones**: two fingers pan and pinch-zoom the canvas, a double tap writes in a shape, and
   holding a finger still opens the canvas menu. Handles and buttons are easier to hit with a finger.
   Narrow screens always show the board view with the tool dock.
