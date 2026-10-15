@@ -716,3 +716,20 @@ test('mind map: template, tidy up, align, and connectors that go around shapes',
   await expect(page.getByRole('menu', { name: 'Align and space' })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test('undo reaches back past a reload', async ({ page }) => {
+  const errors = await newFile(page);
+  const { drag } = await canvasHelpers(page);
+  await page.keyboard.press('r');
+  await drag([200, 200], [320, 300]);
+  await page.keyboard.press('o');
+  await drag([400, 200], [520, 300]);
+  await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
+  await page.waitForTimeout(1800); // the history is kept a moment after the last change
+  await page.reload();
+  await expect(page.getByRole('treeitem', { name: /^Ellipse 1/ })).toBeVisible();
+  await page.keyboard.press('Control+z');
+  await expect(page.getByRole('treeitem', { name: /^Ellipse 1/ })).toHaveCount(0);
+  await expect(page.getByRole('treeitem', { name: /^Rectangle 1/ })).toBeVisible();
+  expect(errors).toEqual([]);
+});
