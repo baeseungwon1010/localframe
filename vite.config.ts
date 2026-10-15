@@ -1,5 +1,7 @@
 import { defineConfig } from 'vitest/config';
 import { createHash } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -193,8 +195,36 @@ function installableApp(): Plugin {
   };
 }
 
+/**
+ * `virtual:lucide-icons`: every Lucide icon as [name, elements] plus the Lucide license, read from
+ * the installed lucide-react package at build time (its icon files hold plain object literals, so
+ * nothing is run). The app imports it only when the icon picker opens.
+ */
+function lucideIcons(): Plugin {
+  const id = 'virtual:lucide-icons';
+  return {
+    name: 'localframe-lucide-icons',
+    resolveId: (source) => (source === id ? `\0${id}` : null),
+    load(resolved) {
+      if (resolved !== `\0${id}`) return null;
+      const dir = join(process.cwd(), 'node_modules/lucide-react/dist/esm/icons');
+      const icons: [string, [string, Record<string, string | number>][]][] = [];
+      for (const file of readdirSync(dir).sort()) {
+        if (!file.endsWith('.mjs')) continue;
+        const m = /const __iconData = (\{[\s\S]*?\});\n/.exec(readFileSync(join(dir, file), 'utf8'));
+        if (!m) continue; // an alias of another icon
+        // the literal's keys are bare words and its strings double-quoted: quote the keys for JSON
+        const data = JSON.parse(m[1].replace(/([{,]\s*)([A-Za-z_][\w-]*)\s*:/g, '$1"$2":')) as { name: string; node: [string, Record<string, string | number>][] };
+        icons.push([data.name, data.node.map(([tag, attrs]) => [tag, Object.fromEntries(Object.entries(attrs).filter(([k]) => k !== 'key'))])]);
+      }
+      const license = readFileSync(join(process.cwd(), 'node_modules/lucide-react/LICENSE'), 'utf8');
+      return `export const icons = ${JSON.stringify(icons)};\nexport const license = ${JSON.stringify(license)};\n`;
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => ({
-  plugins: mode === 'web' ? [react(), woff2Only(), webCsp(), installableApp()] : [react(), woff2Only()],
+  plugins: mode === 'web' ? [react(), woff2Only(), lucideIcons(), webCsp(), installableApp()] : [react(), woff2Only(), lucideIcons()],
   base: mode === 'web' ? (process.env.LOCALFRAME_BASE ?? '/localframe/') : '/',
   define: {
     ...(mode === 'web' ? { 'import.meta.env.VITE_STORAGE': JSON.stringify('browser') } : {}),
