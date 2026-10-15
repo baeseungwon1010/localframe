@@ -76,12 +76,15 @@ to keep. For a copy that keeps files on disk, run it locally (below).
   it; the "+" on a selected shape's sides adds the next shape with an elbow arrow; a colour bar above
   diagram items recolours them. **Diagram mode** (the Design / Diagram switch in the title bar) hides the
   panels and puts the board tools in a dock at the bottom; each file remembers its mode in the browser.
-  An empty board offers templates (flowchart, brainstorm, retrospective); sticky notes and shapes grow
+  An empty board offers templates (flowchart, brainstorm, retrospective, mind map, kanban, timeline, org
+  chart, user flow, week plan); sticky notes and shapes grow
   to hold their text; stamps (E) drop votes and reactions; connector text always stays upright and
   clicking it picks the connector. The bar above a selection sets text size (S/M/L/XL), and in diagram
   mode text layers get a bar for size, bold and colour. Elbow connectors go around shapes in their way.
   A mind map template and **Tidy up as a tree** lay out a shape and everything its connectors lead to
-  in columns; the bar also aligns and spaces several items.
+  in columns; the bar also aligns and spaces several items. In diagram mode the pencil turns a drawn box,
+  circle, diamond or triangle into a clean shape, and a line drawn between shapes into a connector
+  (hold Shift to keep a drawing as it is).
 - **Touch and phones**: two fingers pan and pinch-zoom the canvas, a double tap writes in a shape, and
   holding a finger still opens the canvas menu. Handles and buttons are easier to hit with a finger.
   Narrow screens always show the board view with the tool dock; the panels button in the title bar
@@ -206,7 +209,13 @@ GitHub Pages (`.github/workflows/pages.yml`).
 
 The file list loads first and on its own: the editor, file export and the fonts layers use arrive the
 first time a file is opened (fetched in the background while the list is idle), and the editor waits
-only for the fonts the file actually uses.
+only for the fonts the file actually uses. Dialogs, the presentation, backups and outline/boolean
+geometry load the first time they are used.
+
+Big boards stay quick: text is laid out once per change, layers too small to see are skipped and tiny
+text is drawn as grey bars when zoomed out, frames are kept as pictures while you pan or move them,
+and long layer lists only draw the rows in view. (Measured with 50 frames of 100 layers each: about
+60 frames a second panning and dragging, opening in about a second.)
 
 The web version is also an installable app (PWA): "Install app" in Chrome or Edge, or Share, then Add to
 Home Screen on an iPhone or iPad. Installed or not, a service worker keeps the app's files on the device,
@@ -221,6 +230,9 @@ as `localframe-backup-previous.zip`).
 
 **Share** (in the title bar's ⋯ menu) sends the selection, or else the page, as a PNG or PDF through the
 device's share sheet, to messages, mail or files. Where the browser has no share sheet, the file is saved.
+In the web version, **Share as link** makes a link that carries the whole file (without images)
+after the `#`, which browsers never send to a server; whoever opens it sees a preview and can save their
+own copy.
 
 ## Development
 
