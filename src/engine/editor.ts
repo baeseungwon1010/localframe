@@ -75,15 +75,16 @@ import { canvasMeasure } from './text.ts';
 import { type RunProps, adjustRuns, styleRange } from './textRuns.ts';
 import { fitVector, outlineVector, scaleVector, shapeVector, simplifyPoints, smoothPath } from './vector.ts';
 import { areaToVector, booleanArea, strokeArea } from './pathOps.ts';
-import { canHaveLabel, defaultLabel } from './labels.ts';
-import { CONNECTOR_COLOR, DEFAULT_SHAPE_COLOR, DEFAULT_STICKY_COLOR, isDiagramItem } from './diagramColors.ts';
+import { canHaveLabel, defaultLabel, heightForLabel } from './labels.ts';
+import { STAMPS, type TemplateKind, templateBounds, templateItems } from './templates.ts';
+import { CONNECTOR_COLOR, DEFAULT_SHAPE_COLOR, DEFAULT_STICKY_COLOR, DIAGRAM_COLORS, isDiagramItem, withDiagramColor } from './diagramColors.ts';
 
 export { fitText };
 
 export type DiagramShape = 'diamond' | 'parallelogram' | 'cylinder' | 'document' | 'chevron';
 const DIAGRAM_SHAPES: readonly string[] = ['diamond', 'parallelogram', 'cylinder', 'document', 'chevron'];
 
-export type Tool = DiagramShape | 'sticky' | 'box' | 'move' | 'hand' | 'frame' | 'section' | 'slice' | 'pencil' | 'rect' | 'ellipse' | 'polygon' | 'star' | 'line' | 'arrow' | 'text' | 'pen' | 'comment';
+export type Tool = DiagramShape | 'sticky' | 'stamp' | 'box' | 'move' | 'hand' | 'frame' | 'section' | 'slice' | 'pencil' | 'rect' | 'ellipse' | 'polygon' | 'star' | 'line' | 'arrow' | 'text' | 'pen' | 'comment';
 
 /** Where a new comment goes: on the page, and inside the layer under it if there is one. */
 export type CommentSpot = { x: number; y: number; nodeId?: string; offset?: Point };
@@ -2436,6 +2437,88 @@ export class Editor {
     this.startLabelEdit(id);
   }
 
+  /** The stamp the stamp tool drops. */
+  stamp = STAMPS[0].glyph;
+
+  setStamp(glyph: string) {
+    if (!STAMPS.some((s) => s.glyph === glyph)) return;
+    this.stamp = glyph;
+    this.setTool('stamp');
+  }
+
+  /** Drops the current stamp centred on a point; the tool stays on for the next one. */
+  placeStamp(p: Point) {
+    const parentId = frameAt(this.doc, p);
+    const local = apply(invert(parentId === null ? IDENTITY : this.doc.world(parentId)), p);
+    const base = createNode(this.doc, 'TEXT', parentId, { x: 0, y: 0, width: 1, height: 1 });
+    const n = fitText({ ...base, name: nextName(this.doc, 'Stamp'), text: { ...base.text!, characters: this.stamp, fontSize: 36, lineHeight: null, autoResize: 'width' } });
+    this.transact(() => this.put({ ...n, x: round2(local.x - n.width / 2), y: round2(local.y - n.height / 2) }));
+    this.emit('view');
+  }
+
+  /**
+   * Adds a starting board (see templates.ts) in the middle of the view: sections, sticky notes and
+   * shapes with their text, joined by connectors. Selects what it added.
+   */
+  insertTemplate(kind: TemplateKind) {
+    const items = templateItems(kind);
+    const box = templateBounds(items);
+    const c = this.toWorld(this.viewSize.width / 2, this.viewSize.height / 2);
+    const ox = Math.round(c.x - box.width / 2 - box.x);
+    const oy = Math.round(c.y - box.height / 2 - box.y);
+    const ids = new Map<string, string>();
+    const top: string[] = [];
+    this.transact(() => {
+      for (const it of items) {
+        if (it.kind === 'arrow') {
+          const from = this.doc.get(ids.get(it.from)!)!;
+          const line = createNode(this.doc, 'LINE', null, { x: 0, y: 0, width: 1, height: 0 });
+          const n: SceneNode = {
+            ...line,
+            name: nextName(this.doc, 'Arrow'),
+            strokes: [solid(CONNECTOR_COLOR)],
+            strokeWeight: 2,
+            arrowEnd: true,
+            elbow: true,
+            startBind: { nodeId: from.id, anchor: it.fromSide },
+            endBind: { nodeId: ids.get(it.to)!, anchor: it.toSide },
+          };
+          const settled = settleLine(this.doc, it.text ? { ...n, label: { ...defaultLabel(n), characters: it.text } } : n);
+          this.put(settled);
+          top.push(settled.id);
+          continue;
+        }
+        const parentId = 'parent' in it && it.parent ? ids.get(it.parent)! : null;
+        const geom = { x: parentId ? it.x : ox + it.x, y: parentId ? it.y : oy + it.y, width: it.w, height: it.h };
+        if (it.kind === 'section') {
+          const s = { ...this.asShape(createNode(this.doc, 'FRAME', null, geom), 'section'), name: it.name };
+          this.put(s);
+          ids.set(it.key, s.id);
+          top.push(s.id);
+          continue;
+        }
+        const tool: Tool = it.kind === 'ellipse' ? 'ellipse' : it.kind;
+        const type = it.kind === 'ellipse' ? 'ELLIPSE' : TOOL_TYPE[tool]!;
+        let n = this.asShape(createNode(this.doc, type, parentId, geom), tool);
+        if (it.kind === 'ellipse') {
+          n = { ...n, name: nextName(this.doc, 'Circle'), strokes: [solid(DEFAULT_SHAPE_COLOR.stroke)], strokeWeight: 2, strokeAlign: 'inside', fills: [solid(DEFAULT_SHAPE_COLOR.fill)] };
+        }
+        const color = DIAGRAM_COLORS.find((d) => d.id === it.color);
+        if (color) n = withDiagramColor(n, color);
+        n = { ...n, label: { ...(n.label ?? defaultLabel(n)), characters: it.text } };
+        n = { ...n, height: heightForLabel(n) };
+        this.put(n);
+        ids.set(it.key, n.id);
+        if (!parentId) top.push(n.id);
+      }
+    });
+    this.setTool('move');
+    this.setSelection(top);
+    const b = this.selectionBounds();
+    if (b && (b.width * this.viewport.zoom > this.viewSize.width - 80 || b.height * this.viewport.zoom > this.viewSize.height - 160)) this.zoomToRect(b, 1, 96);
+    this.emit('view', 'selection');
+  }
+
   /** Starts typing in a shape or on a connector (double-click or Enter), like FigJam. */
   startLabelEdit(id: string) {
     const n = this.doc.get(id);
@@ -2459,7 +2542,11 @@ export class Editor {
           if (!text.trim()) {
             const { label: _l, ...rest } = n;
             this.put(rest);
-          } else this.put({ ...n, label: { ...(n.label ?? defaultLabel(n)), characters: text } });
+          } else {
+            const next = { ...n, label: { ...(n.label ?? defaultLabel(n)), characters: text } };
+            // the shape grows to hold its text
+            this.put({ ...next, height: heightForLabel(next) });
+          }
         });
       }
     }
@@ -2724,6 +2811,10 @@ export class Editor {
     if (this.tool === 'pen') return this.penDown(p, e);
     if (this.tool === 'pencil') {
       this.interaction = { kind: 'pencil', nodeId: null, parentId: frameAt(this.doc, p), points: [p] };
+      return;
+    }
+    if (this.tool === 'stamp') {
+      this.placeStamp(p);
       return;
     }
     if (this.tool === 'comment') {
@@ -4200,6 +4291,9 @@ export class Editor {
       case 'KeyN':
         this.setTool('sticky');
         return true;
+      case 'KeyE':
+        this.setTool('stamp');
+        return true;
       case 'KeyS':
         this.setTool('slice');
         return true;
@@ -4273,7 +4367,7 @@ export class Editor {
   /** Cursor for the current state at a screen point. */
   cursorAt(sx: number, sy: number): string {
     const it = this.interaction.kind;
-    if (this.tool === 'pen' || this.tool === 'pencil' || this.tool === 'comment') return 'crosshair';
+    if (this.tool === 'pen' || this.tool === 'pencil' || this.tool === 'comment' || this.tool === 'stamp') return 'crosshair';
     if (this.editingVector) return this.vectorPartAt(sx, sy) ? 'move' : 'default';
     if (it === 'pan') return 'grabbing';
     if (this.spaceDown || this.tool === 'hand') return 'grab';
