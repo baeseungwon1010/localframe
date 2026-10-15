@@ -107,6 +107,29 @@ self.addEventListener('fetch', (event) => {
 }
 
 /**
+ * The card chat apps and social sites show for a link to the app. Their crawlers need absolute
+ * addresses, so the deploy passes the site's URL (LOCALFRAME_SITE_URL); without it there is no card.
+ */
+function openGraph(): string[] {
+  const site = process.env.LOCALFRAME_SITE_URL;
+  if (!site || !/^https:\/\/[^\s"<>]+\/$/.test(site)) return [];
+  const title = 'localframe';
+  const text = 'Design and diagram in your browser. No sign-up; your files stay on your device, and it works offline.';
+  return [
+    `<meta property="og:type" content="website" />`,
+    `<meta property="og:site_name" content="${title}" />`,
+    `<meta property="og:title" content="${title}: design and diagram in your browser" />`,
+    `<meta property="og:description" content="${text}" />`,
+    `<meta property="og:url" content="${site}" />`,
+    `<meta property="og:image" content="${site}og.png" />`,
+    `<meta property="og:image:width" content="1200" />`,
+    `<meta property="og:image:height" content="630" />`,
+    `<meta property="og:image:alt" content="localframe: a sticky note, a step and a decision joined by arrows" />`,
+    `<meta name="twitter:card" content="summary_large_image" />`,
+  ];
+}
+
+/**
  * The web build as an installable app (PWA): a manifest with icons, the service worker that keeps
  * the app's files on the device, and the page tags phones read (theme colour, home screen icon).
  */
@@ -126,6 +149,7 @@ function installableApp(): Plugin {
             '<meta name="mobile-web-app-capable" content="yes" />',
             '<meta name="apple-mobile-web-app-title" content="localframe" />',
             '<meta name="apple-mobile-web-app-status-bar-style" content="default" />',
+            ...openGraph(),
             '<title>',
           ].join('\n    '),
         ),
