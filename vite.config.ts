@@ -27,8 +27,23 @@ function webCsp(): Plugin {
   };
 }
 
+/**
+ * The bundled fonts list a .woff fallback after each .woff2 file. Every browser this app runs in
+ * reads woff2, so the fallbacks only made the font CSS longer and the build twice the size.
+ */
+function woff2Only(): Plugin {
+  return {
+    name: 'localframe-woff2-only',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!/[\\/]@fontsource[\\/].*\.css$/.test(id)) return null;
+      return { code: code.replace(/,\s*url\([^)]*\.woff\)\s*format\(['"]woff['"]\)/g, ''), map: null };
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => ({
-  plugins: mode === 'web' ? [react(), webCsp()] : [react()],
+  plugins: mode === 'web' ? [react(), woff2Only(), webCsp()] : [react(), woff2Only()],
   base: mode === 'web' ? (process.env.LOCALFRAME_BASE ?? '/localframe/') : '/',
   define: mode === 'web' ? { 'import.meta.env.VITE_STORAGE': JSON.stringify('browser') } : {},
   server: {
