@@ -21,6 +21,8 @@ export type ScreenActions = {
   find: () => void;
   placeImage: () => void;
   rename: () => void;
+  diagramMode: boolean;
+  setDiagramMode: (on: boolean) => void;
 };
 
 const TOOL_COMMANDS: { tool: Tool; label: string; shortcut: string; keywords?: string }[] = [
@@ -106,6 +108,9 @@ export function buildCommands(editor: Editor, screen: ScreenActions): Command[] 
     cmd('Components', 'detach', 'Detach instance', () => editor.detachInstances(), () =>
       sel().some((n) => n.type === 'INSTANCE') ? null : 'Select an instance', `${MOD}${ALT}B`),
 
+    screen.diagramMode
+      ? cmd('View', 'design-mode', 'Switch to design mode', () => screen.setDiagramMode(false), always, undefined, 'panels layers properties full')
+      : cmd('View', 'diagram-mode', 'Switch to diagram mode', () => screen.setDiagramMode(true), always, undefined, 'figjam board whiteboard simple'),
     cmd('View', 'zoom-fit', 'Zoom to fit', () => editor.zoomToFit(), always, `${SHIFT}1`),
     cmd('View', 'zoom-selection', 'Zoom to selection', () => editor.zoomToSelection(), needSel, `${SHIFT}2`),
     cmd('View', 'zoom-100', 'Zoom to 100%', () => editor.zoomTo(1), always, `${SHIFT}0`),

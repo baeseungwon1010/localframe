@@ -46,6 +46,8 @@ export function CanvasView(props: {
   onDropFiles: (files: File[], at: { x: number; y: number }) => void;
   notice: string | null;
   onDismissNotice: () => void;
+  /** Diagram mode: the board view with the tool dock. */
+  diagram?: boolean;
   children?: React.ReactNode;
 }) {
   const { editor, onReady } = props;
@@ -304,7 +306,9 @@ export function CanvasView(props: {
       {editor.showRulers && <Rulers editor={editor} canvasRect={rect} />}
       {editor.doc.size === 0 && editor.tool === 'move' && (
         <p className="canvas-hint">
-          Press F to draw a frame, R for a rectangle, L for a line or T for text. {MOD}/ finds any command.
+          {props.diagram
+            ? 'Press N for a sticky note, or pick a shape below. The + beside a shape adds the next step.'
+            : `Press F to draw a frame, R for a rectangle, L for a line or T for text. ${MOD}/ finds any command.`}
         </p>
       )}
       {props.children}

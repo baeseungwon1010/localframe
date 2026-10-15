@@ -74,3 +74,30 @@ export function useRemembered(name: string, initial: boolean): [boolean, (v: boo
   };
   return [value, set];
 }
+
+const DIAGRAM_FILES = 'localframe.diagramFiles';
+
+/** Whether a file opens in diagram mode (the simple board view), kept per file in this browser. */
+export function useDiagramMode(fileId: string): [boolean, (v: boolean) => void] {
+  const read = (): string[] => {
+    try {
+      const v = JSON.parse(localStorage.getItem(DIAGRAM_FILES) ?? '[]') as unknown;
+      return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  };
+  const [value, setValue] = useState(() => read().includes(fileId));
+  useEffect(() => setValue(read().includes(fileId)), [fileId]);
+  const set = (v: boolean) => {
+    setValue(v);
+    try {
+      // the newest choices are kept; old ones fall off so the list stays small
+      const next = [...read().filter((id) => id !== fileId), ...(v ? [fileId] : [])].slice(-500);
+      localStorage.setItem(DIAGRAM_FILES, JSON.stringify(next));
+    } catch {
+      /* not remembered */
+    }
+  };
+  return [value, set];
+}

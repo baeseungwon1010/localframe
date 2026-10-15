@@ -27,6 +27,8 @@ export function TitleBar(props: {
   onHistory: () => void;
   onPresent: () => void;
   onQuickActions: () => void;
+  diagramMode: boolean;
+  onDiagramMode: (on: boolean) => void;
 }) {
   const { editor, file, saveStatus, saveError } = props;
   useEditorRev(editor, 'view', 'doc');
@@ -70,6 +72,14 @@ export function TitleBar(props: {
         </span>
       </div>
       <div className="titlebar-right">
+        <div className="mode-switch" role="group" aria-label="Editor mode">
+          <button type="button" aria-pressed={!props.diagramMode} onClick={() => props.onDiagramMode(false)} title="Every tool and panel">
+            Design
+          </button>
+          <button type="button" aria-pressed={props.diagramMode} onClick={() => props.onDiagramMode(true)} title="Just the board: sticky notes, shapes and connectors">
+            Diagram
+          </button>
+        </div>
         <button type="button" className="quick-btn" onClick={props.onQuickActions} aria-label="Quick actions" data-tip={`Quick actions  ${MOD}/`} data-tip-side="bottom">
           <Search size={14} strokeWidth={1.5} aria-hidden="true" />
           <span>Search commands</span>

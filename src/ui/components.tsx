@@ -10,7 +10,7 @@ export function IconButton(props: {
   children: ReactNode;
   className?: string;
   shortcut?: string;
-  tooltipSide?: 'right' | 'bottom' | 'left';
+  tooltipSide?: 'right' | 'bottom' | 'left' | 'top';
 }) {
   const { label, onClick, pressed, disabled, children, className, shortcut, tooltipSide = 'bottom' } = props;
   return (
@@ -44,7 +44,8 @@ export type MenuItem =
   | 'separator';
 
 /** A small popup menu positioned at a point (context menu) or under an anchor. */
-export function Menu(props: { x: number; y: number; items: MenuItem[]; onClose: () => void; label: string }) {
+/** A menu at (x, y); with `above`, its bottom edge sits at y instead (for menus opened from the bottom). */
+export function Menu(props: { x: number; y: number; items: MenuItem[]; onClose: () => void; label: string; above?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: props.x, y: props.y });
 
@@ -54,10 +55,10 @@ export function Menu(props: { x: number; y: number; items: MenuItem[]; onClose: 
     const r = el.getBoundingClientRect();
     setPos({
       x: Math.max(4, Math.min(props.x, window.innerWidth - r.width - 4)),
-      y: Math.max(4, Math.min(props.y, window.innerHeight - r.height - 4)),
+      y: Math.max(4, Math.min(props.above ? props.y - r.height : props.y, window.innerHeight - r.height - 4)),
     });
     el.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
-  }, [props.x, props.y]);
+  }, [props.x, props.y, props.above]);
 
   useEffect(() => {
     const onDown = (e: PointerEvent) => {

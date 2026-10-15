@@ -64,6 +64,23 @@ const GROUPS: Group[] = [
   { id: 'comment', label: 'Comment', entries: [{ tool: 'comment', label: 'Comment', key: 'C', Icon: MessageCircle }] },
 ];
 
+/** Diagram mode's dock: only what a board needs, the common shapes one click away. */
+const group = (id: string) => GROUPS.find((g) => g.id === id)!;
+const entry = (tool: Tool) => GROUPS.flatMap((g) => g.entries).find((e) => e.tool === tool)!;
+const DOCK_GROUPS: Group[] = [
+  group('move'),
+  { id: 'dock-sticky', label: 'Sticky note', entries: [entry('sticky')] },
+  { id: 'dock-shape', label: 'Diagram shapes', entries: [...group('diagram').entries.filter((e) => e.tool !== 'sticky'), entry('ellipse')] },
+  { id: 'dock-arrow', label: 'Connector', entries: [{ ...entry('arrow'), label: 'Connector' }, entry('line')] },
+  group('text'),
+  { id: 'dock-draw', label: 'Drawing tools', entries: [entry('pencil'), entry('pen')] },
+  { id: 'dock-section', label: 'Section', entries: [entry('section')] },
+  group('comment'),
+];
+
+/** Every tool the dock can pick, so diagram mode can leave others for the move tool. */
+export const DOCK_TOOLS: ReadonlySet<string> = new Set(DOCK_GROUPS.flatMap((g) => g.entries.map((e) => e.tool)));
+
 const KEY = 'localframe.toolGroups';
 
 function loadLast(): Record<string, string> {
@@ -74,10 +91,13 @@ function loadLast(): Record<string, string> {
   }
 }
 
-export function ToolRail({ editor }: { editor: Editor }) {
+/** The tools: a rail down the left side, or in diagram mode a dock at the bottom of the canvas. */
+export function ToolRail({ editor, dock = false }: { editor: Editor; dock?: boolean }) {
   useEditorRev(editor, 'tool');
+  const groups = dock ? DOCK_GROUPS : GROUPS;
+  const [next, prev, opener] = dock ? ['ArrowRight', 'ArrowLeft', 'ArrowUp'] : ['ArrowDown', 'ArrowUp', 'ArrowRight'];
   const [last, setLast] = useState<Record<string, string>>(loadLast);
-  const [open, setOpen] = useState<{ group: Group; x: number; y: number } | null>(null);
+  const [open, setOpen] = useState<{ group: Group; x: number; y: number; above: boolean } | null>(null);
 
   const pick = (g: Group, e: Entry) => {
     if (e.tool === 'image') editor.onRequestImage?.();
@@ -92,24 +112,24 @@ export function ToolRail({ editor }: { editor: Editor }) {
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    if (e.key !== next && e.key !== prev) return;
     e.preventDefault();
     e.stopPropagation();
     const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button.tool-btn')];
     const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
-    buttons[(i + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
+    buttons[(i + (e.key === next ? 1 : -1) + buttons.length) % buttons.length]?.focus();
   };
 
   return (
-    <div className="toolrail" role="toolbar" aria-orientation="vertical" aria-label="Tools" onKeyDown={onKeyDown}>
-      {GROUPS.map((g) => {
+    <div className={dock ? 'tooldock' : 'toolrail'} role="toolbar" aria-orientation={dock ? 'horizontal' : 'vertical'} aria-label="Tools" onKeyDown={onKeyDown}>
+      {groups.map((g) => {
         // the group shows the active tool if it is one of its own, else the one last used from it
         const current = g.entries.find((e) => e.tool === editor.tool) ?? g.entries.find((e) => e.tool === last[g.id]) ?? g.entries[0];
         const active = g.entries.some((e) => e.tool === editor.tool);
         const many = g.entries.length > 1;
         const openMenu = (el: HTMLElement) => {
           const r = el.getBoundingClientRect();
-          setOpen({ group: g, x: r.right + 6, y: r.top });
+          setOpen(dock ? { group: g, x: r.left, y: r.top - 8, above: true } : { group: g, x: r.right + 6, y: r.top, above: false });
         };
         return (
           <div key={g.id} className="tool-group">
@@ -120,7 +140,7 @@ export function ToolRail({ editor }: { editor: Editor }) {
                 openMenu(e.currentTarget);
               }}
               onKeyDown={(e) => {
-                if (many && e.key === 'ArrowRight') {
+                if (many && e.key === opener) {
                   e.preventDefault();
                   openMenu(e.currentTarget);
                 }
@@ -129,7 +149,7 @@ export function ToolRail({ editor }: { editor: Editor }) {
               <IconButton
                 label={current.label}
                 shortcut={current.key || undefined}
-                tooltipSide="right"
+                tooltipSide={dock ? 'top' : 'right'}
                 className="tool-btn"
                 pressed={active}
                 onClick={() => pick(g, current)}
@@ -155,6 +175,7 @@ export function ToolRail({ editor }: { editor: Editor }) {
           label={open.group.label}
           x={open.x}
           y={open.y}
+          above={open.above}
           onClose={() => setOpen(null)}
           items={open.group.entries.map((e) => ({
             label: `${e.tool === editor.tool ? '✓ ' : ''}${e.label}`,

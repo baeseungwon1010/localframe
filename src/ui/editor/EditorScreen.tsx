@@ -6,7 +6,7 @@ import { onImageLoaded, readImageSize, retryFailedImages, useImagesOf } from '..
 import { drawChildren } from '../../engine/render.ts';
 import { SyncQueue } from '../../engine/sync.ts';
 import { navigate } from '../App.tsx';
-import { type Theme, loadFonts, useEditorRev } from '../hooks.ts';
+import { type Theme, loadFonts, useDiagramMode, useEditorRev } from '../hooks.ts';
 import { ExportFileDialog } from '../ExportFileDialog.tsx';
 import { RenameDialog } from './framePanels.tsx';
 import { CanvasView } from './CanvasView.tsx';
@@ -19,14 +19,11 @@ import { FindReplace } from './FindReplace.tsx';
 import { QuickActions } from './QuickActions.tsx';
 import { type CommentStore, CommentPins, CommentsPanel, useComments } from './Comments.tsx';
 
-/** Properties, or the comment list in comment mode. */
-function RightPanel(props: { editor: Editor; fileName: string; comments: CommentStore; onPresent: () => void }) {
+/** Properties, or the comment list in comment mode; diagram mode shows only the comment list. */
+function RightPanel(props: { editor: Editor; fileName: string; comments: CommentStore; onPresent: () => void; diagram: boolean }) {
   useEditorRev(props.editor, 'tool');
-  return props.editor.tool === 'comment' ? (
-    <CommentsPanel editor={props.editor} store={props.comments} />
-  ) : (
-    <PropertiesPanel editor={props.editor} fileName={props.fileName} onPresent={props.onPresent} />
-  );
+  if (props.editor.tool === 'comment') return <CommentsPanel editor={props.editor} store={props.comments} />;
+  return props.diagram ? null : <PropertiesPanel editor={props.editor} fileName={props.fileName} onPresent={props.onPresent} />;
 }
 
 /** Where a presentation starts: the frame holding the selection, else the page's starting frame. */
@@ -36,7 +33,7 @@ function presentFrom(editor: Editor): string | null {
   for (let guard = 0; cur?.parentId && guard < 200; guard++) cur = editor.doc.get(cur.parentId);
   return cur?.id ?? editor.currentPage.prototypeStart ?? null;
 }
-import { ToolRail } from './ToolRail.tsx';
+import { DOCK_TOOLS, ToolRail } from './ToolRail.tsx';
 
 const THUMB_W = 480;
 const THUMB_H = 300;
@@ -83,6 +80,12 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   const [history, setHistory] = useState(false);
   const [finding, setFinding] = useState(false);
   const [palette, setPalette] = useState(false);
+  const [diagramMode, setDiagramModeRaw] = useDiagramMode(fileId);
+  const setDiagramMode = (on: boolean) => {
+    // a tool the dock doesn't offer would be stuck on with no button to see it by
+    if (on && !DOCK_TOOLS.has(editor.tool)) editor.setTool('move');
+    setDiagramModeRaw(on);
+  };
   const [presenting, setPresenting] = useState<{ start: string | null } | null>(null);
   const present = () => setPresenting({ start: presentFrom(editor) });
   const comments = useComments(fileId);
@@ -352,7 +355,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   const [saveStatus, saveError] = status.split('|');
 
   return (
-    <div className="editor">
+    <div className={`editor ${diagramMode ? 'diagram-mode' : ''}`}>
       <TitleBar
         editor={editor}
         file={file}
@@ -364,24 +367,28 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         onHistory={() => setHistory(true)}
         onPresent={present}
         onQuickActions={() => setPalette(true)}
+        diagramMode={diagramMode}
+        onDiagramMode={setDiagramMode}
         onRename={async (name) => {
           const meta = await api.updateFile(fileId, { name });
           setFile(meta);
           document.title = `${meta.name} · localframe`;
         }}
       />
-      <ToolRail editor={editor} />
-      <LeftPanel editor={editor} />
+      {!diagramMode && <ToolRail editor={editor} />}
+      {!diagramMode && <LeftPanel editor={editor} />}
       <CanvasView
         editor={editor}
+        diagram={diagramMode}
         onReady={onCanvasReady}
         onDropFiles={(files, at) => void placeImages(files, at)}
         notice={notice}
         onDismissNotice={() => setNotice(null)}
       >
         <CommentPins editor={editor} store={comments} />
+        {diagramMode && <ToolRail editor={editor} dock />}
       </CanvasView>
-      <RightPanel editor={editor} fileName={file.name} comments={comments} onPresent={present} />
+      <RightPanel editor={editor} fileName={file.name} comments={comments} onPresent={present} diagram={diagramMode} />
       <input
         ref={imageInput}
         type="file"
@@ -414,6 +421,8 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
             find: () => setFinding(true),
             placeImage: () => imageInput.current?.click(),
             rename: () => setRenaming(true),
+            diagramMode,
+            setDiagramMode,
           }}
         />
       )}
