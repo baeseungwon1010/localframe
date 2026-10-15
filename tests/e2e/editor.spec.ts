@@ -790,3 +790,18 @@ test('SVG: pasted or dropped, it becomes editable shapes', async ({ page }) => {
   await paste('<svg><g>');
   expect(errors).toEqual([]);
 });
+
+test('icons: search, insert, and the icon is editable layers', async ({ page }) => {
+  const errors = await newFile(page);
+  await page.getByRole('group', { name: 'Editor mode' }).getByRole('button', { name: 'Diagram' }).click();
+  await page.getByRole('toolbar', { name: 'Tools' }).getByRole('button', { name: 'Insert icon' }).click();
+  const picker = page.getByRole('dialog', { name: 'Insert icon' });
+  await expect(picker).toBeVisible();
+  await picker.getByRole('searchbox', { name: 'Search icons' }).fill('heart');
+  await picker.getByRole('listitem', { name: 'Heart', exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  await page.getByRole('group', { name: 'Editor mode' }).getByRole('button', { name: 'Design' }).click();
+  await expect(page.getByRole('treeitem', { name: /^Heart/ })).toBeVisible();
+  await expect(page.getByLabel('Width', { exact: true })).toHaveValue('48');
+  expect(errors).toEqual([]);
+});
