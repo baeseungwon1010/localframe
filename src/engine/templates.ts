@@ -1,6 +1,6 @@
 /** Starting boards for diagram mode, as plain data the editor turns into layers. */
 
-export type TemplateKind = 'flowchart' | 'brainstorm' | 'retro' | 'mindmap';
+export type TemplateKind = 'flowchart' | 'brainstorm' | 'retro' | 'mindmap' | 'kanban' | 'timeline' | 'orgchart' | 'userflow' | 'weekly';
 
 type Side = 'top' | 'right' | 'bottom' | 'left';
 
@@ -9,7 +9,7 @@ export type TemplateItem =
   | { key: string; kind: 'section'; name: string; x: number; y: number; w: number; h: number }
   | {
       key: string;
-      kind: 'sticky' | 'box' | 'diamond' | 'ellipse';
+      kind: 'sticky' | 'box' | 'diamond' | 'ellipse' | 'chevron' | 'document';
       parent?: string;
       x: number;
       y: number;
@@ -26,6 +26,11 @@ export const TEMPLATES: { kind: TemplateKind; name: string; description: string 
   { kind: 'brainstorm', name: 'Brainstorm', description: 'A topic in the middle with prompts around it' },
   { kind: 'retro', name: 'Retrospective', description: 'What went well, what to improve, what to do next' },
   { kind: 'mindmap', name: 'Mind map', description: 'One idea branching out; Tidy up keeps it neat' },
+  { kind: 'kanban', name: 'Kanban', description: 'To do, doing and done, one card per task' },
+  { kind: 'timeline', name: 'Timeline', description: 'Phases in order, with when each happens' },
+  { kind: 'orgchart', name: 'Org chart', description: 'Who leads which team' },
+  { kind: 'userflow', name: 'User flow', description: 'The screens a person goes through, and the choices' },
+  { kind: 'weekly', name: 'Week plan', description: 'A column for each working day' },
 ];
 
 function flowchart(): TemplateItem[] {
@@ -123,8 +128,88 @@ function mindmap(): TemplateItem[] {
   return items;
 }
 
+function kanban(): TemplateItem[] {
+  const columns: [string, string, string[]][] = [
+    ['To do', 'yellow', ['Write the brief', 'Plan the launch', 'Fix the sign-in bug']],
+    ['Doing', 'blue', ['Design the home screen', 'Interview two customers']],
+    ['Done', 'green', ['Set up the project']],
+  ];
+  return columns.flatMap(([name, color, cards], c): TemplateItem[] => [
+    { key: `col${c}`, kind: 'section', name, x: c * 320, y: 0, w: 290, h: 560 },
+    ...cards.map((text, i): TemplateItem => ({ key: `card${c}-${i}`, kind: 'sticky', parent: `col${c}`, x: 20, y: 30 + i * 130, w: 250, h: 110, text, color })),
+  ]);
+}
+
+function timeline(): TemplateItem[] {
+  const phases: [string, string, string][] = [
+    ['Kickoff', 'violet', 'Week 1'],
+    ['Research', 'blue', 'Weeks 2–3'],
+    ['Design', 'pink', 'Weeks 4–5'],
+    ['Build', 'orange', 'Weeks 6–9'],
+    ['Launch', 'green', 'Week 10'],
+  ];
+  return phases.flatMap(([name, color, when], i): TemplateItem[] => [
+    { key: `p${i}`, kind: 'chevron', x: i * 176, y: 0, w: 180, h: 64, text: name, color },
+    { key: `w${i}`, kind: 'sticky', x: i * 176 + 10, y: 96, w: 150, h: 110, text: `${when}\n`, color: 'grey' },
+  ]);
+}
+
+function orgchart(): TemplateItem[] {
+  const items: TemplateItem[] = [{ key: 'lead', kind: 'box', x: 300, y: 0, w: 180, h: 72, text: 'Team lead', color: 'violet' }];
+  const teams: [string, string, string[]][] = [
+    ['Design', 'pink', ['Product design', 'Research']],
+    ['Engineering', 'blue', ['Web', 'Mobile']],
+    ['Marketing', 'orange', ['Content']],
+  ];
+  teams.forEach(([name, color, subs], i) => {
+    const x = i * 280;
+    items.push({ key: `t${i}`, kind: 'box', x: x + 20, y: 150, w: 180, h: 64, text: name, color });
+    items.push({ key: `lt${i}`, kind: 'arrow', from: 'lead', fromSide: 'bottom', to: `t${i}`, toSide: 'top' });
+    subs.forEach((sub, j) => {
+      items.push({ key: `s${i}-${j}`, kind: 'box', x: x + 30, y: 290 + j * 90, w: 160, h: 56, text: sub, color: 'grey' });
+      items.push({ key: `ts${i}-${j}`, kind: 'arrow', from: j === 0 ? `t${i}` : `s${i}-${j - 1}`, fromSide: 'bottom', to: `s${i}-${j}`, toSide: 'top' });
+    });
+  });
+  return items;
+}
+
+function userflow(): TemplateItem[] {
+  return [
+    { key: 'open', kind: 'ellipse', x: -40, y: 136, w: 190, h: 72, text: 'Opens the app', color: 'green' },
+    { key: 'signed', kind: 'diamond', x: 220, y: 112, w: 170, h: 120, text: 'Signed in?', color: 'yellow' },
+    { key: 'signin', kind: 'document', x: 230, y: 330, w: 150, h: 90, text: 'Sign-in screen' },
+    { key: 'home', kind: 'document', x: 480, y: 127, w: 150, h: 90, text: 'Home screen' },
+    { key: 'pick', kind: 'document', x: 780, y: 127, w: 150, h: 90, text: 'Item details' },
+    { key: 'pay', kind: 'document', x: 1060, y: 127, w: 150, h: 90, text: 'Checkout' },
+    { key: 'done', kind: 'ellipse', x: 1300, y: 136, w: 190, h: 72, text: 'Order placed', color: 'green' },
+    { key: 'a1', kind: 'arrow', from: 'open', fromSide: 'right', to: 'signed', toSide: 'left' },
+    { key: 'a2', kind: 'arrow', from: 'signed', fromSide: 'right', to: 'home', toSide: 'left', text: 'Yes' },
+    { key: 'a3', kind: 'arrow', from: 'signed', fromSide: 'bottom', to: 'signin', toSide: 'top', text: 'No' },
+    { key: 'a4', kind: 'arrow', from: 'signin', fromSide: 'right', to: 'home', toSide: 'bottom' },
+    { key: 'a5', kind: 'arrow', from: 'home', fromSide: 'right', to: 'pick', toSide: 'left', text: 'Taps an item' },
+    { key: 'a6', kind: 'arrow', from: 'pick', fromSide: 'right', to: 'pay', toSide: 'left', text: 'Buys it' },
+    { key: 'a7', kind: 'arrow', from: 'pay', fromSide: 'right', to: 'done', toSide: 'left' },
+  ];
+}
+
+function weekly(): TemplateItem[] {
+  const days: [string, string][] = [
+    ['Monday', 'yellow'],
+    ['Tuesday', 'orange'],
+    ['Wednesday', 'pink'],
+    ['Thursday', 'violet'],
+    ['Friday', 'blue'],
+  ];
+  return days.flatMap(([day, color], i): TemplateItem[] => [
+    { key: `d${i}`, kind: 'section', name: day, x: i * 230, y: 0, w: 210, h: 460 },
+    { key: `n${i}`, kind: 'sticky', parent: `d${i}`, x: 20, y: 30, w: 170, h: 120, text: '', color },
+  ]);
+}
+
+const BUILDERS: Record<TemplateKind, () => TemplateItem[]> = { flowchart, brainstorm, retro, mindmap, kanban, timeline, orgchart, userflow, weekly };
+
 export function templateItems(kind: TemplateKind): TemplateItem[] {
-  return kind === 'flowchart' ? flowchart() : kind === 'brainstorm' ? brainstorm() : kind === 'mindmap' ? mindmap() : retro();
+  return BUILDERS[kind]();
 }
 
 /** The area a template covers, from its own origin. */

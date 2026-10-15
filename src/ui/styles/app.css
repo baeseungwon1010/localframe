@@ -2514,8 +2514,19 @@ button:disabled {
   --card-tint: #E2F6E8;
 }
 
-.template-card.mindmap {
+.template-card.mindmap,
+.template-card.orgchart {
   --card-tint: #EDE7FF;
+}
+
+.template-card.kanban,
+.template-card.weekly {
+  --card-tint: #FFEBDC;
+}
+
+.template-card.timeline,
+.template-card.userflow {
+  --card-tint: #FDE6F2;
 }
 
 .template-card:hover {
