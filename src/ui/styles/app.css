@@ -2690,3 +2690,17 @@ body {
   font-size: var(--text-xs);
   font-weight: 600;
 }
+
+.backup-reminder {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.backup-reminder p {
+  flex: 1 1 280px;
+}
+
+.reminder-actions {
+  display: flex;
+  gap: var(--space-2);
+}
