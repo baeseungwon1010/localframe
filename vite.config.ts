@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import { createHash } from 'node:crypto';
 import type { Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -42,8 +43,123 @@ function woff2Only(): Plugin {
   };
 }
 
+/** The service worker: the app's files kept on the device, so it opens offline. Template below. */
+function serviceWorker(version: string, core: string[]): string {
+  return `// localframe ${version}: generated at build time (vite.config.ts)
+const SHELL = 'localframe-shell-${version}';
+const RUNTIME = 'localframe-runtime';
+const CORE = ${JSON.stringify(core)};
+const scoped = (path) => new URL(path, self.registration.scope).href;
+
+self.addEventListener('install', (event) => {
+  // waits (no skipWaiting) until the page asks, so a running editor never meets new files
+  event.waitUntil(caches.open(SHELL).then((cache) => cache.addAll(CORE.map(scoped))));
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('localframe-shell-') && k !== SHELL).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
+  );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data === 'skip-waiting') self.skipWaiting();
+});
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET' || !req.url.startsWith(self.registration.scope)) return;
+  // the app is one page (routes are in the hash): every navigation gets the cached page
+  if (req.mode === 'navigate') {
+    event.respondWith(caches.match(scoped('./'), { cacheName: SHELL }).then((hit) => hit || fetch(req)));
+    return;
+  }
+  event.respondWith(
+    caches.match(req).then(
+      (hit) =>
+        hit ||
+        fetch(req).then((res) => {
+          // fonts and images are kept once used (their names change when their content does)
+          if (res.ok && /\\.(woff2|png|svg)$/.test(new URL(req.url).pathname)) {
+            const copy = res.clone();
+            caches.open(RUNTIME).then((cache) => cache.put(req, copy));
+          }
+          return res;
+        }),
+    ),
+  );
+});
+`;
+}
+
+/**
+ * The web build as an installable app (PWA): a manifest with icons, the service worker that keeps
+ * the app's files on the device, and the page tags phones read (theme colour, home screen icon).
+ */
+function installableApp(): Plugin {
+  return {
+    name: 'localframe-pwa',
+    transformIndexHtml: (html) =>
+      html
+        .replace('content="width=device-width, initial-scale=1.0"', 'content="width=device-width, initial-scale=1.0, viewport-fit=cover"')
+        .replace(
+          '<title>',
+          [
+            '<link rel="manifest" href="./manifest.webmanifest" />',
+            '<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />',
+            '<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F7F7F8" />',
+            '<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1F2125" />',
+            '<meta name="mobile-web-app-capable" content="yes" />',
+            '<meta name="apple-mobile-web-app-title" content="localframe" />',
+            '<meta name="apple-mobile-web-app-status-bar-style" content="default" />',
+            '<title>',
+          ].join('\n    '),
+        ),
+    generateBundle(_options, bundle) {
+      const files = Object.keys(bundle);
+      // the app itself, plus the Latin faces of every font so text looks right offline from the start
+      const core = [
+        './',
+        'favicon.svg',
+        'manifest.webmanifest',
+        'icons/icon-192.png',
+        ...files.filter((f) => /\.(js|css)$/.test(f) || /-latin-[0-9]+-normal-[^/]*\.woff2$/.test(f)),
+      ].sort();
+      const version = createHash('sha256').update(core.join('\n')).digest('hex').slice(0, 12);
+      this.emitFile({ type: 'asset', fileName: 'sw.js', source: serviceWorker(version, core) });
+      this.emitFile({
+        type: 'asset',
+        fileName: 'manifest.webmanifest',
+        source: JSON.stringify(
+          {
+            name: 'localframe',
+            short_name: 'localframe',
+            description: 'Design and diagram on your own device. Files stay in this browser.',
+            id: './',
+            start_url: './',
+            scope: './',
+            display: 'standalone',
+            background_color: '#E8E9EB',
+            theme_color: '#F7F7F8',
+            icons: [
+              { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+              { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+              { src: 'icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+            ],
+          },
+          null,
+          2,
+        ),
+      });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => ({
-  plugins: mode === 'web' ? [react(), woff2Only(), webCsp()] : [react(), woff2Only()],
+  plugins: mode === 'web' ? [react(), woff2Only(), webCsp(), installableApp()] : [react(), woff2Only()],
   base: mode === 'web' ? (process.env.LOCALFRAME_BASE ?? '/localframe/') : '/',
   define: mode === 'web' ? { 'import.meta.env.VITE_STORAGE': JSON.stringify('browser') } : {},
   server: {
