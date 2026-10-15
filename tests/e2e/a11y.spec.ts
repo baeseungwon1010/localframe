@@ -70,6 +70,8 @@ async function focusRing(p: Page, where: string, tabs = 30) {
 }
 
 test('accessibility: names, contrast, focus rings and selection read out', async ({ browser }) => {
+  // two colour schemes, five screens and dozens of Tab presses: longer than one ordinary test
+  test.setTimeout(120_000);
   const report: string[] = [];
   for (const scheme of ['light', 'dark'] as const) {
     const c = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: scheme });
