@@ -64,7 +64,14 @@ type FileRecord = {
   thumbnail?: string;
 };
 type NodesRecord = { fileId: string; nodes: SceneNode[] };
-type ImageRecord = { fileId: string; id: string; mime: string; size: number; blob: Blob };
+/**
+ * An image's bytes. Kept as an ArrayBuffer: WebKit can't store Blobs in private windows (Safari's,
+ * and test browsers), while every browser stores plain bytes. Older records hold a Blob instead.
+ */
+type ImageRecord = { fileId: string; id: string; mime: string; size: number; bytes?: ArrayBuffer; blob?: Blob };
+
+const imageBlob = (r: ImageRecord) => r.blob ?? new Blob([r.bytes ?? new ArrayBuffer(0)], { type: r.mime });
+const imageBytes = async (r: ImageRecord) => new Uint8Array(r.bytes ?? (await imageBlob(r).arrayBuffer()));
 type VersionRecord = { id?: number; fileId: string; name: string | null; auto: boolean; createdAt: string; nodeCount: number; size: number; snapshot: string };
 type CommentRecord = Comment & { fileId: string };
 type Snapshot = { nodes: SceneNode[]; pages: Page[]; styles: Style[]; variables: Variables };
@@ -325,7 +332,7 @@ export class BrowserStore {
     if (await req(s.images.get([fileId, id]))) return;
     const used = (await this.byFile<ImageRecord>(s.images, fileId)).reduce((sum, r) => sum + r.size, 0);
     if (used + bytes.length > MAX_IMAGE_BYTES_PER_FILE) throw new StoreError(400, 'this file already holds 1 GB of images');
-    const rec: ImageRecord = { fileId, id, mime, size: bytes.length, blob: new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mime }) };
+    const rec: ImageRecord = { fileId, id, mime, size: bytes.length, bytes: bytes.slice().buffer };
     await req(s.images.put(rec));
   }
 
@@ -337,7 +344,7 @@ export class BrowserStore {
     if (!ImageIdSchema.safeParse(id).success) return null;
     const rec = await this.run(['images'], 'readonly', async (s) => (await req(s.images.get([fileId, id]))) as ImageRecord | undefined);
     if (!rec) return null;
-    const url = URL.createObjectURL(rec.blob);
+    const url = URL.createObjectURL(imageBlob(rec));
     this.urls.set(key, url);
     return url;
   }
@@ -384,7 +391,7 @@ export class BrowserStore {
       variables: f.variables,
       nodes,
       images: await Promise.all(
-        images.map(async (r) => ({ id: r.id, mime: r.mime as (typeof IMAGE_TYPES)[number], data: toBase64(new Uint8Array(await r.blob.arrayBuffer())) })),
+        images.map(async (r) => ({ id: r.id, mime: r.mime as (typeof IMAGE_TYPES)[number], data: toBase64(await imageBytes(r)) })),
       ),
     };
   }
