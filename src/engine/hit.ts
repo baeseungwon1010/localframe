@@ -3,6 +3,7 @@ import type { SceneDoc } from './doc.ts';
 import { type Point, type Rect, apply, distToSegment, invert, rectsIntersect } from './math.ts';
 import { hitsVector } from './vector.ts';
 import { linePoints } from './geometry.ts';
+import { labelMatrix, labelNode } from './labels.ts';
 
 /** Is the world point on this node's own shape (children not included)? */
 export function hitsShape(doc: SceneDoc, n: SceneNode, p: Point, tolerance: number): boolean {
@@ -20,6 +21,12 @@ export function hitsShape(doc: SceneDoc, n: SceneNode, p: Point, tolerance: numb
     const pts = linePoints(n);
     const tol = Math.max(n.strokeWeight / 2, tolerance);
     for (let i = 1; i < pts.length; i++) if (distToSegment(local, pts[i - 1], pts[i]) <= tol) return true;
+    // its text (drawn upright on a white pill, so it can stand off a steep line) picks it too
+    const ln = n.label?.characters ? labelNode(n) : null;
+    if (ln) {
+      const q = apply(invert(labelMatrix(n, ln)), local);
+      return q.x >= -6 - tolerance && q.y >= -3 - tolerance && q.x <= ln.width + 6 + tolerance && q.y <= ln.height + 3 + tolerance;
+    }
     return false;
   }
   if (n.type === 'ELLIPSE') {
