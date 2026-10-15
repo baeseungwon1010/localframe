@@ -6,6 +6,41 @@ import { useEditorRev } from '../hooks.ts';
 
 const ROW_H = 28;
 const INDENT = 12;
+/** Longer lists draw only the rows in view (plus a margin), so thousands of layers stay quick. */
+const VIRTUAL_FROM = 200;
+const OVERSCAN = 20;
+
+/** Which rows of the list are in view of the panel that scrolls it. */
+function useRowsInView(listRef: React.RefObject<HTMLDivElement | null>, count: number): [number, number] {
+  const [range, setRange] = useState<[number, number]>([0, 60]);
+  useEffect(() => {
+    const list = listRef.current;
+    const scroller = list?.closest<HTMLElement>('.layers');
+    if (!list || !scroller || count < VIRTUAL_FROM) return;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const lr = list.getBoundingClientRect();
+      const sr = scroller.getBoundingClientRect();
+      const first = Math.max(0, Math.floor((sr.top - lr.top) / ROW_H) - OVERSCAN);
+      const last = Math.min(count, Math.ceil((sr.bottom - lr.top) / ROW_H) + OVERSCAN);
+      setRange((r) => (r[0] === first && r[1] === last ? r : [first, last]));
+    };
+    const later = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    measure();
+    scroller.addEventListener('scroll', later, { passive: true });
+    const ro = new ResizeObserver(later);
+    ro.observe(scroller);
+    return () => {
+      scroller.removeEventListener('scroll', later);
+      ro.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [listRef, count]);
+  return count < VIRTUAL_FROM ? [0, count] : range;
+}
 
 type Row = { id: string; depth: number };
 type Drop = { parentId: string | null; index: number; line: number; into: string | null };
@@ -95,10 +130,20 @@ export function LayersPanel({ editor }: { editor: Editor }) {
   };
   walk(null, 0);
 
+  const [first, last] = useRowsInView(listRef, rows.length);
+
+  // bring the selected layer into view (its row may not be drawn yet in a long list)
   useEffect(() => {
     if (editor.selection.length !== 1) return;
-    const el = listRef.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(editor.selection[0])}"]`);
-    el?.scrollIntoView({ block: 'nearest' });
+    const list = listRef.current;
+    const scroller = list?.closest<HTMLElement>('.layers');
+    const i = rows.findIndex((r) => r.id === editor.selection[0]);
+    if (!list || !scroller || i < 0) return;
+    const top = list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop + i * ROW_H;
+    if (top < scroller.scrollTop) scroller.scrollTop = top;
+    else if (top + ROW_H > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = top + ROW_H - scroller.clientHeight;
+    // rows are recomputed every render; only the selection moving should scroll
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor.selection]);
 
   const select = (id: string, e: React.MouseEvent | React.KeyboardEvent) => {
@@ -255,7 +300,8 @@ export function LayersPanel({ editor }: { editor: Editor }) {
           tabIndex={0}
           onKeyDown={onKeyDown}
         >
-          {rows.map(({ id, depth }) => {
+          {first > 0 && <div style={{ height: first * ROW_H }} aria-hidden="true" />}
+          {rows.slice(first, last).map(({ id, depth }, k) => {
             const n = doc.get(id)!;
             const selected = editor.selection.includes(id);
             const isFrame = isContainerType(n.type);
@@ -271,6 +317,8 @@ export function LayersPanel({ editor }: { editor: Editor }) {
                 role="treeitem"
                 aria-label={n.name}
                 aria-level={depth + 1}
+                aria-setsize={rows.length > VIRTUAL_FROM ? rows.length : undefined}
+                aria-posinset={rows.length > VIRTUAL_FROM ? first + k + 1 : undefined}
                 aria-selected={selected}
                 aria-expanded={hasKids ? open : undefined}
                 className={`layer-row ${selected ? 'selected' : ''} ${editor.hover === id ? 'hovered' : ''} ${dimmed ? 'dimmed' : ''} ${into ? 'drop-into' : ''} ${drag?.active && drag.ids.includes(id) ? 'moving' : ''}`}
@@ -353,6 +401,7 @@ export function LayersPanel({ editor }: { editor: Editor }) {
               </div>
             );
           })}
+          {last < rows.length && <div style={{ height: (rows.length - last) * ROW_H }} aria-hidden="true" />}
           {drag?.active && drag.drop && drag.drop.line >= 0 && <div className="drop-line" style={{ top: drag.drop.line - 1 }} />}
         </div>
       )}
