@@ -7,6 +7,7 @@ import { navigate } from '../App.tsx';
 import { ALT, IconButton, MOD, Menu, SHIFT } from '../components.tsx';
 import { type Theme, useEditorRev } from '../hooks.ts';
 import { LANGUAGES, getLang, setLang, t } from '../i18n.ts';
+import { feedbackUrl } from '../whatsNew.ts';
 
 const STATUS_TEXT: Record<SaveStatus, string> = {
   saved: 'Saved',
@@ -147,6 +148,7 @@ export function TitleBar(props: {
             'separator',
             { label: t('Export file…'), shortcut: `${MOD}${SHIFT}E`, onSelect: props.onExportFile },
             { label: t('Version history…'), onSelect: props.onHistory },
+            ...(feedbackUrl() ? [{ label: t('Send feedback…'), onSelect: () => void window.open(feedbackUrl()!, '_blank', 'noopener,noreferrer') }] : []),
             'separator',
             ...(['system', 'light', 'dark'] as const).map((th) => ({
               label: `${props.theme === th ? '✓ ' : ''}${th === 'system' ? t('Theme: match system') : th === 'light' ? t('Theme: light') : t('Theme: dark')}`,

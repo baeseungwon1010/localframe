@@ -219,4 +219,15 @@ export const files: Record<string, string> = {
   'Bad path': '잘못된 경로예요',
   'Internal error': '내부 오류가 발생했어요',
   'Language': '언어',
+  // what's new and feedback
+  "What's new": '새 소식',
+  'Got it': '확인',
+  'Send feedback': '의견 보내기',
+  'Send feedback…': '의견 보내기…',
+  'What happened, or what would you like?': '어떤 일이 있었나요? 또는 무엇이 있으면 좋을까요?',
+  'The interface is now in Korean too: it follows your browser, or pick a language at the top right.':
+    '이제 한국어 화면도 있어요. 브라우저 언어를 따르고, 오른쪽 위에서 언어를 고를 수도 있어요.',
+  'Undo now reaches back past a reload.': '새로고침한 뒤에도 실행 취소할 수 있어요.',
+  'Paste or drop an SVG to turn it into editable shapes.': 'SVG를 붙여넣거나 끌어다 놓으면 편집할 수 있는 도형이 돼요.',
+  'Present a board: its sections or frames, one after another.': '보드를 발표할 수 있어요. 섹션이나 프레임을 차례로 보여 줘요.',
 };

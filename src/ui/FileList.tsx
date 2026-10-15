@@ -14,6 +14,7 @@ const backupWork = () => import('./backup.ts');
 import { downloadBlob } from './download.ts';
 import { t } from './i18n.ts';
 import { forgetHistory } from './undoStore.ts';
+import { feedbackUrl, markNewsSeen, unseenNews } from './whatsNew.ts';
 
 // exporting draws every page, so it brings the canvas engine: loaded when first used
 const ExportFileDialog = lazy(() => import('./ExportFileDialog.tsx').then((m) => ({ default: m.ExportFileDialog })));
@@ -39,6 +40,11 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
   const [folder, setFolder] = useState<Awaited<ReturnType<typeof backupFolder>>>(null);
   const [busy, setBusy] = useState(false);
   const [reminderHidden, setReminderHidden] = useState(false);
+  const [news, setNews] = useState<{ id: string; items: string[] }[] | null>(null);
+  // what's new: once the files are known (someone with none is here for the first time)
+  useEffect(() => {
+    if (files && news === null) setNews(unseenNews(files.length === 0));
+  }, [files, news]);
 
   const refresh = useCallback(async () => {
     try {
@@ -327,6 +333,33 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
               </button>
             </span>
           </div>
+        )}
+        {!!news?.length && (
+          <section className="news" aria-labelledby="news-title">
+            <h2 id="news-title">{t("What's new")}</h2>
+            <ul>
+              {news.flatMap((n) => n.items).map((item) => (
+                <li key={item}>{t(item)}</li>
+              ))}
+            </ul>
+            <div className="news-actions">
+              <button
+                type="button"
+                className="btn secondary small"
+                onClick={() => {
+                  markNewsSeen();
+                  setNews([]);
+                }}
+              >
+                {t('Got it')}
+              </button>
+              {feedbackUrl() && (
+                <a className="btn ghost small" href={feedbackUrl()!} target="_blank" rel="noopener noreferrer">
+                  {t('Send feedback')}
+                </a>
+              )}
+            </div>
+          </section>
         )}
         {app.iosHint && (
           <div className="install-hint" role="note">
