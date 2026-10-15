@@ -751,12 +751,27 @@ export class Editor {
       }
       return false;
     };
-    // elbow connectors also go around other shapes: one that moved (or grew) near a connector, or
-    // away from one that detours, re-routes it
-    const moved: Rect[] = [];
+    // elbow connectors also go around other shapes: a shape that moved, grew or went away near
+    // one (where it is now, or where it was) re-routes it, on the same page only
+    const moved: { rect: Rect; page: string }[] = [];
+    const boxOf = (m: SceneNode): Rect => {
+      const w = multiply(m.parentId && doc.has(m.parentId) ? doc.world(m.parentId) : IDENTITY, localMatrix(m.x, m.y, m.rotation));
+      const pts = [
+        { x: 0, y: 0 },
+        { x: m.width, y: 0 },
+        { x: 0, y: m.height },
+        { x: m.width, y: m.height },
+      ].map((q) => apply(w, q));
+      const xs = pts.map((q) => q.x);
+      const ys = pts.map((q) => q.y);
+      return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+    };
     for (const id of changed) {
-      const m = doc.get(id);
-      if (m && m.type !== 'LINE' && m.type !== 'TEXT' && moved.length < 200) moved.push(doc.worldBounds(id));
+      if (moved.length >= 400) break;
+      const now = doc.get(id);
+      const before = tx.get(id);
+      const page = now ? doc.pageOf(id) : before?.parentId && doc.has(before.parentId) ? doc.pageOf(before.parentId) : (before?.pageId ?? doc.defaultPage);
+      for (const m of [now, before]) if (m && m.type !== 'LINE' && m.type !== 'TEXT') moved.push({ rect: boxOf(m), page });
     }
     const lineBox = (n: SceneNode): Rect => {
       const w = doc.world(n.id);
@@ -765,11 +780,13 @@ export class Editor {
       const ys = pts.map((q) => q.y);
       return { x: Math.min(...xs) - 40, y: Math.min(...ys) - 40, width: Math.max(...xs) - Math.min(...xs) + 80, height: Math.max(...ys) - Math.min(...ys) + 80 };
     };
-    // a deleted shape may have been the one a connector went around
-    const removed = [...changed].some((id) => !doc.has(id));
-    const nearMoved = (n: SceneNode) =>
-      !!n.elbow &&
-      (((n.route?.length ?? 0) > 3 && (moved.length > 0 || removed)) || (moved.length > 0 && moved.some((r) => rectsIntersect(r, lineBox(n)))));
+    const nearMoved = (n: SceneNode) => {
+      if (!n.elbow || !moved.length) return false;
+      const box = lineBox(n);
+      if (!moved.some((m) => rectsIntersect(m.rect, box))) return false;
+      const page = doc.pageOf(n.id);
+      return moved.some((m) => m.page === page && rectsIntersect(m.rect, box));
+    };
     for (const n of doc.all()) {
       if (n.type !== 'LINE' || (!n.startBind && !n.endBind && !n.elbow && !n.route)) continue;
       if (!changed.has(n.id) && !near(n.startBind?.nodeId) && !near(n.endBind?.nodeId) && !near(n.id) && !nearMoved(n)) continue;
