@@ -94,13 +94,25 @@ export function buildZip(entries: ZipEntry[]): Blob {
 }
 
 /** Limits for reading an archive someone hands us. */
-export const ZIP_READ_LIMITS = { entries: 2000, entryBytes: 200 * 1024 * 1024, totalBytes: 2 * 1024 * 1024 * 1024 };
+export const ZIP_READ_LIMITS = { entries: 2000, entryBytes: 200 * 1024 * 1024, totalBytes: 600 * 1024 * 1024 };
 
+/** Inflates into exactly `size` bytes, stopping as soon as there is more (a ZIP bomb never fills memory). */
 async function inflateRaw(data: Uint8Array, size: number): Promise<Uint8Array> {
   if (typeof DecompressionStream === 'undefined') throw new Error('This browser cannot open compressed ZIP files.');
-  const stream = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-  const out = new Uint8Array(await new Response(stream).arrayBuffer());
-  if (out.length !== size) throw new Error('A file in the archive is damaged.');
+  const reader = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (at + value.length > size) {
+      await reader.cancel().catch(() => {});
+      throw new Error('A file in the archive is damaged.');
+    }
+    out.set(value, at);
+    at += value.length;
+  }
+  if (at !== size) throw new Error('A file in the archive is damaged.');
   return out;
 }
 
