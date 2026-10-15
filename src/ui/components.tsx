@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Monitor, Moon, Sun } from 'lucide-react';
 import type { Theme } from './hooks.ts';
@@ -97,7 +98,9 @@ export function Menu(props: { x: number; y: number; items: MenuItem[]; onClose: 
     next?.focus();
   };
 
-  return (
+  // straight under <body>: a fixed menu inside a transformed bar (the dock, the diagram bar) would be
+  // placed relative to that bar, not the screen
+  return createPortal(
     <div ref={ref} className="menu" role="menu" aria-label={props.label} style={{ left: pos.x, top: pos.y }} onKeyDown={onKeyDown}>
       {props.items.map((item, i) =>
         item === 'separator' ? (
@@ -120,7 +123,8 @@ export function Menu(props: { x: number; y: number; items: MenuItem[]; onClose: 
           </button>
         ),
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
