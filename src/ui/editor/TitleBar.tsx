@@ -25,6 +25,8 @@ export function TitleBar(props: {
   onRename: (name: string) => Promise<void>;
   onExportFile: () => void;
   onShare: (format: 'png' | 'pdf') => void;
+  /** Web version only: a link that carries the file. */
+  onShareLink?: () => void;
   onHistory: () => void;
   onPresent: () => void;
   onQuickActions: () => void;
@@ -140,6 +142,7 @@ export function TitleBar(props: {
           items={[
             { label: editor.selection.length ? 'Share selection as image' : 'Share page as image', onSelect: () => props.onShare('png') },
             { label: editor.selection.length ? 'Share selection as PDF' : 'Share page as PDF', onSelect: () => props.onShare('pdf') },
+            ...(props.onShareLink ? [{ label: 'Share as link', onSelect: props.onShareLink }] : []),
             'separator',
             { label: 'Export file…', shortcut: `${MOD}${SHIFT}E`, onSelect: props.onExportFile },
             { label: 'Version history…', onSelect: props.onHistory },

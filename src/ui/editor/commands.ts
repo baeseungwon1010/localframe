@@ -23,6 +23,7 @@ export type ScreenActions = {
   placeImage: () => void;
   rename: () => void;
   share?: (format: 'png' | 'pdf') => void;
+  shareLink?: () => void;
   diagramMode: boolean;
   /** Absent when the screen can only show the board. */
   setDiagramMode?: (on: boolean) => void;
@@ -136,6 +137,7 @@ export function buildCommands(editor: Editor, screen: ScreenActions): Command[] 
       ? [
           cmd('File', 'share-png', 'Share as image', () => screen.share?.('png'), always, undefined, 'send png picture message'),
           cmd('File', 'share-pdf', 'Share as PDF', () => screen.share?.('pdf'), always, undefined, 'send document message'),
+          ...(screen.shareLink ? [cmd('File', 'share-link', 'Share as link', () => screen.shareLink?.(), always, undefined, 'url send copy link')] : []),
         ]
       : []),
     cmd('File', 'export', 'Export file', screen.exportFile, always, `${MOD}${SHIFT}E`, 'download png pdf svg'),

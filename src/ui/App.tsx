@@ -2,6 +2,8 @@ import { Suspense, lazy, useEffect, useState } from 'react';
 import { FileList } from './FileList.tsx';
 import { useTheme } from './hooks.ts';
 import { useAppUpdate } from './pwa.ts';
+import { SharedScreen } from './SharedScreen.tsx';
+import { SHARE_ROUTE } from './shareLink.ts';
 
 // the editor (canvas engine, panels, fonts) loads the first time a file is opened
 const loadEditor = () => import('./editor/EditorScreen.tsx');
@@ -15,10 +17,12 @@ function prefetchEditor() {
   idle(() => void loadEditor().catch(() => {}));
 }
 
-type Route = { name: 'files' } | { name: 'file'; id: string };
+type Route = { name: 'files' } | { name: 'file'; id: string } | { name: 'shared'; payload: string };
 
 function parseHash(): Route {
-  const m = /^#\/file\/([A-Za-z0-9_-]{1,64})$/.exec(window.location.hash);
+  const hash = window.location.hash;
+  if (hash.startsWith(SHARE_ROUTE)) return { name: 'shared', payload: hash.slice(SHARE_ROUTE.length) };
+  const m = /^#\/file\/([A-Za-z0-9_-]{1,64})$/.exec(hash);
   return m ? { name: 'file', id: m[1] } : { name: 'files' };
 }
 
@@ -58,6 +62,8 @@ export function App() {
         <Suspense fallback={<div className="center-message" aria-busy="true">Opening file…</div>}>
           <EditorScreen key={route.id} fileId={route.id} theme={theme} setTheme={setTheme} />
         </Suspense>
+      ) : route.name === 'shared' ? (
+        <SharedScreen payload={route.payload} />
       ) : (
         <FileList theme={theme} setTheme={setTheme} />
       )}

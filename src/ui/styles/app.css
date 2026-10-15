@@ -2461,7 +2461,9 @@ button:disabled {
   top: 50%;
   left: 50%;
   z-index: 10;
-  width: min(720px, calc(100% - 32px));
+  width: min(760px, calc(100% - 32px));
+  max-height: calc(100% - 140px);
+  overflow-y: auto;
   padding: var(--space-7);
   transform: translate(-50%, -55%);
   border-radius: 16px;
@@ -2781,4 +2783,42 @@ body {
   flex: 1;
   width: 100%;
   border: 0;
+}
+
+/* ------------------------------------------------------------- a shared file */
+
+.shared-screen {
+  max-width: 760px;
+  height: 100%;
+  margin: 0 auto;
+  padding: calc(var(--space-8) + env(safe-area-inset-top, 0px)) var(--space-7) var(--space-8);
+  overflow-y: auto;
+}
+
+.shared-screen h1 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-lg);
+}
+
+.shared-kicker,
+.shared-facts,
+.shared-note {
+  margin: 0 0 var(--space-4);
+  color: var(--color-text-muted);
+}
+
+.shared-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 55vh;
+  margin: var(--space-6) 0;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+}
+
+.shared-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: var(--space-6) 0;
 }

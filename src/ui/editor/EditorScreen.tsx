@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import '../canvasFonts.ts';
 import type { FileMeta } from '../../../shared/schema.ts';
-import { ApiError, STORAGE_DOWN, api } from '../../api.ts';
+import { ApiError, BROWSER_STORAGE, STORAGE_DOWN, api } from '../../api.ts';
 import { Editor } from '../../engine/editor.ts';
 import { onImageLoaded, readImageSize, retryFailedImages, useImagesOf } from '../../engine/images.ts';
 import { drawChildren } from '../../engine/render.ts';
@@ -13,6 +13,7 @@ import { ExportFileDialog } from '../ExportFileDialog.tsx';
 import { RenameDialog } from './framePanels.tsx';
 import { PhoneSheet } from './PhoneSheet.tsx';
 import { type ShareFormat, shareView } from '../share.ts';
+import { LONG_LINK_CHARS, makeShareLink } from '../shareLink.ts';
 import { CanvasView } from './CanvasView.tsx';
 import { LeftPanel } from './LeftPanel.tsx';
 import { PropertiesPanel } from './PropertiesPanel.tsx';
@@ -100,6 +101,31 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   }, [diagramMode, editor]);
   const [presenting, setPresenting] = useState<{ start: string | null } | null>(null);
   const present = () => setPresenting({ start: presentFrom(editor) });
+  /** A link that carries this file: through the share sheet on a phone, else copied. */
+  const shareLink = async () => {
+    try {
+      await flushAll();
+      const { url, droppedImages } = await makeShareLink(await api.exportFile(fileId));
+      const notes = [
+        droppedImages ? 'Images are not included.' : '',
+        url.length > LONG_LINK_CHARS ? `It is long (${url.length.toLocaleString()} characters), so some chat apps may cut it.` : '',
+      ].filter(Boolean);
+      const nav = navigator as Navigator & { share?: (d: ShareData) => Promise<void> };
+      if (nav.share && window.matchMedia('(pointer: coarse)').matches) {
+        try {
+          await nav.share({ url, title: file?.name });
+          if (notes.length) setNotice(notes.join(' '));
+          return;
+        } catch (e) {
+          if (e instanceof DOMException && e.name === 'AbortError') return;
+        }
+      }
+      await navigator.clipboard.writeText(url);
+      setNotice(['Link copied. Whoever opens it can save their own copy of this file.', ...notes].join(' '));
+    } catch (e) {
+      setNotice(`Couldn't make a link: ${e instanceof Error ? e.message : 'something went wrong'}`);
+    }
+  };
   const share = async (format: ShareFormat) => {
     try {
       const done = await shareView(editor, file?.name ?? 'localframe', format);
@@ -389,6 +415,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         setTheme={setTheme}
         onExportFile={() => setExporting(true)}
         onShare={(f) => void share(f)}
+        onShareLink={BROWSER_STORAGE ? () => void shareLink() : undefined}
         onHistory={() => setHistory(true)}
         onPresent={present}
         onQuickActions={() => setPalette(true)}
@@ -455,6 +482,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
             diagramMode,
             setDiagramMode: narrow ? undefined : setDiagramMode,
             share: (f) => void share(f),
+            shareLink: BROWSER_STORAGE ? () => void shareLink() : undefined,
           }}
         />
       )}
