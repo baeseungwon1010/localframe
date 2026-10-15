@@ -153,6 +153,13 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
           }, 1500);
         });
         setSync(queue);
+        // a file that has never been saved here (an import, a sample) gets its thumbnail now
+        if (!meta.hasThumbnail && nodes.length) {
+          thumbTimer.current = setTimeout(() => {
+            const url = makeThumbnail(editor);
+            if (url) void api.putThumbnail(fileId, url).catch(() => {});
+          }, 800);
+        }
       } catch (e) {
         if (cancelled) return;
         setLoadError(

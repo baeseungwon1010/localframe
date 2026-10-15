@@ -971,7 +971,8 @@ export class Editor {
       .children(null)
       .flatMap((id) => (this.doc.get(id)!.section ? this.doc.children(id) : [id]))
       .map((id) => this.doc.get(id)!)
-      .filter((n) => n.visible && !n.section && !n.slice && (n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'INSTANCE'));
+      // main components are building blocks, not screens
+      .filter((n) => n.visible && !n.section && !n.slice && (n.type === 'FRAME' || n.type === 'INSTANCE'));
     return frames.sort((a, b) => (Math.abs(a.y - b.y) > Math.min(a.height, b.height) / 2 ? a.y - b.y : a.x - b.x));
   }
 

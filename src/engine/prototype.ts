@@ -5,7 +5,8 @@ import { SceneDoc } from './doc.ts';
 /** A frame you can present: on the page itself, or directly inside a section. */
 export function isScreen(doc: SceneDoc, id: string): boolean {
   const n = doc.get(id);
-  if (!n || n.section || n.slice || !(n.type === 'FRAME' || n.type === 'COMPONENT' || n.type === 'INSTANCE')) return false;
+  // main components are building blocks, not screens
+  if (!n || n.section || n.slice || !(n.type === 'FRAME' || n.type === 'INSTANCE')) return false;
   if (n.parentId === null) return true;
   return !!doc.get(n.parentId)?.section && doc.get(n.parentId)!.parentId === null;
 }
