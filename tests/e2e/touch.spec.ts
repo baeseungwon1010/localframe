@@ -14,7 +14,9 @@ async function zoomText(page: Page) {
   return Number((await page.locator('.zoom-btn').textContent())!.replace(/\D/g, ''));
 }
 
-test('on a phone: the board view, pinch zoom, double tap to write and a long press menu', async ({ page }) => {
+test('on a phone: the board view, pinch zoom, double tap to write and a long press menu', async ({ page, browserName }) => {
+  // several fingers at once can only be simulated through Chromium's DevTools protocol
+  test.skip(browserName !== 'chromium', 'multi-touch needs the Chromium DevTools protocol');
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));

@@ -14,7 +14,13 @@ export default defineConfig({
     acceptDownloads: true,
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium-web', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } }],
+  // Chromium by default; E2E_BROWSERS=chromium,firefox,webkit picks others (WebKit is Safari's engine)
+  projects: (['chromium', 'firefox', 'webkit'] as const)
+    .filter((b) => (process.env.E2E_BROWSERS ?? 'chromium').split(',').includes(b))
+    .map((b) => ({
+      name: `${b}-web`,
+      use: { ...devices[b === 'chromium' ? 'Desktop Chrome' : b === 'firefox' ? 'Desktop Firefox' : 'Desktop Safari'], viewport: { width: 1440, height: 900 } },
+    })),
   webServer: {
     // served at / here, so the tests' paths are the same as for the local app
     command: `npm run build:web && npx vite preview --mode web --host 127.0.0.1 --port ${PORT} --strictPort`,

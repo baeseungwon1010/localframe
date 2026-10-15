@@ -18,7 +18,13 @@ export default defineConfig({
     acceptDownloads: true,
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } }],
+  // Chromium by default; E2E_BROWSERS=chromium,firefox,webkit picks others (WebKit is Safari's engine)
+  projects: (['chromium', 'firefox', 'webkit'] as const)
+    .filter((b) => (process.env.E2E_BROWSERS ?? 'chromium').split(',').includes(b))
+    .map((b) => ({
+      name: b,
+      use: { ...devices[b === 'chromium' ? 'Desktop Chrome' : b === 'firefox' ? 'Desktop Firefox' : 'Desktop Safari'], viewport: { width: 1440, height: 900 } },
+    })),
   webServer: {
     command: 'npm run build && node server/index.ts',
     url: `http://localhost:${PORT}/api/files`,

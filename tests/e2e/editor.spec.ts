@@ -218,7 +218,7 @@ test('canvas text: double-click to edit, Korean input, empty text is removed', a
   await expect(page.getByRole('treeitem', { name: /^첫 번째/ })).toBeVisible();
 
   await page.mouse.dblclick(...at(310, 310));
-  const editor = page.getByRole('textbox', { name: 'Text' });
+  const editor = page.getByRole('textbox', { name: 'Text', exact: true });
   await expect(editor).toBeVisible();
   await editor.fill('');
   await page.keyboard.press('Escape');
