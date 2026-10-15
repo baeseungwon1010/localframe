@@ -38,6 +38,19 @@ describe('backups', () => {
     expect(new TextDecoder().decode(out[0].data)).toBe(text);
   });
 
+  it('a ZIP bomb (an entry inflating past its declared size) is refused without filling memory', async () => {
+    const huge = new Uint8Array(20 * 1024 * 1024); // 20 MB of zeros packs into a few KB
+    const zip = await deflatedZip('bomb.json', huge);
+    // claim the entry is 10 bytes, in both headers
+    const v = new DataView(zip.buffer);
+    const cd = zip.length - 22 - (46 + 'bomb.json'.length);
+    v.setUint32(22, 10, true);
+    v.setUint32(cd + 24, 10, true);
+    const before = process.memoryUsage().arrayBuffers;
+    await expect(readZip(zip)).rejects.toThrow(/damaged/);
+    expect(process.memoryUsage().arrayBuffers - before).toBeLessThan(8 * 1024 * 1024);
+  });
+
   it('refuses damaged, oversized or foreign archives', async () => {
     const zip = await bytes(buildZip([{ name: 'a.json', data: enc.encode('hello') }]));
     const bad = zip.slice();
