@@ -49,3 +49,37 @@ test('without a share sheet, sharing saves the file instead', async ({ page }) =
   expect(download.suggestedFilename()).toBe('Untitled.png');
   await expect(page.getByRole('alert').filter({ hasText: 'saved to your downloads' })).toBeVisible();
 });
+
+test('copy the selection as a PNG picture or as SVG text', async ({ page }) => {
+  // what reaches the clipboard, recorded (permissions differ per browser)
+  await page.addInitScript(() => {
+    const w = window as unknown as { copied: { type: string; size: number; text?: string }[] };
+    w.copied = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        write: async (items: ClipboardItem[]) => {
+          for (const item of items)
+            for (const type of item.types) {
+              const blob = await item.getType(type);
+              w.copied.push({ type, size: blob.size, text: type === 'text/plain' ? await blob.text() : undefined });
+            }
+        },
+        writeText: async (text: string) => void w.copied.push({ type: 'text/plain', size: text.length, text }),
+        readText: async () => '',
+      },
+    });
+  });
+  await boardWithAShape(page);
+  const box = (await page.locator('canvas').boundingBox())!;
+  for (const [item, type] of [
+    ['Copy as PNG', 'image/png'],
+    ['Copy as SVG', 'text/plain'],
+  ] as const) {
+    await page.mouse.click(box.x + 250, box.y + 230, { button: 'right' });
+    await page.getByRole('menuitem', { name: item }).click();
+    await expect.poll(() => page.evaluate((t) => (window as unknown as { copied: { type: string }[] }).copied.some((c) => c.type === t), type)).toBe(true);
+  }
+  const copied = await page.evaluate(() => (window as unknown as { copied: { type: string; size: number; text?: string }[] }).copied);
+  expect(copied.find((c) => c.type === 'image/png')!.size).toBeGreaterThan(100);
+  expect(copied.find((c) => c.type === 'text/plain')!.text).toMatch(/^<svg[\s\S]*<\/svg>\s*$/);
+});
