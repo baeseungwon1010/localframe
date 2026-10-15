@@ -44,7 +44,8 @@ export async function shareView(editor: Editor, fileName: string, format: ShareF
     } catch (e) {
       // closing the share sheet isn't an error
       if (e instanceof DOMException && e.name === 'AbortError') return 'cancelled';
-      throw e;
+      // a slow export can outlast the tap that allowed sharing: save the file instead
+      if (!(e instanceof DOMException && e.name === 'NotAllowedError')) throw e;
     }
   }
   downloadBlob(blob, file.name);
