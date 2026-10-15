@@ -104,7 +104,7 @@ function installableApp(): Plugin {
     name: 'localframe-pwa',
     transformIndexHtml: (html) =>
       html
-        .replace('content="width=device-width, initial-scale=1.0"', 'content="width=device-width, initial-scale=1.0, viewport-fit=cover"')
+        .replace('content="width=device-width, initial-scale=1.0, maximum-scale=1.0"', 'content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover"')
         .replace(
           '<title>',
           [
