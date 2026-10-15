@@ -9,7 +9,9 @@ import { fontStack, layoutText, lineHeightPx } from '../../engine/text.ts';
 import { adjustRuns, rangeValue } from '../../engine/textRuns.ts';
 import { ALT, MOD, Menu, type MenuItem, SHIFT } from '../components.tsx';
 import { Rulers } from './Rulers.tsx';
+import { defaultLabel, labelNode } from '../../engine/labels.ts';
 import { ToolHint } from './ToolHint.tsx';
+import { DiagramBar } from './DiagramBar.tsx';
 import { useEditorRev } from '../hooks.ts';
 
 function readColors(): OverlayColors {
@@ -298,6 +300,7 @@ export function CanvasView(props: {
         onPointerLeave={() => !editor.isInteracting && editor.setHover(null)}
       />
       {editor.editingText && <TextEditor key={editor.editingText} editor={editor} id={editor.editingText} />}
+      {editor.editingLabel && <LabelEditor key={editor.editingLabel} editor={editor} id={editor.editingLabel} />}
       {editor.showRulers && <Rulers editor={editor} canvasRect={rect} />}
       {editor.doc.size === 0 && editor.tool === 'move' && (
         <p className="canvas-hint">
@@ -306,6 +309,7 @@ export function CanvasView(props: {
       )}
       {props.children}
       <ToolHint editor={editor} />
+      <DiagramBar editor={editor} />
       {menu && <Menu label="Canvas actions" x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}
       {props.notice && (
         <div className="toast" role="alert">
@@ -316,6 +320,66 @@ export function CanvasView(props: {
         </div>
       )}
     </div>
+  );
+}
+
+/** Typing in a shape or on a connector: a textarea laid over where its text goes. */
+function LabelEditor({ editor, id }: { editor: Editor; id: string }) {
+  const node = editor.doc.get(id)!;
+  const [value, setValue] = useState(node.label?.characters ?? '');
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const done = useRef(false);
+  useEditorRev(editor, 'view');
+
+  useEffect(() => {
+    const el = ref.current!;
+    el.focus();
+    el.select();
+  }, []);
+
+  const commit = () => {
+    if (done.current) return;
+    done.current = true;
+    editor.commitLabelEdit(value);
+  };
+
+  // lay it out as it will be drawn, with the default style if the shape has no text yet
+  const styled = node.label ? node : { ...node, label: defaultLabel(node) };
+  const ln = labelNode(styled, value || ' ')!;
+  const t = ln.text!;
+  const m = multiply(editor.viewMatrix, multiply(editor.doc.world(id), [1, 0, 0, 1, ln.x, ln.y]));
+  return (
+    <textarea
+      ref={ref}
+      className={`text-editor label-editor ${node.type === 'LINE' ? 'on-line' : ''}`}
+      aria-label="Shape text"
+      value={value}
+      spellCheck={false}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.nativeEvent.isComposing) return;
+        if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
+          e.preventDefault();
+          commit();
+        }
+      }}
+      style={{
+        transform: `matrix(${m.join(',')})`,
+        width: ln.width,
+        height: ln.height + 2,
+        fontFamily: fontStack(t.fontFamily),
+        fontWeight: t.fontWeight,
+        fontStyle: t.italic ? 'italic' : 'normal',
+        fontSize: t.fontSize,
+        lineHeight: `${lineHeightPx(t)}px`,
+        letterSpacing: `${t.letterSpacing}px`,
+        textAlign: t.align,
+        whiteSpace: 'pre-wrap',
+        color: node.labelColor ?? '#1B1D21',
+      }}
+    />
   );
 }
 

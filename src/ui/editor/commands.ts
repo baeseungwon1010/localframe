@@ -38,6 +38,13 @@ const TOOL_COMMANDS: { tool: Tool; label: string; shortcut: string; keywords?: s
   { tool: 'pen', label: 'Pen', shortcut: 'P', keywords: 'vector path bezier' },
   { tool: 'pencil', label: 'Pencil', shortcut: `${SHIFT}P`, keywords: 'freehand draw' },
   { tool: 'text', label: 'Text', shortcut: 'T', keywords: 'type write' },
+  { tool: 'sticky', label: 'Sticky note', shortcut: 'N', keywords: 'note figjam post-it' },
+  { tool: 'box', label: 'Rounded box', shortcut: '', keywords: 'process step diagram flowchart rectangle' },
+  { tool: 'diamond', label: 'Diamond', shortcut: '', keywords: 'decision diagram flowchart' },
+  { tool: 'parallelogram', label: 'Parallelogram', shortcut: '', keywords: 'input output diagram flowchart' },
+  { tool: 'cylinder', label: 'Cylinder', shortcut: '', keywords: 'database storage diagram' },
+  { tool: 'document', label: 'Document', shortcut: '', keywords: 'page diagram flowchart' },
+  { tool: 'chevron', label: 'Chevron', shortcut: '', keywords: 'step process diagram' },
   { tool: 'comment', label: 'Comment', shortcut: 'C', keywords: 'note feedback' },
 ];
 

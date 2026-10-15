@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Circle, Frame, Hand, ImagePlus, MessageCircle, Minus, MousePointer2, MoveUpRight, PenTool, Pencil, Slice, Square, SquareDashed, Star, Triangle, Type } from 'lucide-react';
+import { SquareRoundCorner, ChevronRight, Cylinder, Diamond, FileText, RectangleHorizontal, StickyNote, Circle, Frame, Hand, ImagePlus, MessageCircle, Minus, MousePointer2, MoveUpRight, PenTool, Pencil, Slice, Square, SquareDashed, Star, Triangle, Type } from 'lucide-react';
 import type { Editor, Tool } from '../../engine/editor.ts';
 import { IconButton, MOD, Menu, SHIFT } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
@@ -37,6 +37,19 @@ const GROUPS: Group[] = [
       { tool: 'line', label: 'Line', key: 'L', Icon: Minus },
       { tool: 'arrow', label: 'Arrow', key: `${SHIFT}L`, Icon: MoveUpRight },
       { tool: 'image', label: 'Place image', key: `${MOD}${SHIFT}K`, Icon: ImagePlus },
+    ],
+  },
+  {
+    id: 'diagram',
+    label: 'Diagram tools',
+    entries: [
+      { tool: 'sticky', label: 'Sticky note', key: 'N', Icon: StickyNote },
+      { tool: 'box', label: 'Rounded box', key: '', Icon: SquareRoundCorner },
+      { tool: 'diamond', label: 'Diamond', key: '', Icon: Diamond },
+      { tool: 'parallelogram', label: 'Parallelogram', key: '', Icon: RectangleHorizontal },
+      { tool: 'cylinder', label: 'Cylinder (database)', key: '', Icon: Cylinder },
+      { tool: 'document', label: 'Document', key: '', Icon: FileText },
+      { tool: 'chevron', label: 'Chevron', key: '', Icon: ChevronRight },
     ],
   },
   {

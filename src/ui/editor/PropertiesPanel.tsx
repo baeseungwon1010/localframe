@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { isDiagramItem } from '../../engine/diagramColors.ts';
+import { canHaveLabel } from '../../engine/labels.ts';
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -165,10 +167,10 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
   const constrained = !inAutoLayout && nodes.every((n) => { const p = parent(n); return p && isBox(p) && !p.layout; });
   const title = single?.section
     ? 'Section'
-    : single?.shape
-      ? single.shape.kind === 'star'
-        ? 'Star'
-        : 'Polygon'
+    : single?.sticky
+      ? 'Sticky note'
+      : single?.shape
+      ? single.shape.kind[0].toUpperCase() + single.shape.kind.slice(1)
       : single
         ? TYPE_LABEL[single.type]
         : `${nodes.length} layers`;
@@ -235,7 +237,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
           ))}
         </div>
       )}
-      {single?.type === 'VECTOR' && (
+      {single?.type === 'VECTOR' && !isDiagramItem(single) && (
         <Section title="Path">
           <div className="grid2">
             <button type="button" className="btn secondary full" onClick={() => editor.startVectorEdit(single.id)}>
@@ -359,7 +361,8 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
         </Section>
       )}
 
-      {single?.type === 'VECTOR' && single.shape && <ShapeSection node={single} update={update} />}
+      {single?.type === 'VECTOR' && single.shape && (single.shape.kind === 'polygon' || single.shape.kind === 'star') && <ShapeSection node={single} update={update} />}
+      {single && canHaveLabel(single) && <LabelSection editor={editor} node={single} update={update} />}
 
       {constrained && <ConstraintsSection nodes={nodes} update={update} />}
 
@@ -1288,6 +1291,58 @@ function AutoLayoutSection(props: { editor: Editor; nodes: SceneNode[]; update: 
           )}
           <SizeLimits nodes={nodes} update={update} />
         </>
+      )}
+    </Section>
+  );
+}
+
+/** The text inside a shape or on a connector: how it looks. Double-clicking the shape types in it. */
+function LabelSection({ editor, node, update }: { editor: Editor; node: SceneNode; update: (fn: (n: SceneNode) => SceneNode) => void }) {
+  const l = node.label;
+  const set = (patch: Partial<TextStyle>) => update((n) => (n.label ? { ...n, label: { ...n.label, ...patch } } : n));
+  return (
+    <Section
+      title={node.type === 'LINE' ? 'Connector text' : 'Shape text'}
+      action={
+        <button type="button" className="mini-btn wide" onClick={() => editor.startLabelEdit(node.id)}>
+          {l?.characters ? 'Edit' : 'Add text'}
+        </button>
+      }
+    >
+      {l?.characters ? (
+        <>
+          <div className="grid2">
+            <NumberField label="Size" ariaLabel="Shape text size" value={l.fontSize} min={1} max={2000} onCommit={(v) => set({ fontSize: v })} />
+            <SelectField
+              label="Shape text weight"
+              value={l.fontWeight}
+              options={FONT_WEIGHTS.map((w) => ({ value: w.value, label: w.label }))}
+              onChange={(v) => set({ fontWeight: v })}
+            />
+            <label className="paint-row compact">
+              <span className="swatch" style={{ background: node.labelColor ?? '#1B1D21' }}>
+                <input
+                  type="color"
+                  aria-label="Shape text colour"
+                  value={(node.labelColor ?? '#1B1D21').toLowerCase()}
+                  onChange={(e) => update((n) => ({ ...n, labelColor: e.target.value.toUpperCase() }))}
+                />
+              </span>
+            </label>
+            <Segmented
+              label="Shape text align"
+              value={l.align}
+              options={[
+                { value: 'left', label: 'Align left', icon: <TextAlignStart {...ICON} /> },
+                { value: 'center', label: 'Align center', icon: <TextAlignCenter {...ICON} /> },
+                { value: 'right', label: 'Align right', icon: <TextAlignEnd {...ICON} /> },
+              ]}
+              onChange={(v) => set({ align: v })}
+            />
+          </div>
+        </>
+      ) : (
+        <p className="field-caption">Double-click the {node.type === 'LINE' ? 'connector' : 'shape'} or press Enter to write in it.</p>
       )}
     </Section>
   );

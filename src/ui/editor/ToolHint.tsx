@@ -24,6 +24,13 @@ const TOOL_HINTS: Partial<Record<Tool, string>> = {
   text: 'Click to type, or drag to make a text box of a set width.',
   comment: 'Click anywhere to leave a comment. On a layer, it moves with the layer.',
   hand: 'Drag to move around the canvas.',
+  sticky: 'Click to place a sticky note and start writing on it.',
+  box: 'Drag to draw a box for a step. Double-click it to write in it; the + on its sides adds the next one.',
+  diamond: 'Drag to draw a decision diamond. Double-click a shape to write in it.',
+  parallelogram: 'Drag to draw an input/output shape. Double-click a shape to write in it.',
+  cylinder: 'Drag to draw a database. Double-click a shape to write in it.',
+  document: 'Drag to draw a document. Double-click a shape to write in it.',
+  chevron: 'Drag to draw a process step. Double-click a shape to write in it.',
 };
 
 /** One line of help at the bottom of the canvas for the tool or mode in use. */

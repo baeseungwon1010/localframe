@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Circle, Search, SquareDashed, Star, Triangle, Component, Diamond, Eye, EyeOff, Frame, Group, Image, LayoutGrid, Lock, LockOpen, Minus, MoveUpRight, PenTool, Scissors, Square, SquaresExclude, SquaresIntersect, SquaresSubtract, SquaresUnite, Type } from 'lucide-react';
+import { ChevronDown, ChevronRight, Circle, Search, Shapes, StickyNote, SquareDashed, Star, Triangle, Component, Diamond, Eye, EyeOff, Frame, Group, Image, LayoutGrid, Lock, LockOpen, Minus, MoveUpRight, PenTool, Scissors, Square, SquaresExclude, SquaresIntersect, SquaresSubtract, SquaresUnite, Type } from 'lucide-react';
 import { type SceneNode, isContainerType } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
 import { useEditorRev } from '../hooks.ts';
@@ -15,7 +15,7 @@ function TypeIcon({ n }: { n: SceneNode }) {
   if (n.isMask) return <Scissors {...props} />;
   switch (n.type) {
     case 'VECTOR':
-      return n.shape?.kind === 'star' ? <Star {...props} /> : n.shape ? <Triangle {...props} /> : <PenTool {...props} />;
+      return n.shape?.kind === 'star' ? <Star {...props} /> : n.shape?.kind === 'polygon' ? <Triangle {...props} /> : n.shape ? <Shapes {...props} /> : <PenTool {...props} />;
     case 'BOOLEAN':
       return n.booleanOp === 'subtract' ? (
         <SquaresSubtract {...props} />
@@ -36,7 +36,7 @@ function TypeIcon({ n }: { n: SceneNode }) {
     case 'INSTANCE':
       return <Diamond {...props} />;
     case 'RECTANGLE':
-      return n.fills.some((p) => p.type === 'IMAGE') ? <Image {...props} /> : <Square {...props} />;
+      return n.sticky ? <StickyNote {...props} /> : n.fills.some((p) => p.type === 'IMAGE') ? <Image {...props} /> : <Square {...props} />;
     case 'ELLIPSE':
       return <Circle {...props} />;
     case 'LINE':

@@ -2305,3 +2305,53 @@ button:disabled {
   background: var(--color-surface-hover);
   color: var(--color-text);
 }
+
+.label-editor.on-line {
+  background: #FFFFFF;
+}
+
+/* -------------------------------------------------------------- diagram bar */
+
+.diagram-bar {
+  position: absolute;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  transform: translateX(-50%);
+  border-radius: 10px;
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-popover);
+}
+
+.diagram-swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 2px solid;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.diagram-swatch.on {
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.diagram-swatch:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.diagram-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: var(--color-border);
+}
+
+.diagram-bar .mini-btn[aria-pressed='true'] {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
