@@ -14,6 +14,9 @@ to keep. For a copy that keeps files on disk, run it locally (below).
 
 ## Features
 
+- **Getting around**: quick actions (Ctrl/Cmd+/ or Ctrl/Cmd+K) find and run any command and show its
+  shortcut; tools are grouped in the toolbar; a tip at the bottom of the canvas explains the tool in use;
+  properties sections fold away; "Sample file" opens a finished design to explore.
 - **Files**: create, rename, delete, import and export. Every change autosaves to a local SQLite file, and
   each file shows a thumbnail in the file list.
 - **Version history**: name a version of the file at any point. The file is also saved there on its own
@@ -127,6 +130,7 @@ elsewhere and `LOCALFRAME_API_PORT` to change the port. Back up a file with **Ex
 | Action | Keys |
 | --- | --- |
 | Move, Frame, Rectangle, Ellipse, Line, Pen, Text, Hand, Comment | V, F, R, O, L, P, T, H, C |
+| Quick actions | Ctrl/Cmd+/ or Ctrl/Cmd+K |
 | Section / Slice / Pencil | Shift+S / S / Shift+P |
 | Flatten / Outline stroke | Ctrl/Cmd+E / Ctrl/Cmd+Shift+O |
 | Outline mode | Ctrl/Cmd+Y |
