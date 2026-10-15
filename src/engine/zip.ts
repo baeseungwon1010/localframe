@@ -92,3 +92,64 @@ export function buildZip(entries: ZipEntry[]): Blob {
   end.setUint32(16, offset, true);
   return new Blob([...parts, ...central, new Uint8Array(end.buffer)] as BlobPart[], { type: 'application/zip' });
 }
+
+/** Limits for reading an archive someone hands us. */
+export const ZIP_READ_LIMITS = { entries: 2000, entryBytes: 200 * 1024 * 1024, totalBytes: 2 * 1024 * 1024 * 1024 };
+
+async function inflateRaw(data: Uint8Array, size: number): Promise<Uint8Array> {
+  if (typeof DecompressionStream === 'undefined') throw new Error('This browser cannot open compressed ZIP files.');
+  const stream = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  const out = new Uint8Array(await new Response(stream).arrayBuffer());
+  if (out.length !== size) throw new Error('A file in the archive is damaged.');
+  return out;
+}
+
+/**
+ * Reads a ZIP archive (stored or deflated entries, as written here or by common tools). Folders
+ * are skipped; sizes, counts and checksums are checked, so a damaged or oversized archive is
+ * refused instead of read.
+ */
+export async function readZip(bytes: Uint8Array, limits = ZIP_READ_LIMITS): Promise<ZipEntry[]> {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  // the end record sits in the last 22 bytes, plus up to 64 KB of comment
+  let end = -1;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 0xffff); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      end = i;
+      break;
+    }
+  }
+  if (end < 0) throw new Error("This isn't a ZIP file.");
+  const count = view.getUint16(end + 10, true);
+  let at = view.getUint32(end + 16, true);
+  if (count > limits.entries) throw new Error(`The archive holds more than ${limits.entries} files.`);
+  const dec = new TextDecoder();
+  const out: ZipEntry[] = [];
+  let total = 0;
+  for (let i = 0; i < count; i++) {
+    if (at + 46 > bytes.length || view.getUint32(at, true) !== 0x02014b50) throw new Error('The archive is damaged.');
+    const method = view.getUint16(at + 10, true);
+    const crc = view.getUint32(at + 16, true);
+    const packed = view.getUint32(at + 20, true);
+    const size = view.getUint32(at + 24, true);
+    const nameLen = view.getUint16(at + 28, true);
+    const extraLen = view.getUint16(at + 30, true);
+    const commentLen = view.getUint16(at + 32, true);
+    const local = view.getUint32(at + 42, true);
+    const name = dec.decode(bytes.subarray(at + 46, at + 46 + nameLen));
+    at += 46 + nameLen + extraLen + commentLen;
+    if (name.endsWith('/')) continue;
+    if (size > limits.entryBytes || (total += size) > limits.totalBytes) throw new Error('The archive is too large to open.');
+    if (local + 30 > bytes.length || view.getUint32(local, true) !== 0x04034b50) throw new Error('The archive is damaged.');
+    const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
+    if (start + packed > bytes.length) throw new Error('The archive is damaged.');
+    const raw = bytes.subarray(start, start + packed);
+    let data: Uint8Array;
+    if (method === 0) data = raw.slice();
+    else if (method === 8) data = await inflateRaw(raw, size);
+    else throw new Error('The archive uses a compression this app cannot read.');
+    if (data.length !== size || crc32(data) !== crc) throw new Error('A file in the archive is damaged.');
+    out.push({ name, data });
+  }
+  return out;
+}
