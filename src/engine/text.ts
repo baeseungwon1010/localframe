@@ -1,4 +1,4 @@
-import type { TextStyle } from '../../shared/schema.ts';
+import type { SceneNode, TextStyle } from '../../shared/schema.ts';
 
 export const FONT_FAMILIES = ['Inter', 'IBM Plex Sans', 'IBM Plex Serif', 'Space Grotesk', 'Noto Sans KR'] as const;
 export const FONT_WEIGHTS = [
@@ -337,4 +337,33 @@ export function lineOffset(align: TextStyle['align'], boxWidth: number, lineWidt
   if (align === 'center') return (boxWidth - lineWidth) / 2;
   if (align === 'right') return boxWidth - lineWidth;
   return 0;
+}
+
+/** A font face text uses, with the characters drawn in it (so the right subsets can load). */
+export type UsedFace = { family: string; weight: number; text: string };
+
+const MAX_SAMPLE = 4000;
+
+/**
+ * The bundled faces a file's text uses (text layers, their styled runs and text in shapes), with
+ * the characters each draws. Inter Regular to Bold is always included: new text starts in it.
+ */
+export function facesUsed(nodes: Iterable<SceneNode>): UsedFace[] {
+  const out = new Map<string, UsedFace>();
+  const add = (family: string, weight: number, text: string) => {
+    if (!(FONT_FAMILIES as readonly string[]).includes(family)) return;
+    const key = `${weight} ${family}`;
+    const face = out.get(key) ?? { family, weight, text: '' };
+    if (face.text.length < MAX_SAMPLE) face.text += text.slice(0, MAX_SAMPLE - face.text.length);
+    out.set(key, face);
+  };
+  for (const w of [400, 500, 600, 700]) add('Inter', w, 'Aa');
+  for (const n of nodes) {
+    for (const t of [n.text, n.label]) {
+      if (!t) continue;
+      add(t.fontFamily, t.fontWeight, t.characters);
+      for (const r of t.runs ?? []) add(r.fontFamily ?? t.fontFamily, r.fontWeight ?? t.fontWeight, t.characters.slice(r.start, r.end));
+    }
+  }
+  return [...out.values()];
 }

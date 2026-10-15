@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import type { Channel, Editor } from '../engine/editor.ts';
-import { FONT_FAMILIES } from '../engine/text.ts';
+import { FONT_FAMILIES, type UsedFace } from '../engine/text.ts';
 
 /** Re-renders when the editor emits on any of the given channels. */
 export function useEditorRev(editor: Editor, ...channels: Channel[]): number {
@@ -42,12 +42,19 @@ export function useTheme(): [Theme, (t: Theme) => void] {
   return [theme, setTheme];
 }
 
-/** Resolves once the bundled fonts are ready, so text is measured with the right glyphs. */
-export function loadFonts(): Promise<void> {
+/**
+ * Resolves once bundled fonts are ready, so text is measured with the right glyphs: the given
+ * faces (with the subsets their characters need), or every family and weight.
+ */
+export function loadFonts(faces?: UsedFace[]): Promise<void> {
   if (typeof document === 'undefined' || !document.fonts) return Promise.resolve();
   const loads: Promise<unknown>[] = [];
-  for (const family of FONT_FAMILIES) {
-    for (const weight of [400, 500, 600, 700]) loads.push(document.fonts.load(`${weight} 16px "${family}"`, 'Aa가'));
+  if (faces) {
+    for (const f of faces) loads.push(document.fonts.load(`${f.weight} 16px "${f.family}"`, `Aa${f.text}`));
+  } else {
+    for (const family of FONT_FAMILIES) {
+      for (const weight of [400, 500, 600, 700]) loads.push(document.fonts.load(`${weight} 16px "${family}"`, 'Aa가'));
+    }
   }
   loads.push(document.fonts.load('500 12px "IBM Plex Sans"'));
   return Promise.race([Promise.allSettled(loads).then(() => undefined), new Promise<void>((r) => setTimeout(r, 3000))]);

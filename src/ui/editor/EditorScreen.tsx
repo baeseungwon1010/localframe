@@ -5,6 +5,7 @@ import { ApiError, STORAGE_DOWN, api } from '../../api.ts';
 import { Editor } from '../../engine/editor.ts';
 import { onImageLoaded, readImageSize, retryFailedImages, useImagesOf } from '../../engine/images.ts';
 import { drawChildren } from '../../engine/render.ts';
+import { facesUsed } from '../../engine/text.ts';
 import { SyncQueue } from '../../engine/sync.ts';
 import { navigate } from '../App.tsx';
 import { type Theme, loadFonts, useDiagramMode, useEditorRev, useMediaQuery } from '../hooks.ts';
@@ -149,7 +150,10 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
     let queue: SyncQueue | null = null;
     (async () => {
       try {
-        const [{ file: meta, nodes }] = await Promise.all([api.getFile(fileId), loadFonts()]);
+        const { file: meta, nodes } = await api.getFile(fileId);
+        // wait only for the fonts this file draws with; the others load while you work
+        await loadFonts(facesUsed(nodes));
+        void loadFonts();
         if (cancelled) return;
         useImagesOf(fileId);
         editor.load(nodes, meta.pages, meta.styles, meta.variables);
