@@ -16,8 +16,8 @@ export function DiagramBar({ editor }: { editor: Editor }) {
   if (!b) return null;
   const tl = editor.toScreen({ x: b.x, y: b.y });
   const width = b.width * editor.viewport.zoom;
-  // above the quick connect "+"
-  const top = tl.y - 70;
+  // above the quick connect "+" (further out, with bigger swatches, for fingers)
+  const top = tl.y - (editor.coarse ? 104 : 70);
   if (top < 4) return null;
   const ids = nodes.map((n) => n.id);
   const current = nodes.map(diagramColorOf);

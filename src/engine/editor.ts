@@ -98,6 +98,8 @@ export type PointerInput = {
   shift: boolean;
   alt: boolean;
   mod: boolean;
+  /** From a finger rather than a mouse or pen: things are easier to hit. */
+  touch?: boolean;
 };
 
 export type KeyInput = { code: string; key: string; shift: boolean; alt: boolean; mod: boolean; repeat: boolean };
@@ -2388,7 +2390,8 @@ export class Editor {
     const w = b.width * this.viewport.zoom;
     const h = b.height * this.viewport.zoom;
     if (w < 24 || h < 24) return [];
-    const gap = 22;
+    // further out for fingers, so a "+" and a side handle never share a touch
+    const gap = this.coarse ? 36 : 22;
     return [
       { side: 'top', at: { x: a.x + w / 2, y: a.y - gap } },
       { side: 'right', at: { x: a.x + w + gap, y: a.y + h / 2 } },
@@ -2730,8 +2733,16 @@ export class Editor {
 
   // ------------------------------------------------------------- handles
 
+  /** The last press was a finger: handles, layers and "+" buttons take a bigger area. */
+  coarse = false;
+
+  /** How much bigger targets are for fingers. */
+  private get reach() {
+    return this.coarse ? 2.5 : 1;
+  }
+
   private hitTolerance() {
-    return 4 / this.viewport.zoom;
+    return (4 * this.reach) / this.viewport.zoom;
   }
 
   /** Screen positions of the selection handles. */
@@ -2765,7 +2776,7 @@ export class Editor {
   handleAt(sx: number, sy: number): SelectionHandle | null {
     const handles = this.handlePositions();
     for (const { handle, at } of handles) {
-      if (Math.hypot(at.x - sx, at.y - sy) <= HANDLE_HIT) return handle;
+      if (Math.hypot(at.x - sx, at.y - sy) <= HANDLE_HIT * this.reach) return handle;
     }
     // rotation zones just outside the corners (not for a single line)
     const sel = this.selectedNodes();
@@ -2776,7 +2787,7 @@ export class Editor {
         const at = apply(m, { x: HANDLE_POS[corner].x * w, y: HANDLE_POS[corner].y * h });
         const d = Math.hypot(sx - at.x, sy - at.y);
         const outward = (sx - at.x) * (at.x - center.x) + (sy - at.y) * (at.y - center.y) > 0;
-        if (d <= ROTATE_ZONE && d > HANDLE_HIT && outward) return { kind: 'rotate', handle: corner };
+        if (d <= ROTATE_ZONE * this.reach && d > HANDLE_HIT * this.reach && outward) return { kind: 'rotate', handle: corner };
       }
     }
     return null;
@@ -2801,6 +2812,10 @@ export class Editor {
   // ---------------------------------------------------------------- input
 
   pointerDown(e: PointerInput) {
+    if (this.coarse !== !!e.touch) {
+      this.coarse = !!e.touch;
+      this.emit('view');
+    }
     if (this.editingText) return;
     const p = this.toWorld(e.sx, e.sy);
     if (e.button === 1 || (e.button === 0 && (this.tool === 'hand' || this.spaceDown))) {
@@ -2867,7 +2882,7 @@ export class Editor {
     }
 
     // move tool
-    const spot = this.quickConnectSpots().find((s) => Math.hypot(s.at.x - e.sx, s.at.y - e.sy) <= 10);
+    const spot = this.quickConnectSpots().find((s) => Math.hypot(s.at.x - e.sx, s.at.y - e.sy) <= (this.coarse ? 16 : 10));
     // runs on release, so the new shape's text box keeps the focus
     if (spot) {
       this.interaction = { kind: 'quick-connect', side: spot.side };
