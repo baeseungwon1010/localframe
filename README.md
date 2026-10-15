@@ -210,6 +210,12 @@ Home Screen on an iPhone or iPad. Installed or not, a service worker keeps the a
 so it opens without a connection once it has been opened online. A new version waits until you choose
 Reload. Installed apps ask the browser to keep their storage, so files aren't cleared to free space.
 
+**Backup** on the file list saves every file in one ZIP (each one a `.localframe.json`, images included)
+and restores them from it; Import file also takes such a ZIP. The web version reminds you when files
+have changed and haven't been backed up for a while. In Chrome or Edge on a computer, backups can go to
+a folder you choose instead, refreshed whenever you come back to the file list (the one before is kept
+as `localframe-backup-previous.zip`).
+
 ## Development
 
 ```bash
