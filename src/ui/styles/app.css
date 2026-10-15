@@ -2677,3 +2677,16 @@ body {
   background: var(--color-surface-raised);
   box-shadow: var(--shadow-popover);
 }
+
+.diagram-sizes {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.diagram-bar .size-btn {
+  width: auto;
+  min-width: 24px;
+  padding: 0 4px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+}

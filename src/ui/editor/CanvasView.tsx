@@ -379,7 +379,7 @@ export function CanvasView(props: {
       )}
       {props.children}
       <ToolHint editor={editor} />
-      <DiagramBar editor={editor} />
+      <DiagramBar editor={editor} diagram={props.diagram} />
       {menu && <Menu label="Canvas actions" x={menu.x} y={menu.y} fromLongPress={menu.touch} items={menuItems} onClose={() => setMenu(null)} />}
       {props.notice && (
         <div className="toast" role="alert">

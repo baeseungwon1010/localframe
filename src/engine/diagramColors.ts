@@ -1,4 +1,5 @@
-import type { SceneNode } from '../../shared/schema.ts';
+import type { SceneNode, TextRun } from '../../shared/schema.ts';
+import { canHaveLabel, defaultLabel, heightForLabel } from './labels.ts';
 
 /**
  * Colours for diagrams, in the spirit of FigJam: soft fills with an outline of the same hue, and
@@ -48,4 +49,67 @@ export function diagramColorOf(n: SceneNode): DiagramColor | undefined {
   if (n.type === 'LINE') return DIAGRAM_COLORS.find((c) => c.stroke === hex(stroke));
   if (n.sticky) return DIAGRAM_COLORS.find((c) => c.sticky === hex(fill));
   return DIAGRAM_COLORS.find((c) => c.fill === hex(fill));
+}
+
+// ---------------------------------------------------------------- text on a board
+
+/** Text sizes offered on a board (like a whiteboard's S/M/L/XL). */
+export const TEXT_SIZES = [
+  { id: 'S', name: 'Small', size: 12 },
+  { id: 'M', name: 'Medium', size: 16 },
+  { id: 'L', name: 'Large', size: 24 },
+  { id: 'XL', name: 'Extra large', size: 36 },
+] as const;
+
+/** Text colours on a board: ink, then the palette's outline shades (dark enough to read). */
+export const TEXT_COLORS = [{ id: 'ink', name: 'Ink', color: DIAGRAM_TEXT }, ...DIAGRAM_COLORS.map((c) => ({ id: c.id, name: c.name, color: c.stroke }))];
+
+type RunKey = 'fontSize' | 'fontWeight' | 'color';
+
+/** A text style with one property set for all of it: styled stretches stop overriding it. */
+function withBase<T extends { runs?: TextRun[] }>(t: T, key: RunKey, extra: Partial<T>): T {
+  const runs = t.runs
+    ?.map((r) => {
+      const { [key]: _drop, ...rest } = r;
+      return rest as TextRun;
+    })
+    .filter((r) => Object.keys(r).some((k) => k !== 'start' && k !== 'end'));
+  return { ...t, ...extra, runs: runs?.length ? runs : undefined };
+}
+
+/** Text layers and text in shapes: what the board's size control changes. */
+export const hasBoardText = (n: SceneNode) => n.type === 'TEXT' || canHaveLabel(n);
+
+/** The size of a layer's text, if it is one size throughout. */
+export function textSizeOf(n: SceneNode): number | null {
+  const t = n.type === 'TEXT' ? n.text : (n.label ?? (canHaveLabel(n) ? defaultLabel(n) : undefined));
+  if (!t || t.runs?.some((r) => r.fontSize !== undefined)) return null;
+  return t.fontSize;
+}
+
+/** Sets the size of a text layer or of the text in a shape (which grows to fit it). */
+export function withTextSize(n: SceneNode, size: number): SceneNode {
+  if (n.type === 'TEXT' && n.text) return { ...n, text: withBase(n.text, 'fontSize', { fontSize: size }) };
+  if (!canHaveLabel(n)) return n;
+  const next = { ...n, label: withBase(n.label ?? defaultLabel(n), 'fontSize', { fontSize: size }) };
+  return next.type === 'LINE' ? next : { ...next, height: heightForLabel(next) };
+}
+
+export const isBold = (n: SceneNode) => n.type === 'TEXT' && !!n.text && n.text.fontWeight >= 600 && !n.text.runs?.some((r) => r.fontWeight !== undefined);
+
+export function withBold(n: SceneNode, on: boolean): SceneNode {
+  if (n.type !== 'TEXT' || !n.text) return n;
+  return { ...n, text: withBase(n.text, 'fontWeight', { fontWeight: on ? 700 : 400 }) };
+}
+
+export function withTextColor(n: SceneNode, color: string): SceneNode {
+  if (n.type !== 'TEXT' || !n.text) return n;
+  return { ...n, fills: [solid(color)], text: withBase(n.text, 'color', {}) };
+}
+
+/** The text colour of a layer, if it is one colour throughout. */
+export function textColorOf(n: SceneNode): string | null {
+  if (n.type !== 'TEXT' || n.text?.runs?.some((r) => r.color !== undefined)) return null;
+  const f = n.fills[0];
+  return f && (f.type === undefined || f.type === 'SOLID') ? f.color.toUpperCase() : null;
 }
