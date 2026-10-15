@@ -1,3 +1,4 @@
+import './canvasFonts.ts';
 import type { SceneNode } from '../../shared/schema.ts';
 import { api } from '../api.ts';
 import { SceneDoc } from '../engine/doc.ts';

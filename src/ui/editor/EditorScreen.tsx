@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import '../canvasFonts.ts';
 import type { FileMeta } from '../../../shared/schema.ts';
 import { ApiError, STORAGE_DOWN, api } from '../../api.ts';
 import { Editor } from '../../engine/editor.ts';

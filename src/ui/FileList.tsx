@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { sampleFile } from './sampleFile.ts';
 import { FilePlus2, MoreHorizontal, Upload } from 'lucide-react';
 import type { FileMeta } from '../../shared/schema.ts';
 import { ApiError, api, BROWSER_STORAGE, STORAGE_DOWN } from '../api.ts';
 import { navigate } from './App.tsx';
-import { ExportFileDialog } from './ExportFileDialog.tsx';
 import { IconButton, Menu, type MenuItem, ThemeToggle, relativeTime } from './components.tsx';
 import type { Theme } from './hooks.ts';
+
+// exporting draws every page, so it brings the canvas engine: loaded when first used
+const ExportFileDialog = lazy(() => import('./ExportFileDialog.tsx').then((m) => ({ default: m.ExportFileDialog })));
 
 const MAX_IMPORT_BYTES = 150 * 1024 * 1024;
 
@@ -206,7 +208,11 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
         )}
       </main>
       {menu && <Menu label="File actions" x={menu.x} y={menu.y} items={menuItems(menu.file)} onClose={() => setMenu(null)} />}
-      {exporting && <ExportFileDialog fileId={exporting.id} fileName={exporting.name} onClose={() => setExporting(null)} />}
+      {exporting && (
+        <Suspense fallback={null}>
+          <ExportFileDialog fileId={exporting.id} fileName={exporting.name} onClose={() => setExporting(null)} />
+        </Suspense>
+      )}
     </div>
   );
 }
