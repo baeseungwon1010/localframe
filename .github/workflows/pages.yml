@@ -35,9 +35,11 @@ jobs:
       - run: npm test
       - run: npm run build:web
         env:
-          LOCALFRAME_BASE: /${{ github.event.repository.name }}/
+          # served under /<repo>/ on github.io; with a custom domain set the repository variables
+          # PAGES_BASE to / and SITE_URL to https://your.domain/ (see README, "Custom domain")
+          LOCALFRAME_BASE: ${{ vars.PAGES_BASE || format('/{0}/', github.event.repository.name) }}
           # absolute address for link previews (og:image and og:url)
-          LOCALFRAME_SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+          LOCALFRAME_SITE_URL: ${{ vars.SITE_URL || format('https://{0}.github.io/{1}/', github.repository_owner, github.event.repository.name) }}
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
