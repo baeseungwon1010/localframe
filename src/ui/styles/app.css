@@ -2288,3 +2288,20 @@ button:disabled {
   color: var(--color-text-muted);
   font-size: var(--text-xs);
 }
+
+.files-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.btn.ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.btn.ghost:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}

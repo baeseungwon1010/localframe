@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { sampleFile } from './sampleFile.ts';
 import { FilePlus2, MoreHorizontal, Upload } from 'lucide-react';
 import type { FileMeta } from '../../shared/schema.ts';
 import { ApiError, api, BROWSER_STORAGE, STORAGE_DOWN } from '../api.ts';
@@ -38,6 +39,15 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
       navigate(`#/file/${f.id}`);
     } catch (e) {
       setError(e instanceof ApiError ? `Couldn't create a file: ${e.message}` : STORAGE_DOWN);
+    }
+  };
+
+  const openSample = async () => {
+    try {
+      const meta = await api.importFile(sampleFile());
+      navigate(`#/file/${meta.id}`);
+    } catch (e) {
+      setError(e instanceof ApiError ? `Couldn't open the sample: ${e.message}` : STORAGE_DOWN);
     }
   };
 
@@ -97,6 +107,9 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
           <span>localframe</span>
         </div>
         <div className="files-actions">
+          <button type="button" className="btn ghost" onClick={openSample}>
+            Sample file
+          </button>
           <button type="button" className="btn secondary" onClick={() => importRef.current?.click()}>
             <Upload size={14} strokeWidth={1.75} /> Import file
           </button>
@@ -134,10 +147,15 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
         )}
         {files && files.length === 0 && (
           <div className="files-empty">
-            <p>No files yet. Create one to start drawing.</p>
-            <button type="button" className="btn primary" onClick={create}>
-              <FilePlus2 size={14} strokeWidth={1.75} /> New file
-            </button>
+            <p>No files yet. Start a blank file, or open a finished sample to see how it's built.</p>
+            <div className="files-empty-actions">
+              <button type="button" className="btn primary" onClick={create}>
+                <FilePlus2 size={14} strokeWidth={1.75} /> New file
+              </button>
+              <button type="button" className="btn secondary" onClick={openSample}>
+                Open a sample file
+              </button>
+            </div>
           </div>
         )}
         {files && files.length > 0 && (

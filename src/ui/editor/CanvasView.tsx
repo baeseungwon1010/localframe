@@ -300,7 +300,9 @@ export function CanvasView(props: {
       {editor.editingText && <TextEditor key={editor.editingText} editor={editor} id={editor.editingText} />}
       {editor.showRulers && <Rulers editor={editor} canvasRect={rect} />}
       {editor.doc.size === 0 && editor.tool === 'move' && (
-        <p className="canvas-hint">Press F to draw a frame, R for a rectangle, L for a line or T for text.</p>
+        <p className="canvas-hint">
+          Press F to draw a frame, R for a rectangle, L for a line or T for text. {MOD}/ finds any command.
+        </p>
       )}
       {props.children}
       <ToolHint editor={editor} />
