@@ -1,4 +1,5 @@
-import { Bold, CornerDownRight, MoveRight } from 'lucide-react';
+import { useState } from 'react';
+import { AlignCenterVertical, Bold, CornerDownRight, MoveRight, Network } from 'lucide-react';
 import type { SceneNode } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
 import {
@@ -15,6 +16,7 @@ import {
   withTextColor,
   withTextSize,
 } from '../../engine/diagramColors.ts';
+import { Menu } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
 
 /** S / M / L / XL for the text of the selection; marked when all of it is that size. */
@@ -87,6 +89,7 @@ function TextBar({ editor, nodes, left, top }: { editor: Editor; nodes: SceneNod
  */
 export function DiagramBar({ editor, diagram = false }: { editor: Editor; diagram?: boolean }) {
   useEditorRev(editor, 'selection', 'doc', 'view');
+  const [arrange, setArrange] = useState<{ x: number; y: number } | null>(null);
   if (editor.tool !== 'move' || editor.isInteracting || editor.editingLabel || editor.editingText) return null;
   const nodes = editor.selectedNodes();
   const textOnly = diagram && nodes.length > 0 && nodes.every((n) => n.type === 'TEXT');
@@ -124,6 +127,47 @@ export function DiagramBar({ editor, diagram = false }: { editor: Editor; diagra
           <span className="diagram-sep" aria-hidden="true" />
           <SizePicker editor={editor} nodes={nodes.filter((n) => n.type !== 'LINE')} />
         </>
+      )}
+      {(nodes.length > 1 || editor.canTidyTree()) && <span className="diagram-sep" aria-hidden="true" />}
+      {editor.canTidyTree() && (
+        <button type="button" className="mini-btn" aria-label="Tidy up as a tree" title="Tidy up as a tree (mind map)" onClick={() => editor.tidyTree()}>
+          <Network size={14} strokeWidth={1.75} />
+        </button>
+      )}
+      {nodes.length > 1 && (
+        <button
+          type="button"
+          className="mini-btn"
+          aria-label="Align and space"
+          aria-haspopup="menu"
+          title="Align and space"
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setArrange({ x: r.left, y: r.bottom + 6 });
+          }}
+        >
+          <AlignCenterVertical size={14} strokeWidth={1.75} />
+        </button>
+      )}
+      {arrange && (
+        <Menu
+          label="Align and space"
+          x={arrange.x}
+          y={arrange.y}
+          onClose={() => setArrange(null)}
+          items={[
+            { label: 'Align left', onSelect: () => editor.align('left') },
+            { label: 'Align centres', onSelect: () => editor.align('hcenter') },
+            { label: 'Align right', onSelect: () => editor.align('right') },
+            'separator',
+            { label: 'Align top', onSelect: () => editor.align('top') },
+            { label: 'Align middles', onSelect: () => editor.align('vcenter') },
+            { label: 'Align bottom', onSelect: () => editor.align('bottom') },
+            'separator',
+            { label: 'Space evenly across', disabled: nodes.length < 3, onSelect: () => editor.distribute('x') },
+            { label: 'Space evenly down', disabled: nodes.length < 3, onSelect: () => editor.distribute('y') },
+          ]}
+        />
       )}
       {lines.length > 0 && (
         <>

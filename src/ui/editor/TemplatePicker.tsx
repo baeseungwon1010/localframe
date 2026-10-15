@@ -1,8 +1,8 @@
-import { Lightbulb, ListChecks, Workflow } from 'lucide-react';
+import { Lightbulb, ListChecks, Network, Workflow } from 'lucide-react';
 import type { Editor } from '../../engine/editor.ts';
 import { TEMPLATES, type TemplateKind } from '../../engine/templates.ts';
 
-const ICONS: Record<TemplateKind, typeof Workflow> = { flowchart: Workflow, brainstorm: Lightbulb, retro: ListChecks };
+const ICONS: Record<TemplateKind, typeof Workflow> = { flowchart: Workflow, brainstorm: Lightbulb, retro: ListChecks, mindmap: Network };
 
 /** On an empty board in diagram mode: start from a template, or from nothing. */
 export function TemplatePicker({ editor }: { editor: Editor }) {

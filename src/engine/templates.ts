@@ -1,6 +1,6 @@
 /** Starting boards for diagram mode, as plain data the editor turns into layers. */
 
-export type TemplateKind = 'flowchart' | 'brainstorm' | 'retro';
+export type TemplateKind = 'flowchart' | 'brainstorm' | 'retro' | 'mindmap';
 
 type Side = 'top' | 'right' | 'bottom' | 'left';
 
@@ -25,6 +25,7 @@ export const TEMPLATES: { kind: TemplateKind; name: string; description: string 
   { kind: 'flowchart', name: 'Flowchart', description: 'Steps, a decision and where each answer leads' },
   { kind: 'brainstorm', name: 'Brainstorm', description: 'A topic in the middle with prompts around it' },
   { kind: 'retro', name: 'Retrospective', description: 'What went well, what to improve, what to do next' },
+  { kind: 'mindmap', name: 'Mind map', description: 'One idea branching out; Tidy up keeps it neat' },
 ];
 
 function flowchart(): TemplateItem[] {
@@ -100,8 +101,30 @@ function retro(): TemplateItem[] {
   ]);
 }
 
+/** Laid out roughly here; the editor tidies it as a tree once it is on the board. */
+function mindmap(): TemplateItem[] {
+  const branches: [string, string, string[]][] = [
+    ['Goals', 'blue', ['Must have', 'Nice to have']],
+    ['People', 'pink', ['Who decides']],
+    ['Timeline', 'orange', ['First step', 'Deadline']],
+    ['Risks', 'red', []],
+  ];
+  const items: TemplateItem[] = [{ key: 'root', kind: 'ellipse', x: 0, y: 160, w: 180, h: 80, text: 'Main idea', color: 'violet' }];
+  let y = 0;
+  branches.forEach(([name, color, leaves], i) => {
+    items.push({ key: `b${i}`, kind: 'box', x: 260, y, w: 140, h: 56, text: name, color });
+    items.push({ key: `rb${i}`, kind: 'arrow', from: 'root', fromSide: 'right', to: `b${i}`, toSide: 'left' });
+    leaves.forEach((leaf, j) => {
+      items.push({ key: `l${i}-${j}`, kind: 'box', x: 480, y: y + j * 70, w: 140, h: 48, text: leaf, color: 'grey' });
+      items.push({ key: `bl${i}-${j}`, kind: 'arrow', from: `b${i}`, fromSide: 'right', to: `l${i}-${j}`, toSide: 'left' });
+    });
+    y += Math.max(1, leaves.length) * 70 + 20;
+  });
+  return items;
+}
+
 export function templateItems(kind: TemplateKind): TemplateItem[] {
-  return kind === 'flowchart' ? flowchart() : kind === 'brainstorm' ? brainstorm() : retro();
+  return kind === 'flowchart' ? flowchart() : kind === 'brainstorm' ? brainstorm() : kind === 'mindmap' ? mindmap() : retro();
 }
 
 /** The area a template covers, from its own origin. */

@@ -2534,12 +2534,101 @@ export class Editor {
         ids.set(it.key, n.id);
         if (!parentId) top.push(n.id);
       }
+      if (kind === 'mindmap') this.tidyTree(ids.get('root'));
     });
     this.setTool('move');
     this.setSelection(top);
     const b = this.selectionBounds();
     if (b && (b.width * this.viewport.zoom > this.viewSize.width - 80 || b.height * this.viewport.zoom > this.viewSize.height - 160)) this.zoomToRect(b, 1, 96);
     this.emit('view', 'selection');
+  }
+
+  /** The shapes a diagram item's outgoing connectors lead to, as a tree (each shape once). */
+  private treeFrom(rootId: string): Map<string, { child: string; line: string }[]> | null {
+    const root = this.doc.get(rootId);
+    if (!root || root.type === 'LINE') return null;
+    const page = this.doc.pageOf(rootId);
+    const out = new Map<string, { id: string; child: string }[]>();
+    for (const n of this.doc.all()) {
+      if (n.type !== 'LINE' || !n.startBind || !n.endBind || this.doc.pageOf(n.id) !== page) continue;
+      const list = out.get(n.startBind.nodeId) ?? [];
+      list.push({ id: n.id, child: n.endBind.nodeId });
+      out.set(n.startBind.nodeId, list);
+    }
+    const tree = new Map<string, { child: string; line: string }[]>();
+    const seen = new Set([rootId]);
+    const queue = [rootId];
+    while (queue.length && seen.size < 2000) {
+      const id = queue.shift()!;
+      const kids: { child: string; line: string }[] = [];
+      for (const e of out.get(id) ?? []) {
+        const c = this.doc.get(e.child);
+        // only shapes beside the root (same parent) can be laid out with it
+        if (!c || seen.has(c.id) || c.parentId !== root.parentId || c.type === 'LINE') continue;
+        seen.add(c.id);
+        kids.push({ child: c.id, line: e.id });
+        queue.push(c.id);
+      }
+      tree.set(id, kids);
+    }
+    return tree.get(rootId)?.length ? tree : null;
+  }
+
+  /** Can the selection be tidied as a tree (one shape with connectors leading on from it)? */
+  canTidyTree(): boolean {
+    return this.selection.length === 1 && this.treeFrom(this.selection[0]) !== null;
+  }
+
+  /**
+   * Mind map tidy-up: the shapes the selected one leads to (through its connectors, and theirs)
+   * are laid out as a tree to its right, each level in a column, each branch centred on its own
+   * children. The root stays where it is; connectors run from right sides to left sides.
+   */
+  tidyTree(rootId = this.selection[0]): boolean {
+    const tree = rootId ? this.treeFrom(rootId) : null;
+    if (!tree) return false;
+    const GAP_X = 80;
+    const GAP_Y = 24;
+    const node = (id: string) => this.doc.get(id)!;
+    const span = new Map<string, number>();
+    const spanOf = (id: string): number => {
+      const kids = tree.get(id) ?? [];
+      const sum = kids.reduce((t, k) => t + spanOf(k.child), 0) + GAP_Y * Math.max(0, kids.length - 1);
+      const v = Math.max(node(id).height, sum);
+      span.set(id, v);
+      return v;
+    };
+    spanOf(rootId);
+    // each level's column starts after the widest shape of the level before
+    const depth = new Map<string, number>([[rootId, 0]]);
+    const widest: number[] = [node(rootId).width];
+    for (const [id, kids] of tree)
+      for (const k of kids) {
+        const d = depth.get(id)! + 1;
+        depth.set(k.child, d);
+        widest[d] = Math.max(widest[d] ?? 0, node(k.child).width);
+      }
+    const root = node(rootId);
+    const colX = [root.x];
+    for (let d = 1; d < widest.length; d++) colX[d] = colX[d - 1] + widest[d - 1] + GAP_X;
+    this.transact(() => {
+      const place = (id: string, top: number) => {
+        const n = node(id);
+        if (id !== rootId) this.put({ ...n, x: round2(colX[depth.get(id)!]), y: round2(top + (span.get(id)! - n.height) / 2) });
+        const kids = tree.get(id) ?? [];
+        const total = kids.reduce((t, k) => t + span.get(k.child)!, 0) + GAP_Y * Math.max(0, kids.length - 1);
+        let y = top + (span.get(id)! - total) / 2;
+        for (const k of kids) {
+          const line = this.doc.get(k.line);
+          if (line) this.put({ ...line, elbow: true, startBind: { nodeId: id, anchor: 'right' }, endBind: { nodeId: k.child, anchor: 'left' } });
+          place(k.child, y);
+          y += span.get(k.child)! + GAP_Y;
+        }
+      };
+      place(rootId, root.y + root.height / 2 - span.get(rootId)! / 2);
+    });
+    this.emit('view');
+    return true;
   }
 
   /** Starts typing in a shape or on a connector (double-click or Enter), like FigJam. */

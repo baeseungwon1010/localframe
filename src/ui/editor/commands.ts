@@ -101,6 +101,8 @@ export function buildCommands(editor: Editor, screen: ScreenActions): Command[] 
     cmd('Arrange', 'hide', 'Show or hide', () => editor.toggleVisible(), needSel, `${MOD}${SHIFT}H`, 'visible'),
     cmd('Arrange', 'lock', 'Lock or unlock', () => editor.toggleLocked(), needSel, `${MOD}${SHIFT}L`),
 
+    cmd('Shapes', 'tidy-tree', 'Tidy up as a tree', () => editor.tidyTree(), () =>
+      editor.canTidyTree() ? null : 'Select a shape with connectors leading from it', undefined, 'mind map layout arrange diagram'),
     cmd('Shapes', 'flatten', 'Flatten', () => editor.flattenSelection(), needSel, `${MOD}E`, 'vector convert'),
     cmd('Shapes', 'outline-stroke', 'Outline stroke', () => editor.outlineStroke(), needSel, `${MOD}${SHIFT}O`, 'expand convert'),
     cmd('Shapes', 'mask', 'Use as mask', () => editor.useAsMask(), needSel, `${MOD}${ALT}M`, 'clip'),
