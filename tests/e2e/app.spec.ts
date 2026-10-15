@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 /** The web build as an installable app; the local build has no service worker, so this skips there. */
-test('installable app: manifest, icons, and it opens offline with its files', async ({ page, context }) => {
+test('installable app: manifest, icons, and it opens offline with its files', async ({ page, context, browserName }) => {
   await page.goto('/');
   const manifest = await page.request.get('manifest.webmanifest');
   test.skip(!manifest.ok(), 'only the web build is an installable app');
@@ -22,6 +22,19 @@ test('installable app: manifest, icons, and it opens offline with its files', as
   await page.keyboard.press('Escape');
   await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
   const fileUrl = page.url();
+
+  // Playwright's offline switch in WebKit fails navigations before the service worker sees them,
+  // so there the check is that everything the app needs is stored, which is what offline uses
+  if (browserName === 'webkit') {
+    const missing = await page.evaluate(async () => {
+      const urls = [location.origin + '/', ...performance.getEntriesByType('resource').map((e) => e.name).filter((u) => /\/assets\/.*\.(js|css)$/.test(u))];
+      const out: string[] = [];
+      for (const u of urls) if (!(await caches.match(u))) out.push(u);
+      return out;
+    });
+    expect(missing).toEqual([]);
+    return;
+  }
 
   // no network: the app, the file list and the editor all still open, with the file
   await context.setOffline(true);
