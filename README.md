@@ -199,6 +199,10 @@ browser (IndexedDB) instead of talking to the local server, checks every change 
 and limits as the server, and carries its own Content Security Policy. A push to `main` deploys it to
 GitHub Pages (`.github/workflows/pages.yml`).
 
+The file list loads first and on its own: the editor, file export and the fonts layers use arrive the
+first time a file is opened (fetched in the background while the list is idle), and the editor waits
+only for the fonts the file actually uses.
+
 ## Development
 
 ```bash
