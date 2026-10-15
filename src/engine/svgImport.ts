@@ -191,7 +191,7 @@ function parseXml(text: string): El {
 
 // ------------------------------------------------------------------ numbers, lengths, transforms
 
-const NUM_RE = /[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/g;
+const NUM_RE = /[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/g;
 
 function numbers(s: string | undefined): number[] {
   if (!s) return [];
@@ -208,14 +208,15 @@ const UNITS: Record<string, number> = { px: 1, pt: 4 / 3, pc: 16, mm: 96 / 25.4,
 /** A length in px; `ref` resolves percentages. Null when missing or not a length. */
 function length(s: string | undefined, ref = 100): number | null {
   if (s === undefined) return null;
-  const m = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*(%|[a-zA-Z]+)?\s*$/.exec(s);
+  if (s.length > 64) return null; // no real length is longer
+  const m = /^\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*(%|[a-zA-Z]+)?\s*$/.exec(s);
   if (!m) return null;
   const v = Number(m[1]);
   if (!Number.isFinite(v)) return null;
   const unit = (m[2] ?? '').toLowerCase();
   if (unit === '') return v;
   if (unit === '%') return (v / 100) * ref;
-  const k = UNITS[unit];
+  const k = Object.hasOwn(UNITS, unit) ? UNITS[unit] : undefined;
   return k === undefined ? null : v * k;
 }
 
@@ -224,7 +225,7 @@ const firstOf = (s: string | undefined) => (s === undefined ? undefined : s.trim
 export function parseTransform(s: string | undefined): Mat {
   let m: Mat = IDENTITY;
   if (!s) return m;
-  for (const part of s.matchAll(/(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g)) {
+  for (const part of s.matchAll(/(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^()]*)\)/g)) {
     const a = numbers(part[2]);
     let t: Mat | null = null;
     switch (part[1]) {
@@ -559,7 +560,8 @@ export function arcToCubics(p1: Point, rx: number, ry: number, phiDeg: number, l
   if (p1.x === p2.x && p1.y === p2.y) return [];
   rx = Math.abs(rx);
   ry = Math.abs(ry);
-  if (rx === 0 || ry === 0) return null;
+  // zero (or vanishing) radii mean a straight line; enormous ones are one too, as far as can be seen
+  if (!(rx > 1e-9 && ry > 1e-9) || rx > 1e7 || ry > 1e7) return null;
   const phi = (phiDeg * Math.PI) / 180;
   const cos = Math.cos(phi);
   const sin = Math.sin(phi);
@@ -601,7 +603,8 @@ export function arcToCubics(p1: Point, rx: number, ry: number, phiDeg: number, l
     const d2 = deriv(t2);
     out.push([{ x: a.x + k * d1.x, y: a.y + k * d1.y }, { x: e.x - k * d2.x, y: e.y - k * d2.y }, e]);
   }
-  return out;
+  // radii so large or small that the maths overflows: draw it straight, as SVG does for zero radii
+  return out.every((c) => c.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))) ? out : null;
 }
 
 const ARGS: Record<string, number> = { m: 2, l: 2, h: 1, v: 1, c: 6, s: 4, q: 4, t: 2, a: 7 };
@@ -779,6 +782,20 @@ type Ctx = {
   items: number;
   points: number;
   useStack: El[];
+  /** Rule matches and text pieces looked at: refused past MAX_WORK, whatever the element count. */
+  work: number;
+  /** Characters of text kept so far (all text layers together). */
+  chars: number;
+};
+
+/** Text an import may bring in, all layers together. */
+const MAX_TEXT_CHARS = 1_000_000;
+
+/** How much matching and text gathering an import may do (a few seconds at most). */
+const MAX_WORK = 3_000_000;
+const spend = (ctx: Ctx, n: number) => {
+  ctx.work += n;
+  if (ctx.work > MAX_WORK) throw new Error(TOO_LARGE);
 };
 
 const SKIP = new Set([
@@ -809,7 +826,11 @@ function computeStyle(el: El, parent: Style, ctx: Ctx): Style {
     if (id) keys.push(`#${id}`);
     for (const c of (el.attrs.get('class') ?? '').split(/\s+/)) if (c) keys.push(`.${c}`);
     const found = new Set<Rule>();
-    for (const k of keys) for (const r of ctx.rules.get(k) ?? []) if (!found.has(r) && matchRule(el, r.chain)) found.add(r);
+    for (const k of keys) {
+      const rules = ctx.rules.get(k) ?? [];
+      spend(ctx, rules.length);
+      for (const r of rules) if (!found.has(r) && matchRule(el, r.chain)) found.add(r);
+    }
     for (const r of [...found].sort((a, b) => a.spec - b.spec || a.idx - b.idx)) Object.assign(declared, r.decls);
   }
   const inline = el.attrs.get('style');
@@ -925,7 +946,9 @@ function textOf(el: El, style: Style, ctx: Ctx): string {
   const lines = [''];
   const visit = (node: El, st: Style, d: number) => {
     for (const c of node.children) {
+      spend(ctx, 1);
       if (typeof c === 'string') {
+        spend(ctx, Math.ceil(c.length / 64));
         lines[lines.length - 1] += c;
         continue;
       }
@@ -938,11 +961,14 @@ function textOf(el: El, style: Style, ctx: Ctx): string {
     }
   };
   visit(el, style, 0);
-  return lines
+  const text = lines
     .map((l) => l.replace(/\s+/g, ' ').trim())
     .filter(Boolean)
     .join('\n')
     .slice(0, 100_000);
+  ctx.chars += text.length;
+  if (ctx.chars > MAX_TEXT_CHARS) throw new Error(TOO_LARGE);
+  return text;
 }
 
 const FAMILY_BY_LOWER = new Map(FONT_FAMILIES.map((f) => [f.toLowerCase(), f as string]));
@@ -1373,7 +1399,7 @@ export function importSvg(doc: SceneDoc, text: string, opts: { parentId: string 
   if ((w !== null && w > 1e6) || (h !== null && h > 1e6)) throw new Error(TOO_LARGE);
   const vw = vb ? vb[2] : (w ?? 300);
   const vh = vb ? vb[3] : (h ?? 150);
-  const ctx: Ctx = { ids, rules: byKey, vw, vh, items: 0, points: 0, useStack: [] };
+  const ctx: Ctx = { ids, rules: byKey, vw, vh, items: 0, points: 0, useStack: [], work: 0, chars: 0 };
   const m = vb && w !== null && h !== null ? viewBoxMatrix(vb, w, h, root.attrs.get('preserveAspectRatio')) : IDENTITY;
   const rootStyle = computeStyle(root, {}, ctx);
   const items = walkChildren(root, m, rootStyle, ctx, 1);
