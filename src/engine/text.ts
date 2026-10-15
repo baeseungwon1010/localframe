@@ -357,12 +357,18 @@ export function facesUsed(nodes: Iterable<SceneNode>): UsedFace[] {
     if (face.text.length < MAX_SAMPLE) face.text += text.slice(0, MAX_SAMPLE - face.text.length);
     out.set(key, face);
   };
+  // Korean in another family is drawn by the fallback in fontStack: its subsets must load too
+  const HANGUL = /[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/;
+  const addText = (family: string, weight: number, text: string) => {
+    add(family, weight, text);
+    if (family !== 'Noto Sans KR' && HANGUL.test(text)) add('Noto Sans KR', weight, text);
+  };
   for (const w of [400, 500, 600, 700]) add('Inter', w, 'Aa');
   for (const n of nodes) {
     for (const t of [n.text, n.label]) {
       if (!t) continue;
-      add(t.fontFamily, t.fontWeight, t.characters);
-      for (const r of t.runs ?? []) add(r.fontFamily ?? t.fontFamily, r.fontWeight ?? t.fontWeight, t.characters.slice(r.start, r.end));
+      addText(t.fontFamily, t.fontWeight, t.characters);
+      for (const r of t.runs ?? []) addText(r.fontFamily ?? t.fontFamily, r.fontWeight ?? t.fontWeight, t.characters.slice(r.start, r.end));
     }
   }
   return [...out.values()];
