@@ -203,6 +203,11 @@ The file list loads first and on its own: the editor, file export and the fonts 
 first time a file is opened (fetched in the background while the list is idle), and the editor waits
 only for the fonts the file actually uses.
 
+The web version is also an installable app (PWA): "Install app" in Chrome or Edge, or Share, then Add to
+Home Screen on an iPhone or iPad. Installed or not, a service worker keeps the app's files on the device,
+so it opens without a connection once it has been opened online. A new version waits until you choose
+Reload. Installed apps ask the browser to keep their storage, so files aren't cleared to free space.
+
 ## Development
 
 ```bash
