@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { downloadBlob } from './download.ts';
+import { t } from './i18n.ts';
 import { FILE_EXPORT_FORMATS, type FileExportFormat, exportWholeFile, printWholeFile } from './fileExport.ts';
 
 /** Picks a format and exports the whole file. */
@@ -29,14 +30,14 @@ export function ExportFileDialog(props: { fileId: string; fileName: string; onCl
       await props.beforeExport?.();
       if (format === 'print') {
         await printWholeFile(props.fileId);
-        setMessage({ text: 'Sent to the print dialog', error: false });
+        setMessage({ text: t('Sent to the print dialog'), error: false });
         return;
       }
       const { blob, filename } = await exportWholeFile(props.fileId, format, scale);
       downloadBlob(blob, filename);
-      setMessage({ text: `Exported ${filename}`, error: false });
+      setMessage({ text: t('Exported {filename}', { filename }), error: false });
     } catch (e) {
-      setMessage({ text: `Couldn't export: ${e instanceof Error ? e.message : 'unknown error'}`, error: true });
+      setMessage({ text: t("Couldn't export: {reason}", { reason: e instanceof Error ? t(e.message) : t('unknown error') }), error: true });
     } finally {
       setBusy(false);
     }
@@ -47,23 +48,23 @@ export function ExportFileDialog(props: { fileId: string; fileName: string; onCl
   return (
     <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && !busy && props.onClose()}>
       <div ref={ref} className="dialog" role="dialog" aria-modal="true" aria-labelledby="export-title">
-        <h2 id="export-title">Export “{props.fileName}”</h2>
+        <h2 id="export-title">{t('Export “{name}”', { name: props.fileName })}</h2>
         <fieldset className="format-list">
-          <legend>Format</legend>
+          <legend>{t('Format')}</legend>
           {FILE_EXPORT_FORMATS.map((f) => (
             <label key={f.value} className={`format-option ${format === f.value ? 'on' : ''}`}>
               <input type="radio" name="format" value={f.value} checked={format === f.value} onChange={() => setFormat(f.value)} />
               <span>
-                <span className="format-label">{f.label}</span>
-                <span className="format-detail">{f.detail}</span>
+                <span className="format-label">{t(f.label)}</span>
+                <span className="format-detail">{t(f.detail)}</span>
               </span>
             </label>
           ))}
         </fieldset>
         {raster && (
           <label className="dialog-row">
-            Resolution
-            <select className="select-field" value={scale} onChange={(e) => setScale(Number(e.target.value))} aria-label="Resolution">
+            {t('Resolution')}
+            <select className="select-field" value={scale} onChange={(e) => setScale(Number(e.target.value))} aria-label={t('Resolution')}>
               {[1, 2, 3, 4].map((s) => (
                 <option key={s} value={s}>
                   {s}x
@@ -79,10 +80,10 @@ export function ExportFileDialog(props: { fileId: string; fileName: string; onCl
         )}
         <div className="dialog-actions">
           <button type="button" className="btn secondary" onClick={props.onClose} disabled={busy}>
-            Close
+            {t('Close')}
           </button>
           <button type="button" className="btn primary" onClick={run} disabled={busy}>
-            {busy ? 'Exporting…' : 'Export'}
+            {busy ? t('Exporting…') : t('Export')}
           </button>
         </div>
       </div>

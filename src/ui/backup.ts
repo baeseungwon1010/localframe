@@ -1,6 +1,7 @@
 import { ApiError, api } from '../api.ts';
 import { buildZip, readZip, uniqueName } from '../engine/zip.ts';
 import { safeFileName } from './download.ts';
+import { t } from './i18n.ts';
 import { type DirHandle, markBackedUp, settings } from './backupStatus.ts';
 
 /**
@@ -45,7 +46,7 @@ export async function restoreBackup(file: Blob): Promise<{ restored: string[]; f
       const meta = await api.importFile(JSON.parse(dec.decode(e.data)));
       restored.push(meta.name);
     } catch (err) {
-      failed.push(`${e.name}${err instanceof ApiError ? ` (${err.message})` : ''}`);
+      failed.push(`${e.name}${err instanceof ApiError ? ` (${t(err.message)})` : ''}`);
     }
   }
   if (!restored.length && !failed.length) throw new Error("That ZIP file isn't a localframe backup.");

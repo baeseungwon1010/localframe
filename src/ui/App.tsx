@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { FileList } from './FileList.tsx';
 import { useTheme } from './hooks.ts';
+import { t, useLang } from './i18n.ts';
 import { useAppUpdate } from './pwa.ts';
 import { SharedScreen } from './SharedScreen.tsx';
 import { SHARE_ROUTE } from './shareLink.ts';
@@ -36,9 +37,9 @@ function UpdateBanner() {
   if (!update.ready) return null;
   return (
     <div className="update-banner" role="status">
-      <span>A new version of localframe is ready.</span>
+      <span>{t('A new version of localframe is ready.')}</span>
       <button type="button" className="btn primary small" onClick={update.apply}>
-        Reload
+        {t('Reload')}
       </button>
     </div>
   );
@@ -47,6 +48,8 @@ function UpdateBanner() {
 export function App() {
   const [route, setRoute] = useState<Route>(parseHash);
   const [theme, setTheme] = useTheme();
+  // a language switch draws the screens again
+  useLang();
 
   useEffect(prefetchEditor, []);
 
@@ -59,7 +62,7 @@ export function App() {
   return (
     <>
       {route.name === 'file' ? (
-        <Suspense fallback={<div className="center-message" aria-busy="true">Opening file…</div>}>
+        <Suspense fallback={<div className="center-message" aria-busy="true">{t('Opening file…')}</div>}>
           <EditorScreen key={route.id} fileId={route.id} theme={theme} setTheme={setTheme} />
         </Suspense>
       ) : route.name === 'shared' ? (

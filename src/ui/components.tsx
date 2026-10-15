@@ -1,7 +1,8 @@
 import { createPortal } from 'react-dom';
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Monitor, Moon, Sun } from 'lucide-react';
+import { Languages, Monitor, Moon, Sun } from 'lucide-react';
 import type { Theme } from './hooks.ts';
+import { LANGUAGES, getLang, setLang, t, useLang } from './i18n.ts';
 
 export function IconButton(props: {
   label: string;
@@ -32,11 +33,42 @@ export function IconButton(props: {
 
 export function ThemeToggle({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme) => void }) {
   const next: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' };
-  const label = { system: 'Theme: match system', light: 'Theme: light', dark: 'Theme: dark' }[theme];
+  const label = { system: t('Theme: match system'), light: t('Theme: light'), dark: t('Theme: dark') }[theme];
   return (
     <IconButton label={label} onClick={() => setTheme(next[theme])}>
       {theme === 'system' ? <Monitor size={16} strokeWidth={1.5} /> : theme === 'light' ? <Sun size={16} strokeWidth={1.5} /> : <Moon size={16} strokeWidth={1.5} />}
     </IconButton>
+  );
+}
+
+/** Picks the interface language; the menu names each language in itself. */
+export function LanguageMenu() {
+  const lang = useLang();
+  const [open, setOpen] = useState<{ x: number; y: number } | null>(null);
+  const anchor = useRef<HTMLSpanElement>(null);
+  return (
+    <>
+      <span ref={anchor} className="more-anchor">
+        <IconButton
+          label={t('Language')}
+          onClick={() => {
+            const r = anchor.current!.getBoundingClientRect();
+            setOpen({ x: r.right - 160, y: r.bottom + 4 });
+          }}
+        >
+          <Languages size={16} strokeWidth={1.5} />
+        </IconButton>
+      </span>
+      {open && (
+        <Menu
+          label={t('Language')}
+          x={open.x}
+          y={open.y}
+          onClose={() => setOpen(null)}
+          items={LANGUAGES.map((l) => ({ label: `${lang === l.lang ? '✓ ' : ''}${l.name}`, onSelect: () => setLang(l.lang) }))}
+        />
+      )}
+    </>
   );
 }
 
@@ -133,14 +165,17 @@ export const MOD = isMac ? '⌘' : 'Ctrl+';
 export const ALT = isMac ? '⌥' : 'Alt+';
 export const SHIFT = isMac ? '⇧' : 'Shift+';
 
+/** Dates in the interface language (the browser's own format in English). */
+export const dateLocale = () => (getLang() === 'ko' ? 'ko-KR' : undefined);
+
 export function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const min = Math.round(diff / 60000);
-  if (min < 1) return 'Edited just now';
-  if (min < 60) return `Edited ${min} min ago`;
+  if (min < 1) return t('Edited just now');
+  if (min < 60) return t('Edited {n} min ago', { n: min });
   const h = Math.round(min / 60);
-  if (h < 24) return `Edited ${h} h ago`;
+  if (h < 24) return t('Edited {n} h ago', { n: h });
   const d = Math.round(h / 24);
-  if (d < 30) return `Edited ${d} d ago`;
-  return `Edited ${new Date(iso).toLocaleDateString()}`;
+  if (d < 30) return t('Edited {n} d ago', { n: d });
+  return t('Edited {date}', { date: new Date(iso).toLocaleDateString(dateLocale()) });
 }

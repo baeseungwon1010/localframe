@@ -4,7 +4,7 @@ import { ArchiveRestore, Download, FilePlus2, MoreHorizontal, Upload, X } from '
 import type { FileMeta } from '../../shared/schema.ts';
 import { ApiError, api, BROWSER_STORAGE, STORAGE_DOWN } from '../api.ts';
 import { navigate } from './App.tsx';
-import { IconButton, Menu, type MenuItem, ThemeToggle, relativeTime } from './components.tsx';
+import { IconButton, LanguageMenu, Menu, type MenuItem, ThemeToggle, dateLocale, relativeTime } from './components.tsx';
 import { type Theme, rememberDiagramMode } from './hooks.ts';
 import { useInstall } from './pwa.ts';
 import { backupDue, backupFolder, canBackUpToFolder, forgetBackupFolder, lastBackup, markBackedUp, snoozeBackupReminder } from './backupStatus.ts';
@@ -12,11 +12,17 @@ import { backupDue, backupFolder, canBackUpToFolder, forgetBackupFolder, lastBac
 /** Backing up and restoring (ZIP writing and reading) load when first used. */
 const backupWork = () => import('./backup.ts');
 import { downloadBlob } from './download.ts';
+import { t } from './i18n.ts';
 
 // exporting draws every page, so it brings the canvas engine: loaded when first used
 const ExportFileDialog = lazy(() => import('./ExportFileDialog.tsx').then((m) => ({ default: m.ExportFileDialog })));
 
 const MAX_IMPORT_BYTES = 150 * 1024 * 1024;
+
+const backedUpToFolder = (n: number, folder: string) =>
+  n === 1
+    ? t('Backed up 1 file to the “{folder}” folder.', { folder })
+    : t('Backed up {n} files to the “{folder}” folder.', { n, folder });
 
 export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme) => void }) {
   const app = useInstall();
@@ -38,12 +44,12 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
       setFiles(await api.listFiles());
       setError(null);
     } catch {
-      setError(STORAGE_DOWN);
+      setError(t(STORAGE_DOWN));
     }
   }, []);
 
   useEffect(() => {
-    document.title = 'Files · localframe';
+    document.title = t('Files · localframe');
     void refresh();
   }, [refresh]);
 
@@ -61,7 +67,7 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
       const { backUpToFolder, folderReady } = await backupWork();
       if (cancelled || !(await folderReady(dir))) return;
       const n = await backUpToFolder(dir, false).catch(() => null);
-      if (!cancelled && n !== null) setNotice(`Backed up ${n} ${n === 1 ? 'file' : 'files'} to the “${dir.name}” folder.`);
+      if (!cancelled && n !== null) setNotice(backedUpToFolder(n, dir.name));
     })();
     return () => {
       cancelled = true;
@@ -74,17 +80,21 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
       const { backUpToFolder, makeBackup } = await backupWork();
       if (folder) {
         const n = await backUpToFolder(folder, true);
-        if (n === null) return setError(`Couldn't write to the “${folder.name}” folder: permission was not given.`);
-        setNotice(`Backed up ${n} ${n === 1 ? 'file' : 'files'} to the “${folder.name}” folder.`);
+        if (n === null) return setError(t("Couldn't write to the “{folder}” folder: permission was not given.", { folder: folder.name }));
+        setNotice(backedUpToFolder(n, folder.name));
       } else {
         const { blob, filename, count, createdAt } = await makeBackup();
         downloadBlob(blob, filename);
         markBackedUp(createdAt);
-        setNotice(`Backed up ${count} ${count === 1 ? 'file' : 'files'} to ${filename}. Keep it somewhere safe, such as a cloud drive.`);
+        setNotice(
+          count === 1
+            ? t('Backed up 1 file to {filename}. Keep it somewhere safe, such as a cloud drive.', { filename })
+            : t('Backed up {n} files to {filename}. Keep it somewhere safe, such as a cloud drive.', { n: count, filename }),
+        );
       }
       setError(null);
     } catch (e) {
-      setError(`Couldn't back up: ${e instanceof Error ? e.message : 'storage is not available'}`);
+      setError(t("Couldn't back up: {reason}", { reason: e instanceof Error ? t(e.message) : t('storage is not available') }));
     } finally {
       setBusy(false);
     }
@@ -96,13 +106,20 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
     try {
       const { restoreBackup } = await backupWork();
       const { restored, failed } = await restoreBackup(file);
+      const vars = { n: restored.length, failed: failed.length, list: failed.join(', ') };
       setNotice(
-        `Restored ${restored.length} ${restored.length === 1 ? 'file' : 'files'}${failed.length ? `; ${failed.length} could not be read: ${failed.join(', ')}` : ''}.`,
+        failed.length
+          ? restored.length === 1
+            ? t('Restored 1 file; {failed} could not be read: {list}.', vars)
+            : t('Restored {n} files; {failed} could not be read: {list}.', vars)
+          : restored.length === 1
+            ? t('Restored 1 file.')
+            : t('Restored {n} files.', vars),
       );
       setError(null);
       await refresh();
     } catch (e) {
-      setError(`Couldn't restore: ${e instanceof Error ? e.message : 'unknown problem'}`);
+      setError(t("Couldn't restore: {reason}", { reason: e instanceof Error ? t(e.message) : t('unknown problem') }));
     } finally {
       setBusy(false);
       if (restoreRef.current) restoreRef.current.value = '';
@@ -111,21 +128,21 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
   };
 
   const backupItems: MenuItem[] = [
-    { label: folder ? `Back up to “${folder.name}” now` : 'Back up all files', onSelect: () => void backUpNow() },
-    { label: 'Restore from a backup…', onSelect: () => restoreRef.current?.click() },
+    { label: folder ? t('Back up to “{folder}” now', { folder: folder.name }) : t('Back up all files'), onSelect: () => void backUpNow() },
+    { label: t('Restore from a backup…'), onSelect: () => restoreRef.current?.click() },
     ...(canBackUpToFolder()
       ? (['separator',
           folder
             ? {
-                label: 'Stop backing up to this folder',
+                label: t('Stop backing up to this folder'),
                 onSelect: async () => {
                   await forgetBackupFolder();
                   setFolder(null);
-                  setNotice('Backups go to your downloads again.');
+                  setNotice(t('Backups go to your downloads again.'));
                 },
               }
             : {
-                label: 'Back up to a folder automatically…',
+                label: t('Back up to a folder automatically…'),
                 onSelect: async () => {
                   try {
                     const { backUpToFolder, chooseBackupFolder } = await backupWork();
@@ -133,7 +150,12 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
                     if (!dir) return;
                     setFolder(dir);
                     const n = await backUpToFolder(dir, true);
-                    if (n !== null) setNotice(`Backed up ${n} ${n === 1 ? 'file' : 'files'} to “${dir.name}”. It updates whenever you come back to this list.`);
+                    if (n !== null)
+                      setNotice(
+                        n === 1
+                          ? t('Backed up 1 file to “{folder}”. It updates whenever you come back to this list.', { folder: dir.name })
+                          : t('Backed up {n} files to “{folder}”. It updates whenever you come back to this list.', { n, folder: dir.name }),
+                      );
                   } catch {
                     /* picker closed */
                   }
@@ -146,11 +168,11 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
   /** A new file; a board opens in diagram mode, with its templates. */
   const create = async (board = false) => {
     try {
-      const f = await api.createFile(board ? 'Untitled board' : 'Untitled');
+      const f = await api.createFile(board ? t('Untitled board') : t('Untitled'));
       if (board) rememberDiagramMode(f.id);
       navigate(`#/file/${f.id}`);
     } catch (e) {
-      setError(e instanceof ApiError ? `Couldn't create a file: ${e.message}` : STORAGE_DOWN);
+      setError(e instanceof ApiError ? t("Couldn't create a file: {reason}", { reason: t(e.message) }) : t(STORAGE_DOWN));
     }
   };
 
@@ -159,24 +181,24 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
       const meta = await api.importFile(sampleFile());
       navigate(`#/file/${meta.id}`);
     } catch (e) {
-      setError(e instanceof ApiError ? `Couldn't open the sample: ${e.message}` : STORAGE_DOWN);
+      setError(e instanceof ApiError ? t("Couldn't open the sample: {reason}", { reason: t(e.message) }) : t(STORAGE_DOWN));
     }
   };
 
   const onImport = async (file: File | undefined) => {
     if (!file) return;
     if (/\.zip$/i.test(file.name)) return onRestore(file);
-    if (file.size > MAX_IMPORT_BYTES) return setError('That file is larger than 150 MB, which is the import limit.');
+    if (file.size > MAX_IMPORT_BYTES) return setError(t('That file is larger than 150 MB, which is the import limit.'));
     try {
       const data = JSON.parse(await file.text());
       const meta = await api.importFile(data);
-      setNotice(`Imported “${meta.name}”.`);
+      setNotice(t('Imported “{name}”.', { name: meta.name }));
       await refresh();
     } catch (e) {
       setError(
         e instanceof ApiError
-          ? `Couldn't import that file: ${e.message}`
-          : "Couldn't import that file: it isn't a localframe export (.localframe.json).",
+          ? t("Couldn't import that file: {reason}", { reason: t(e.message) })
+          : t("Couldn't import that file: it isn't a localframe export (.localframe.json)."),
       );
     } finally {
       if (importRef.current) importRef.current.value = '';
@@ -184,17 +206,17 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
   };
 
   const menuItems = (f: FileMeta): MenuItem[] => [
-    { label: 'Open', onSelect: () => navigate(`#/file/${f.id}`) },
-    { label: 'Rename', onSelect: () => setRenaming(f.id) },
-    { label: 'Export file…', onSelect: () => setExporting(f) },
+    { label: t('Open'), onSelect: () => navigate(`#/file/${f.id}`) },
+    { label: t('Rename'), onSelect: () => setRenaming(f.id) },
+    { label: t('Export file…'), onSelect: () => setExporting(f) },
     'separator',
     {
-      label: 'Delete file',
+      label: t('Delete file'),
       danger: true,
       onSelect: async () => {
-        if (!window.confirm(`Delete “${f.name}”? This can't be undone.`)) return;
+        if (!window.confirm(t("Delete “{name}”? This can't be undone.", { name: f.name }))) return;
         await api.deleteFile(f.id);
-        setNotice(`Deleted “${f.name}”.`);
+        setNotice(t('Deleted “{name}”.', { name: f.name }));
         await refresh();
       },
     },
@@ -207,6 +229,8 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
     await api.updateFile(f.id, { name: trimmed });
     await refresh();
   };
+
+  const [iosHintBefore, iosHintAfter = ''] = t('Use localframe like an app, offline too: tap Share, then {button}.').split('{button}');
 
   return (
     <div className="files-screen">
@@ -221,18 +245,18 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
         </div>
         <div className="files-actions">
           <button type="button" className="btn ghost" onClick={openSample}>
-            Sample file
+            {t('Sample file')}
           </button>
-          <button type="button" className="btn secondary" aria-label="Import file" onClick={() => importRef.current?.click()}>
-            <Upload size={14} strokeWidth={1.75} /> <span className="btn-label">Import file</span>
+          <button type="button" className="btn secondary" aria-label={t('Import file')} onClick={() => importRef.current?.click()}>
+            <Upload size={14} strokeWidth={1.75} /> <span className="btn-label">{t('Import file')}</span>
           </button>
-          <button type="button" className="btn primary" aria-label="New file" onClick={() => void create()}>
-            <FilePlus2 size={14} strokeWidth={1.75} /> <span className="btn-label">New file</span>
+          <button type="button" className="btn primary" aria-label={t('New file')} onClick={() => void create()}>
+            <FilePlus2 size={14} strokeWidth={1.75} /> <span className="btn-label">{t('New file')}</span>
           </button>
           <button
             type="button"
             className="btn secondary"
-            aria-label="Backup"
+            aria-label={t('Backup')}
             aria-haspopup="menu"
             disabled={busy}
             onClick={(e) => {
@@ -240,13 +264,14 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
               setBackupMenu({ x: r.right - 260, y: r.bottom + 4 });
             }}
           >
-            <ArchiveRestore size={14} strokeWidth={1.75} /> <span className="btn-label">Backup</span>
+            <ArchiveRestore size={14} strokeWidth={1.75} /> <span className="btn-label">{t('Backup')}</span>
           </button>
           {app.canInstall && (
-            <button type="button" className="btn secondary" aria-label="Install app" onClick={app.install}>
-              <Download size={14} strokeWidth={1.75} /> <span className="btn-label">Install app</span>
+            <button type="button" className="btn secondary" aria-label={t('Install app')} onClick={app.install}>
+              <Download size={14} strokeWidth={1.75} /> <span className="btn-label">{t('Install app')}</span>
             </button>
           )}
+          <LanguageMenu />
           <ThemeToggle theme={theme} setTheme={setTheme} />
           <input
             ref={importRef}
@@ -260,32 +285,33 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
             type="file"
             accept=".zip,application/zip"
             hidden
-            aria-label="Backup to restore"
+            aria-label={t('Backup to restore')}
             onChange={(e) => onRestore(e.target.files?.[0])}
           />
         </div>
       </header>
 
       <main className="files-main">
-        <h1>Files</h1>
+        <h1>{t('Files')}</h1>
         {/* the welcome says this on a first visit */}
         {BROWSER_STORAGE && !!files?.length && (
           <p className="browser-note">
-            Files are saved in this browser only, on this device. Nothing is uploaded. Clearing site data removes them, so use
-            Export to keep a copy.
+            {t(
+              'Files are saved in this browser only, on this device. Nothing is uploaded. Clearing site data removes them, so use Export to keep a copy.',
+            )}
           </p>
         )}
         {BROWSER_STORAGE && files && !reminderHidden && backupDue(files) && (
           <div className="install-hint backup-reminder" role="note">
             <p>
               {lastBackup()
-                ? `Your last backup was on ${lastBackup()!.toLocaleDateString()}, and files have changed since.`
-                : 'These files exist only in this browser.'}{' '}
-              A backup keeps them safe if site data is cleared or you change devices.
+                ? t('Your last backup was on {date}, and files have changed since.', { date: lastBackup()!.toLocaleDateString(dateLocale()) })
+                : t('These files exist only in this browser.')}{' '}
+              {t('A backup keeps them safe if site data is cleared or you change devices.')}
             </p>
             <span className="reminder-actions">
               <button type="button" className="btn primary small" disabled={busy} onClick={() => void backUpNow()}>
-                Back up now
+                {t('Back up now')}
               </button>
               <button
                 type="button"
@@ -295,7 +321,7 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
                   setReminderHidden(true);
                 }}
               >
-                Later
+                {t('Later')}
               </button>
             </span>
           </div>
@@ -303,10 +329,11 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
         {app.iosHint && (
           <div className="install-hint" role="note">
             <p>
-              Use localframe like an app, offline too: tap Share, then <strong>Add to Home Screen</strong>. Safari may clear
-              files of sites you don't visit for a while; on the Home Screen they are kept.
+              {iosHintBefore}
+              <strong>{t('Add to Home Screen')}</strong>
+              {iosHintAfter} {t("Safari may clear files of sites you don't visit for a while; on the Home Screen they are kept.")}
             </p>
-            <IconButton label="Dismiss" onClick={app.dismissHint}>
+            <IconButton label={t('Dismiss')} onClick={app.dismissHint}>
               <X size={14} strokeWidth={1.75} />
             </IconButton>
           </div>
@@ -324,25 +351,25 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
         {files && files.length === 0 && (
           <section className="welcome" aria-labelledby="welcome-title">
             <div className="welcome-text">
-              <h2 id="welcome-title">Design screens and draw diagrams, right in your browser</h2>
+              <h2 id="welcome-title">{t('Design screens and draw diagrams, right in your browser')}</h2>
               <ul>
                 <li>
                   {BROWSER_STORAGE
-                    ? 'Nothing to sign up for. Your files are saved in this browser, on this device.'
-                    : 'Nothing to sign up for. Your files are saved on this computer.'}
+                    ? t('Nothing to sign up for. Your files are saved in this browser, on this device.')
+                    : t('Nothing to sign up for. Your files are saved on this computer.')}
                 </li>
-                {BROWSER_STORAGE && <li>Once it has loaded it works offline, and it installs like an app.</li>}
-                <li>Share a board as an image, a PDF{BROWSER_STORAGE ? ' or a link' : ''}.</li>
+                {BROWSER_STORAGE && <li>{t('Once it has loaded it works offline, and it installs like an app.')}</li>}
+                <li>{BROWSER_STORAGE ? t('Share a board as an image, a PDF or a link.') : t('Share a board as an image, a PDF.')}</li>
               </ul>
               <div className="files-empty-actions">
                 <button type="button" className="btn primary" onClick={() => void create()}>
-                  <FilePlus2 size={14} strokeWidth={1.75} /> New file
+                  <FilePlus2 size={14} strokeWidth={1.75} /> {t('New file')}
                 </button>
                 <button type="button" className="btn secondary" onClick={() => void create(true)}>
-                  Start a board
+                  {t('Start a board')}
                 </button>
                 <button type="button" className="btn ghost" onClick={openSample}>
-                  Open a sample file
+                  {t('Open a sample file')}
                 </button>
               </div>
             </div>
@@ -353,7 +380,7 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
           <ul className="file-grid">
             {files.map((f) => (
               <li key={f.id} className="file-card">
-                <a className="file-link" href={`#/file/${f.id}`} aria-label={`Open ${f.name}`}>
+                <a className="file-link" href={`#/file/${f.id}`} aria-label={t('Open {name}', { name: f.name })}>
                   <div className="file-thumb" style={{ background: f.background }}>
                     {f.hasThumbnail && <img src={api.thumbnailUrl(f.id, f.updatedAt)} alt="" loading="lazy" />}
                   </div>
@@ -364,7 +391,7 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
                       <input
                         className="inline-input"
                         defaultValue={f.name}
-                        aria-label="File name"
+                        aria-label={t('File name')}
                         autoFocus
                         maxLength={200}
                         onBlur={(e) => commitRename(f, e.target.value)}
@@ -381,7 +408,7 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
                     <span className="file-time">{relativeTime(f.updatedAt)}</span>
                   </div>
                   <IconButton
-                    label={`More actions for ${f.name}`}
+                    label={t('More actions for {name}', { name: f.name })}
                     onClick={() => {
                       const el = document.activeElement as HTMLElement;
                       const r = el.getBoundingClientRect();
@@ -396,8 +423,8 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
           </ul>
         )}
       </main>
-      {menu && <Menu label="File actions" x={menu.x} y={menu.y} items={menuItems(menu.file)} onClose={() => setMenu(null)} />}
-      {backupMenu && <Menu label="Backup" x={backupMenu.x} y={backupMenu.y} items={backupItems} onClose={() => setBackupMenu(null)} />}
+      {menu && <Menu label={t('File actions')} x={menu.x} y={menu.y} items={menuItems(menu.file)} onClose={() => setMenu(null)} />}
+      {backupMenu && <Menu label={t('Backup')} x={backupMenu.x} y={backupMenu.y} items={backupItems} onClose={() => setBackupMenu(null)} />}
       {exporting && (
         <Suspense fallback={null}>
           <ExportFileDialog fileId={exporting.id} fileName={exporting.name} onClose={() => setExporting(null)} />
