@@ -12,10 +12,13 @@ describe('loading only what a file needs', () => {
     const faces = facesUsed(ed.doc.all());
     const key = (f: { family: string; weight: number }) => `${f.weight} ${f.family}`;
     expect(faces.map(key)).toEqual(expect.arrayContaining(['400 Inter', '500 Inter', '600 Inter', '700 Inter', '700 Noto Sans KR', '700 Space Grotesk']));
-    expect(faces.find((f) => f.family === 'Noto Sans KR')!.text).toBe('시작');
+    expect(faces.find((f) => f.family === 'Noto Sans KR')!.text).toContain('시작');
     expect(faces.find((f) => f.family === 'Space Grotesk')!.text).toBe('시');
     // labels use Inter 500: their text is there for the right subsets
     expect(faces.find((f) => key(f) === '500 Inter')!.text).toContain('Did it work?');
+    // Korean in Inter is drawn by the Korean fallback: its subsets load too
+    ed.doc.set({ ...first, label: { ...first.label!, fontFamily: 'Inter', fontWeight: 500, characters: '확인', runs: undefined } });
+    expect(facesUsed(ed.doc.all()).find((f) => key(f) === '500 Noto Sans KR')?.text).toContain('확인');
     // fonts that aren't bundled are left to the browser
     ed.doc.set({ ...first, label: { ...first.label!, fontFamily: 'Comic Sans MS', runs: undefined } });
     expect(facesUsed(ed.doc.all()).some((f) => f.family === 'Comic Sans MS')).toBe(false);

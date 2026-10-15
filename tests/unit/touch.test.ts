@@ -22,6 +22,18 @@ describe('touch gestures', () => {
     expect(t.down(3, { x: 0, y: 0 })).toBe('editor');
   });
 
+  it('a finger put back down mid-pinch measures from the new pair: the view does not jump', () => {
+    const t = new TouchGestures();
+    t.down(1, { x: 100, y: 100 });
+    t.down(2, { x: 200, y: 100 });
+    t.up(1, { x: 100, y: 100 }, 0);
+    t.move(2, { x: 400, y: 400 });
+    expect(t.down(3, { x: 420, y: 400 })).toBe('ignore');
+    const step = t.move(3, { x: 421, y: 400 });
+    expect(step).toMatchObject({ dx: 0.5, dy: 0 });
+    expect(typeof step === 'object' && step.zoom).toBeCloseTo(21 / 20, 5);
+  });
+
   it('two quick taps in one place are a double tap; slow or far apart ones are not', () => {
     const t = new TouchGestures();
     t.down(1, { x: 10, y: 10 });
@@ -48,6 +60,19 @@ describe('touch gestures', () => {
     t.move(2, { x: 30, y: 10 });
     expect(t.longPress(2)).toBe(false);
     expect(t.up(2, { x: 30, y: 10 }, 0)).toBe('editor');
+  });
+
+  it('a stamp lands on release, so a press that becomes a pinch leaves none', () => {
+    const ed = new Editor();
+    ed.setViewSize(1000, 800);
+    ed.setTool('stamp');
+    ed.pointerDown(ptr(300, 300, true));
+    ed.cancelInteraction();
+    expect(ed.doc.size).toBe(0);
+    expect(ed.canUndo).toBe(false);
+    ed.pointerDown(ptr(300, 300, true));
+    ed.pointerUp(ptr(300, 300, true));
+    expect(ed.doc.size).toBe(1);
   });
 
   it('fingers reach handles and "+" buttons from further away than a mouse', () => {
