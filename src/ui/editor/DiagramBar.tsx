@@ -18,24 +18,25 @@ import {
 } from '../../engine/diagramColors.ts';
 import { Menu } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
+import { t } from '../i18n.ts';
 
 /** S / M / L / XL for the text of the selection; marked when all of it is that size. */
 function SizePicker({ editor, nodes }: { editor: Editor; nodes: SceneNode[] }) {
   const sizes = nodes.map(textSizeOf);
   const same = sizes.every((v) => v !== null && v === sizes[0]) ? sizes[0] : null;
   return (
-    <span className="diagram-sizes" role="group" aria-label="Text size">
-      {TEXT_SIZES.map((t) => (
+    <span className="diagram-sizes" role="group" aria-label={t('Text size')}>
+      {TEXT_SIZES.map((sz) => (
         <button
-          key={t.id}
+          key={sz.id}
           type="button"
           className="mini-btn size-btn"
-          aria-label={`${t.name} text`}
-          aria-pressed={same === t.size}
-          title={`${t.name} text (${t.size})`}
-          onClick={() => editor.updateNodes(nodes.map((n) => n.id), (n) => withTextSize(n, t.size))}
+          aria-label={t(`${sz.name} text`)}
+          aria-pressed={same === sz.size}
+          title={`${t(`${sz.name} text`)} (${sz.size})`}
+          onClick={() => editor.updateNodes(nodes.map((n) => n.id), (n) => withTextSize(n, sz.size))}
         >
-          {t.id}
+          {sz.id}
         </button>
       ))}
     </span>
@@ -52,15 +53,15 @@ function TextBar({ editor, nodes, left, top }: { editor: Editor; nodes: SceneNod
   const color = colors.every((c) => c !== null && c === colors[0]) ? colors[0] : null;
   const bold = nodes.every(isBold);
   return (
-    <div className="diagram-bar" role="toolbar" aria-label="Text style" style={{ left, top }}>
+    <div className="diagram-bar" role="toolbar" aria-label={t('Text style')} style={{ left, top }}>
       <SizePicker editor={editor} nodes={nodes} />
       <span className="diagram-sep" aria-hidden="true" />
       <button
         type="button"
         className="mini-btn"
-        aria-label="Bold"
+        aria-label={t('Bold')}
         aria-pressed={bold}
-        title="Bold"
+        title={t('Bold')}
         onClick={() => editor.updateNodes(ids, (n) => withBold(n, !bold))}
       >
         <Bold size={14} strokeWidth={2} />
@@ -71,9 +72,9 @@ function TextBar({ editor, nodes, left, top }: { editor: Editor; nodes: SceneNod
           key={c.id}
           type="button"
           className={`diagram-swatch ${color === c.color.toUpperCase() ? 'on' : ''}`}
-          aria-label={`${c.name} text`}
+          aria-label={t(`${c.name} text`)}
           aria-pressed={color === c.color.toUpperCase()}
-          title={c.name}
+          title={t(c.name)}
           style={{ background: c.color, borderColor: c.color }}
           onClick={() => editor.updateNodes(ids, (n) => withTextColor(n, c.color))}
         />
@@ -109,15 +110,15 @@ export function DiagramBar({ editor, diagram = false }: { editor: Editor; diagra
   const lines = nodes.filter((n) => n.type === 'LINE');
   const onlyLines = lines.length === nodes.length;
   return (
-    <div className="diagram-bar" role="toolbar" aria-label="Diagram colours" style={{ left: tl.x + width / 2, top }}>
+    <div className="diagram-bar" role="toolbar" aria-label={t('Diagram colours')} style={{ left: tl.x + width / 2, top }}>
       {DIAGRAM_COLORS.map((c) => (
         <button
           key={c.id}
           type="button"
           className={`diagram-swatch ${same === c.id ? 'on' : ''}`}
-          aria-label={c.name}
+          aria-label={t(c.name)}
           aria-pressed={same === c.id}
-          title={c.name}
+          title={t(c.name)}
           style={{ background: onlyLines ? c.stroke : c.fill, borderColor: c.stroke }}
           onClick={() => editor.updateNodes(ids, (n) => withDiagramColor(n, c))}
         />
@@ -130,7 +131,7 @@ export function DiagramBar({ editor, diagram = false }: { editor: Editor; diagra
       )}
       {(nodes.length > 1 || editor.canTidyTree()) && <span className="diagram-sep" aria-hidden="true" />}
       {editor.canTidyTree() && (
-        <button type="button" className="mini-btn" aria-label="Tidy up as a tree" title="Tidy up as a tree (mind map)" onClick={() => editor.tidyTree()}>
+        <button type="button" className="mini-btn" aria-label={t('Tidy up as a tree')} title={t('Tidy up as a tree (mind map)')} onClick={() => editor.tidyTree()}>
           <Network size={14} strokeWidth={1.75} />
         </button>
       )}
@@ -138,9 +139,9 @@ export function DiagramBar({ editor, diagram = false }: { editor: Editor; diagra
         <button
           type="button"
           className="mini-btn"
-          aria-label="Align and space"
+          aria-label={t('Align and space')}
           aria-haspopup="menu"
-          title="Align and space"
+          title={t('Align and space')}
           onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
             setArrange({ x: r.left, y: r.bottom + 6 });
@@ -151,21 +152,21 @@ export function DiagramBar({ editor, diagram = false }: { editor: Editor; diagra
       )}
       {arrange && (
         <Menu
-          label="Align and space"
+          label={t('Align and space')}
           x={arrange.x}
           y={arrange.y}
           onClose={() => setArrange(null)}
           items={[
-            { label: 'Align left', onSelect: () => editor.align('left') },
-            { label: 'Align centres', onSelect: () => editor.align('hcenter') },
-            { label: 'Align right', onSelect: () => editor.align('right') },
+            { label: t('Align left'), onSelect: () => editor.align('left') },
+            { label: t('Align centres'), onSelect: () => editor.align('hcenter') },
+            { label: t('Align right'), onSelect: () => editor.align('right') },
             'separator',
-            { label: 'Align top', onSelect: () => editor.align('top') },
-            { label: 'Align middles', onSelect: () => editor.align('vcenter') },
-            { label: 'Align bottom', onSelect: () => editor.align('bottom') },
+            { label: t('Align top'), onSelect: () => editor.align('top') },
+            { label: t('Align middles'), onSelect: () => editor.align('vcenter') },
+            { label: t('Align bottom'), onSelect: () => editor.align('bottom') },
             'separator',
-            { label: 'Space evenly across', disabled: nodes.length < 3, onSelect: () => editor.distribute('x') },
-            { label: 'Space evenly down', disabled: nodes.length < 3, onSelect: () => editor.distribute('y') },
+            { label: t('Space evenly across'), disabled: nodes.length < 3, onSelect: () => editor.distribute('x') },
+            { label: t('Space evenly down'), disabled: nodes.length < 3, onSelect: () => editor.distribute('y') },
           ]}
         />
       )}
@@ -175,9 +176,9 @@ export function DiagramBar({ editor, diagram = false }: { editor: Editor; diagra
           <button
             type="button"
             className="mini-btn"
-            aria-label="Elbow connector"
+            aria-label={t('Elbow connector')}
             aria-pressed={lines.every((n) => n.elbow)}
-            title="Elbow connector"
+            title={t('Elbow connector')}
             onClick={() => {
               const on = !lines.every((n) => n.elbow);
               editor.updateNodes(lines.map((n) => n.id), (n) => ({ ...n, elbow: on || undefined }));
@@ -188,9 +189,9 @@ export function DiagramBar({ editor, diagram = false }: { editor: Editor; diagra
           <button
             type="button"
             className="mini-btn"
-            aria-label="Arrowhead"
+            aria-label={t('Arrowhead')}
             aria-pressed={lines.every((n) => n.arrowEnd)}
-            title="Arrowhead"
+            title={t('Arrowhead')}
             onClick={() => {
               const on = !lines.every((n) => n.arrowEnd);
               editor.updateNodes(lines.map((n) => n.id), (n) => ({ ...n, arrowEnd: on }));

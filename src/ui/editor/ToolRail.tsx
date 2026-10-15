@@ -4,8 +4,9 @@ import type { Editor, Tool } from '../../engine/editor.ts';
 import { STAMPS } from '../../engine/templates.ts';
 import { IconButton, MOD, Menu, SHIFT } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
+import { t } from '../i18n.ts';
 
-/** A tool button; stamps share the stamp tool and differ by `stamp`, drawn as their glyph. */
+/** A tool button (labels in English, translated where shown); stamps share the stamp tool and differ by `stamp`, drawn as their glyph. */
 type Entry = { tool: Tool | 'image'; label: string; key: string; Icon: typeof Square; stamp?: string };
 type Group = { id: string; label: string; entries: Entry[] };
 
@@ -127,7 +128,7 @@ export function ToolRail({ editor, dock = false }: { editor: Editor; dock?: bool
   };
 
   return (
-    <div className={dock ? 'tooldock' : 'toolrail'} role="toolbar" aria-orientation={dock ? 'horizontal' : 'vertical'} aria-label="Tools" onKeyDown={onKeyDown}>
+    <div className={dock ? 'tooldock' : 'toolrail'} role="toolbar" aria-orientation={dock ? 'horizontal' : 'vertical'} aria-label={t('Tools')} onKeyDown={onKeyDown}>
       {groups.map((g) => {
         // the group shows the active tool if it is one of its own, else the one last used from it
         const isActive = (e: Entry) => e.tool === editor.tool && (!e.stamp || e.stamp === editor.stamp);
@@ -154,7 +155,7 @@ export function ToolRail({ editor, dock = false }: { editor: Editor; dock?: bool
               }}
             >
               <IconButton
-                label={current.label}
+                label={t(current.label)}
                 shortcut={current.key || undefined}
                 tooltipSide={dock ? 'top' : 'right'}
                 className="tool-btn"
@@ -168,7 +169,7 @@ export function ToolRail({ editor, dock = false }: { editor: Editor; dock?: bool
               <button
                 type="button"
                 className="tool-more"
-                aria-label={`More ${g.label.toLowerCase()}`}
+                aria-label={t('More {name}', { name: t(g.label).toLowerCase() })}
                 aria-haspopup="menu"
                 tabIndex={-1}
                 onClick={(e) => openMenu(e.currentTarget.parentElement!)}
@@ -179,13 +180,13 @@ export function ToolRail({ editor, dock = false }: { editor: Editor; dock?: bool
       })}
       {open && (
         <Menu
-          label={open.group.label}
+          label={t(open.group.label)}
           x={open.x}
           y={open.y}
           above={open.above}
           onClose={() => setOpen(null)}
           items={open.group.entries.map((e) => ({
-            label: `${e.tool === editor.tool && (!e.stamp || e.stamp === editor.stamp) ? '✓ ' : ''}${e.stamp ? `${e.stamp}  ` : ''}${e.label}`,
+            label: `${e.tool === editor.tool && (!e.stamp || e.stamp === editor.stamp) ? '✓ ' : ''}${e.stamp ? `${e.stamp}  ` : ''}${t(e.label)}`,
             shortcut: e.key || undefined,
             onSelect: () => pick(open.group, e),
           }))}

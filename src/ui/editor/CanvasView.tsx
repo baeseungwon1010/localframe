@@ -16,6 +16,7 @@ import { DiagramBar } from './DiagramBar.tsx';
 import { TemplatePicker } from './TemplatePicker.tsx';
 import { LONG_PRESS_MS, TouchGestures } from './touch.ts';
 import { useEditorRev } from '../hooks.ts';
+import { t } from '../i18n.ts';
 
 function readColors(): OverlayColors {
   const s = getComputedStyle(document.documentElement);
@@ -31,6 +32,9 @@ function readColors(): OverlayColors {
     font: '"IBM Plex Sans", system-ui, sans-serif',
   };
 }
+
+/** A message over the canvas: English text (with {name} values) translated where it is shown. */
+export type Notice = { text: string; vars?: Record<string, string | number> };
 
 function toInput(
   e: { clientX: number; clientY: number; button: number; shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean; pointerType?: string },
@@ -51,7 +55,7 @@ export function CanvasView(props: {
   editor: Editor;
   onReady: () => void;
   onDropFiles: (files: File[], at: { x: number; y: number }) => void;
-  notice: string | null;
+  notice: Notice | null;
   onDismissNotice: () => void;
   /** Diagram mode: the board view with the tool dock. */
   diagram?: boolean;
@@ -260,91 +264,92 @@ export function CanvasView(props: {
   const otherPages = editor.pages.filter((p) => p.id !== editor.currentPage.id);
   const menuItems: MenuItem[] = [
     {
-      label: 'Copy',
+      label: t('Copy'),
       shortcut: `${MOD}C`,
       disabled: !hasSel,
       onSelect: () => {
-        const t = editor.copyToText();
-        if (t) void navigator.clipboard?.writeText(t);
+        const text = editor.copyToText();
+        if (text) void navigator.clipboard?.writeText(text);
       },
     },
     {
-      label: 'Paste',
+      label: t('Paste'),
       shortcut: `${MOD}V`,
       onSelect: async () => {
         try {
-          const t = await navigator.clipboard.readText();
-          if (t) editor.pasteText(t);
+          const text = await navigator.clipboard.readText();
+          if (text) editor.pasteText(text);
         } catch {
           /* clipboard permission refused: Ctrl/Cmd+V still works */
         }
       },
     },
-    { label: 'Duplicate', shortcut: `${MOD}D`, disabled: !hasSel, onSelect: () => editor.duplicateSelection() },
+    { label: t('Duplicate'), shortcut: `${MOD}D`, disabled: !hasSel, onSelect: () => editor.duplicateSelection() },
     {
-      label: 'Flatten',
+      label: t('Flatten'),
       shortcut: `${MOD}E`,
       disabled: !sel.some((n) => n.type === 'RECTANGLE' || n.type === 'ELLIPSE' || n.type === 'LINE' || n.type === 'BOOLEAN' || (n.type === 'VECTOR' && n.shape)),
       onSelect: () => editor.flattenSelection(),
     },
     {
-      label: 'Outline stroke',
+      label: t('Outline stroke'),
       shortcut: `${MOD}${SHIFT}O`,
       disabled: !sel.some((n) => ['RECTANGLE', 'ELLIPSE', 'VECTOR', 'LINE'].includes(n.type) && n.strokes.some((p) => p.visible) && n.strokeWeight > 0),
       onSelect: () => editor.outlineStroke(),
     },
-    { label: 'Select matching layers', shortcut: `${MOD}${ALT}A`, disabled: !hasSel, onSelect: () => editor.selectMatching() },
-    { label: 'Delete', shortcut: 'Del', disabled: !hasSel, onSelect: () => editor.deleteSelection() },
+    { label: t('Select matching layers'), shortcut: `${MOD}${ALT}A`, disabled: !hasSel, onSelect: () => editor.selectMatching() },
+    { label: t('Delete'), shortcut: 'Del', disabled: !hasSel, onSelect: () => editor.deleteSelection() },
     'separator',
-    { label: 'Bring to front', shortcut: `${MOD}${SHIFT}]`, disabled: !hasSel, onSelect: () => editor.reorder('front') },
-    { label: 'Bring forward', shortcut: `${MOD}]`, disabled: !hasSel, onSelect: () => editor.reorder('forward') },
-    { label: 'Send backward', shortcut: `${MOD}[`, disabled: !hasSel, onSelect: () => editor.reorder('backward') },
-    { label: 'Send to back', shortcut: `${MOD}${SHIFT}[`, disabled: !hasSel, onSelect: () => editor.reorder('back') },
+    { label: t('Bring to front'), shortcut: `${MOD}${SHIFT}]`, disabled: !hasSel, onSelect: () => editor.reorder('front') },
+    { label: t('Bring forward'), shortcut: `${MOD}]`, disabled: !hasSel, onSelect: () => editor.reorder('forward') },
+    { label: t('Send backward'), shortcut: `${MOD}[`, disabled: !hasSel, onSelect: () => editor.reorder('backward') },
+    { label: t('Send to back'), shortcut: `${MOD}${SHIFT}[`, disabled: !hasSel, onSelect: () => editor.reorder('back') },
     'separator',
-    { label: 'Group selection', shortcut: `${MOD}G`, disabled: !hasSel, onSelect: () => editor.groupSelection() },
-    { label: 'Wrap in frame', shortcut: `${MOD}${ALT}G`, disabled: !hasSel, onSelect: () => editor.wrapInFrame() },
-    { label: 'Add auto layout', shortcut: `${SHIFT}A`, disabled: !hasSel, onSelect: () => editor.addAutoLayout() },
+    { label: t('Group selection'), shortcut: `${MOD}G`, disabled: !hasSel, onSelect: () => editor.groupSelection() },
+    { label: t('Wrap in frame'), shortcut: `${MOD}${ALT}G`, disabled: !hasSel, onSelect: () => editor.wrapInFrame() },
+    { label: t('Add auto layout'), shortcut: `${SHIFT}A`, disabled: !hasSel, onSelect: () => editor.addAutoLayout() },
     {
-      label: single?.isMask ? 'Stop using as mask' : 'Use as mask',
+      label: single?.isMask ? t('Stop using as mask') : t('Use as mask'),
       shortcut: `${MOD}${ALT}M`,
       disabled: !hasSel,
       onSelect: () => editor.useAsMask(),
     },
     {
-      label: sel.some((n) => n.type === 'GROUP') ? 'Ungroup' : 'Remove frame',
+      label: sel.some((n) => n.type === 'GROUP') ? t('Ungroup') : t('Remove frame'),
       shortcut: `${MOD}${SHIFT}G`,
       disabled: !sel.some((n) => n.type === 'FRAME' || n.type === 'GROUP'),
       onSelect: () => editor.unwrapFrames(),
     },
     'separator',
     single?.type === 'COMPONENT'
-      ? { label: 'Create instance', onSelect: () => editor.createInstance(single.id) }
-      : { label: 'Create component', shortcut: `${MOD}${ALT}K`, disabled: !hasSel, onSelect: () => editor.createComponent() },
+      ? { label: t('Create instance'), onSelect: () => editor.createInstance(single.id) }
+      : { label: t('Create component'), shortcut: `${MOD}${ALT}K`, disabled: !hasSel, onSelect: () => editor.createComponent() },
     ...(hasSel && sel.every((n) => n.type === 'COMPONENT') && editor.doc.get(sel[0].parentId ?? '')?.type !== 'COMPONENT_SET'
-      ? ([{ label: 'Combine as variants', shortcut: `${MOD}${ALT}${SHIFT}K`, onSelect: () => editor.combineAsVariants() }] as MenuItem[])
+      ? ([{ label: t('Combine as variants'), shortcut: `${MOD}${ALT}${SHIFT}K`, onSelect: () => editor.combineAsVariants() }] as MenuItem[])
       : []),
     ...(single?.type === 'INSTANCE'
       ? ([
-          { label: 'Go to main component', onSelect: () => editor.goToMainComponent(single.id) },
-          { label: 'Detach instance', shortcut: `${MOD}${ALT}B`, onSelect: () => editor.detachInstances() },
+          { label: t('Go to main component'), onSelect: () => editor.goToMainComponent(single.id) },
+          { label: t('Detach instance'), shortcut: `${MOD}${ALT}B`, onSelect: () => editor.detachInstances() },
         ] as MenuItem[])
       : []),
     ...(hasSel && otherPages.length
-      ? (['separator', ...otherPages.map((p) => ({ label: `Move to ${p.name}`, onSelect: () => editor.moveSelectionToPage(p.id) }))] as MenuItem[])
+      ? (['separator', ...otherPages.map((p) => ({ label: t('Move to {page}', { page: p.name }), onSelect: () => editor.moveSelectionToPage(p.id) }))] as MenuItem[])
       : []),
     'separator',
     {
-      label: sel.some((n) => n.visible) ? 'Hide' : 'Show',
+      label: sel.some((n) => n.visible) ? t('Hide') : t('Show'),
       shortcut: `${MOD}${SHIFT}H`,
       disabled: !hasSel,
       onSelect: () => editor.toggleVisible(),
     },
-    { label: 'Lock', shortcut: `${MOD}${SHIFT}L`, disabled: !hasSel, onSelect: () => editor.toggleLocked() },
+    { label: t('Lock'), shortcut: `${MOD}${SHIFT}L`, disabled: !hasSel, onSelect: () => editor.toggleLocked() },
   ];
 
   return (
     <div
       className={`canvas-wrap ${dragOver ? 'drag-over' : ''}`}
+      data-drop-label={t('Drop images to place them')}
       ref={wrapRef}
       onDragOver={(e) => {
         if (![...e.dataTransfer.types].includes('Files')) return;
@@ -368,7 +373,7 @@ export function CanvasView(props: {
       <canvas
         ref={canvasRef}
         className="canvas"
-        aria-label="Canvas"
+        aria-label={t('Canvas')}
         aria-describedby="canvas-keys"
         role="application"
         onPointerDown={onPointerDown}
@@ -385,22 +390,24 @@ export function CanvasView(props: {
       {editor.doc.size === 0 && editor.tool === 'move' && props.diagram && <TemplatePicker editor={editor} />}
       {editor.doc.size === 0 && editor.tool === 'move' && !props.diagram && (
         <p className="canvas-hint">
-          Press F to draw a frame, R for a rectangle, L for a line or T for text. {MOD}/ finds any command.
+          {t('Press F to draw a frame, R for a rectangle, L for a line or T for text. {keys} finds any command.', { keys: `${MOD}/` })}
         </p>
       )}
       {props.children}
       <p id="canvas-keys" className="sr-only">
-        Tab and Shift Tab move between layers, arrow keys move the selection, Enter writes in a shape or text, Escape selects the
-        parent. {MOD}/ finds any command.
+        {t(
+          'Tab and Shift Tab move between layers, arrow keys move the selection, Enter writes in a shape or text, Escape selects the parent. {keys} finds any command.',
+          { keys: `${MOD}/` },
+        )}
       </p>
       <SelectionAnnouncer editor={editor} />
       <ToolHint editor={editor} />
       <DiagramBar editor={editor} diagram={props.diagram} />
-      {menu && <Menu label="Canvas actions" x={menu.x} y={menu.y} fromLongPress={menu.touch} items={menuItems} onClose={() => setMenu(null)} />}
+      {menu && <Menu label={t('Canvas actions')} x={menu.x} y={menu.y} fromLongPress={menu.touch} items={menuItems} onClose={() => setMenu(null)} />}
       {props.notice && (
         <div className="toast" role="alert">
-          <span>{props.notice}</span>
-          <button type="button" className="mini-btn" aria-label="Dismiss" onClick={props.onDismissNotice}>
+          <span>{t(props.notice.text, props.notice.vars)}</span>
+          <button type="button" className="mini-btn" aria-label={t('Dismiss')} onClick={props.onDismissNotice}>
             ×
           </button>
         </div>
@@ -432,13 +439,13 @@ function LabelEditor({ editor, id }: { editor: Editor; id: string }) {
   // lay it out as it will be drawn, with the default style if the shape has no text yet
   const styled = node.label ? node : { ...node, label: defaultLabel(node) };
   const ln = labelNode(styled, value || ' ')!;
-  const t = ln.text!;
+  const tx = ln.text!;
   const m = multiply(editor.viewMatrix, multiply(editor.doc.world(id), labelMatrix(styled, ln)));
   return (
     <textarea
       ref={ref}
       className={`text-editor label-editor ${node.type === 'LINE' ? 'on-line' : ''}`}
-      aria-label="Shape text"
+      aria-label={t('Shape text')}
       value={value}
       spellCheck={false}
       onChange={(e) => setValue(e.target.value)}
@@ -455,13 +462,13 @@ function LabelEditor({ editor, id }: { editor: Editor; id: string }) {
         transform: `matrix(${m.join(',')})`,
         width: ln.width,
         height: ln.height + 2,
-        fontFamily: fontStack(t.fontFamily),
-        fontWeight: t.fontWeight,
-        fontStyle: t.italic ? 'italic' : 'normal',
-        fontSize: t.fontSize,
-        lineHeight: `${lineHeightPx(t)}px`,
-        letterSpacing: `${t.letterSpacing}px`,
-        textAlign: t.align,
+        fontFamily: fontStack(tx.fontFamily),
+        fontWeight: tx.fontWeight,
+        fontStyle: tx.italic ? 'italic' : 'normal',
+        fontSize: tx.fontSize,
+        lineHeight: `${lineHeightPx(tx)}px`,
+        letterSpacing: `${tx.letterSpacing}px`,
+        textAlign: tx.align,
         whiteSpace: 'pre-wrap',
         color: node.labelColor ?? '#1B1D21',
       }}
@@ -495,9 +502,15 @@ function SelectionAnnouncer({ editor }: { editor: Editor }) {
     const n = sel[0];
     const kind = n.sticky ? 'sticky note' : n.section ? 'section' : n.type === 'LINE' && (n.startBind || n.endBind) ? 'connector' : KIND[n.type];
     const words = n.type === 'TEXT' ? n.text?.characters : n.label?.characters;
-    const said = words && words.trim() && words.trim() !== n.name ? `, “${words.trim().slice(0, 120)}”` : '';
-    text = `${n.name}, ${kind}${said}, ${Math.round(n.width)} by ${Math.round(n.height)}`;
-  } else if (sel.length > 1) text = `${sel.length} layers selected`;
+    const said = words && words.trim() && words.trim() !== n.name ? t(', “{words}”', { words: words.trim().slice(0, 120) }) : '';
+    text = t('{name}, {kind}{said}, {width} by {height}', {
+      name: n.name,
+      kind: kind ? t(kind) : '',
+      said,
+      width: Math.round(n.width),
+      height: Math.round(n.height),
+    });
+  } else if (sel.length > 1) text = t('{n} layers selected', { n: sel.length });
   return (
     <p className="sr-only" role="status" aria-live="polite">
       {text}
@@ -508,8 +521,8 @@ function SelectionAnnouncer({ editor }: { editor: Editor }) {
 /** In-place text editing: a textarea laid exactly over the text layer. */
 function TextEditor({ editor, id }: { editor: Editor; id: string }) {
   const node = editor.doc.get(id)!;
-  const t = node.text!;
-  const [value, setValue] = useState(t.characters);
+  const tx = node.text!;
+  const [value, setValue] = useState(tx.characters);
   const ref = useRef<HTMLTextAreaElement>(null);
   const done = useRef(false);
   useEditorRev(editor, 'view');
@@ -541,18 +554,18 @@ function TextEditor({ editor, id }: { editor: Editor; id: string }) {
     if (kind === 'underline') editor.styleText({ decoration: rangeValue(tt, a, b, 'decoration') === 'underline' ? 'none' : 'underline' });
   };
 
-  const fixed = t.autoResize !== 'width';
-  const layout = layoutText({ ...t, characters: value || ' ' }, fixed ? node.width : null);
+  const fixed = tx.autoResize !== 'width';
+  const layout = layoutText({ ...tx, characters: value || ' ' }, fixed ? node.width : null);
   const m = multiply(editor.viewMatrix, editor.doc.world(id));
   const fill = node.fills.find((p): p is SolidPaint => p.visible && p.type !== 'IMAGE');
-  const width = fixed ? node.width : Math.max(layout.width + t.fontSize, 4);
-  const height = t.autoResize === 'none' ? Math.max(node.height, layout.height) : layout.height;
+  const width = fixed ? node.width : Math.max(layout.width + tx.fontSize, 4);
+  const height = tx.autoResize === 'none' ? Math.max(node.height, layout.height) : layout.height;
 
   return (
     <textarea
       ref={ref}
       className="text-editor"
-      aria-label="Text"
+      aria-label={t('Text')}
       value={value}
       spellCheck={false}
       onChange={(e) => {
@@ -584,14 +597,14 @@ function TextEditor({ editor, id }: { editor: Editor; id: string }) {
         transform: `matrix(${m.join(',')})`,
         width,
         height: height + 2,
-        fontFamily: fontStack(t.fontFamily),
-        fontWeight: t.fontWeight,
-        fontStyle: t.italic ? 'italic' : 'normal',
-        textDecoration: t.decoration === 'underline' ? 'underline' : t.decoration === 'strikethrough' ? 'line-through' : 'none',
-        fontSize: t.fontSize,
-        lineHeight: `${lineHeightPx(t)}px`,
-        letterSpacing: `${t.letterSpacing}px`,
-        textAlign: t.align,
+        fontFamily: fontStack(tx.fontFamily),
+        fontWeight: tx.fontWeight,
+        fontStyle: tx.italic ? 'italic' : 'normal',
+        textDecoration: tx.decoration === 'underline' ? 'underline' : tx.decoration === 'strikethrough' ? 'line-through' : 'none',
+        fontSize: tx.fontSize,
+        lineHeight: `${lineHeightPx(tx)}px`,
+        letterSpacing: `${tx.letterSpacing}px`,
+        textAlign: tx.align,
         whiteSpace: fixed ? 'pre-wrap' : 'pre',
         color: fill ? paintCss(fill, 1) : 'transparent',
         opacity: node.opacity,

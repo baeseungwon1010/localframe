@@ -1258,7 +1258,7 @@ button:disabled {
 }
 
 .canvas-wrap.drag-over::after {
-  content: 'Drop images to place them';
+  content: attr(data-drop-label);
   position: absolute;
   inset: 8px;
   display: grid;

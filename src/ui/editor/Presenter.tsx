@@ -10,6 +10,7 @@ import { ease, isScreen, prepareTween, presentationDoc, reactionsOf, setPresenta
 import { drawNode, imagesUsed } from '../../engine/render.ts';
 import { layoutText, lineOffset } from '../../engine/text.ts';
 import { IconButton } from '../components.tsx';
+import { t } from '../i18n.ts';
 
 type Overflow = NonNullable<SceneNode['overflow']> | 'none';
 type Screen = {
@@ -351,7 +352,7 @@ export function Presenter({ editor, startId, onClose }: { editor: Editor; startI
         href={l.href}
         target="_blank"
         rel="noopener noreferrer"
-        aria-label={`Open ${l.href}`}
+        aria-label={t('Open {href}', { href: l.href })}
         style={{ left: l.rect.x, top: l.rect.y, width: l.rect.width, height: l.rect.height }}
         onClick={(e) => e.stopPropagation()}
       />
@@ -367,14 +368,14 @@ export function Presenter({ editor, startId, onClose }: { editor: Editor; startI
   });
 
   return (
-    <div className={`presenter ${hint ? 'hint' : ''}`} role="dialog" aria-modal="true" aria-label="Presentation">
+    <div className={`presenter ${hint ? 'hint' : ''}`} role="dialog" aria-modal="true" aria-label={t('Presentation')}>
       <div className="present-bar">
         <span className="present-title">
           {name}
-          {index >= 0 && <span className="file-time"> {index + 1} of {frames.length}</span>}
+          {index >= 0 && <span className="file-time"> {t('{n} of {total}', { n: index + 1, total: frames.length })}</span>}
         </span>
         <IconButton
-          label="Restart"
+          label={t('Restart')}
           shortcut="R"
           onClick={() => {
             history.current = [];
@@ -383,15 +384,15 @@ export function Presenter({ editor, startId, onClose }: { editor: Editor; startI
         >
           <RotateCcw size={16} strokeWidth={1.5} />
         </IconButton>
-        <IconButton label="Close presentation" shortcut="Esc" onClick={onClose}>
+        <IconButton label={t('Close presentation')} shortcut="Esc" onClick={onClose}>
           <X size={16} strokeWidth={1.5} />
         </IconButton>
       </div>
       <div className="present-stage" ref={stage} onClick={flash}>
-        {!first && <p className="present-empty">This page has no frames to present. Draw a frame first.</p>}
+        {!first && <p className="present-empty">{t('This page has no frames to present. Draw a frame first.')}</p>}
         {error && (
           <p className="present-empty" role="alert">
-            {error}
+            {t(error)}
           </p>
         )}
         <div className="present-screen prev" ref={prevHost} aria-hidden="true" />

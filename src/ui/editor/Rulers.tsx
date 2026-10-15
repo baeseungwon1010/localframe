@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { type Editor, RULER } from '../../engine/editor.ts';
 import { useEditorRev } from '../hooks.ts';
+import { t } from '../i18n.ts';
 
 const STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10_000, 20_000, 50_000, 100_000];
 
@@ -125,8 +126,8 @@ export function Rulers({ editor, canvasRect }: { editor: Editor; canvasRect: () 
 
   return (
     <>
-      <canvas ref={top} className="ruler ruler-top" aria-label="Horizontal ruler. Drag down to add a guide." onPointerDown={drag('y')} />
-      <canvas ref={left} className="ruler ruler-left" aria-label="Vertical ruler. Drag right to add a guide." onPointerDown={drag('x')} />
+      <canvas ref={top} className="ruler ruler-top" aria-label={t('Horizontal ruler. Drag down to add a guide.')} onPointerDown={drag('y')} />
+      <canvas ref={left} className="ruler ruler-left" aria-label={t('Vertical ruler. Drag right to add a guide.')} onPointerDown={drag('x')} />
       <div className="ruler-corner" aria-hidden="true" />
     </>
   );

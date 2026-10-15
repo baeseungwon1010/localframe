@@ -9,11 +9,12 @@ import { facesUsed } from '../../engine/text.ts';
 import { SyncQueue } from '../../engine/sync.ts';
 import { navigate } from '../App.tsx';
 import { type Theme, loadFonts, useDiagramMode, useEditorRev, useMediaQuery } from '../hooks.ts';
+import { t } from '../i18n.ts';
 import { RenameDialog } from './framePanels.tsx';
 import { PhoneSheet } from './PhoneSheet.tsx';
 import { type ShareFormat, shareView } from '../share.ts';
 import { LONG_LINK_CHARS, makeShareLink } from '../shareLink.ts';
-import { CanvasView } from './CanvasView.tsx';
+import { CanvasView, type Notice } from './CanvasView.tsx';
 import { LeftPanel } from './LeftPanel.tsx';
 import { PropertiesPanel } from './PropertiesPanel.tsx';
 import { TitleBar } from './TitleBar.tsx';
@@ -83,7 +84,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   const [sync, setSync] = useState<SyncQueue | null>(null);
   const thumbTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const imageInput = useRef<HTMLInputElement>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [exporting, setExporting] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [history, setHistory] = useState(false);
@@ -110,32 +111,32 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
       await flushAll();
       const { url, droppedImages } = await makeShareLink(await api.exportFile(fileId));
       const notes = [
-        droppedImages ? 'Images are not included.' : '',
-        url.length > LONG_LINK_CHARS ? `It is long (${url.length.toLocaleString()} characters), so some chat apps may cut it.` : '',
+        droppedImages ? t('Images are not included.') : '',
+        url.length > LONG_LINK_CHARS ? t('It is long ({count} characters), so some chat apps may cut it.', { count: url.length.toLocaleString() }) : '',
       ].filter(Boolean);
       const nav = navigator as Navigator & { share?: (d: ShareData) => Promise<void> };
       if (nav.share && window.matchMedia('(pointer: coarse)').matches) {
         try {
           await nav.share({ url, title: file?.name });
-          if (notes.length) setNotice(notes.join(' '));
+          if (notes.length) setNotice({ text: '{notes}', vars: { notes: notes.join(' ') } });
           return;
         } catch (e) {
           if (e instanceof DOMException && e.name === 'AbortError') return;
         }
       }
       await navigator.clipboard.writeText(url);
-      setNotice(['Link copied. Whoever opens it can save their own copy of this file.', ...notes].join(' '));
+      setNotice({ text: 'Link copied. Whoever opens it can save their own copy of this file.{notes}', vars: { notes: notes.map((n) => ` ${n}`).join('') } });
     } catch (e) {
-      setNotice(`Couldn't make a link: ${e instanceof Error ? e.message : 'something went wrong'}`);
+      setNotice({ text: "Couldn't make a link: {error}", vars: { error: e instanceof Error ? t(e.message) : t('something went wrong') } });
     }
   };
   const share = async (format: ShareFormat) => {
     try {
       const done = await shareView(editor, file?.name ?? 'localframe', format);
-      if (done === 'empty') setNotice('Nothing to share on this page yet.');
-      if (done === 'saved') setNotice(`This browser can't share files, so the ${format.toUpperCase()} was saved to your downloads.`);
+      if (done === 'empty') setNotice({ text: 'Nothing to share on this page yet.' });
+      if (done === 'saved') setNotice({ text: "This browser can't share files, so the {format} was saved to your downloads.", vars: { format: format.toUpperCase() } });
     } catch (e) {
-      setNotice(`Couldn't share: ${e instanceof Error ? e.message : 'something went wrong'}`);
+      setNotice({ text: "Couldn't share: {error}", vars: { error: e instanceof Error ? t(e.message) : t('something went wrong') } });
     }
   };
   const comments = useComments(fileId);
@@ -166,13 +167,13 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   const placeImages = async (files: File[], at?: { x: number; y: number }) => {
     const images = files.filter((f) => /^image\/(png|jpeg|webp|gif)$/.test(f.type));
     if (images.length === 0) {
-      if (files.length) setNotice('Only PNG, JPEG, WebP and GIF images can be placed.');
+      if (files.length) setNotice({ text: 'Only PNG, JPEG, WebP and GIF images can be placed.' });
       return;
     }
     let offset = 0;
     for (const f of images) {
       if (f.size > MAX_IMAGE_BYTES) {
-        setNotice(`“${f.name}” is larger than 20 MB, which is the image limit.`);
+        setNotice({ text: '“{name}” is larger than 20 MB, which is the image limit.', vars: { name: f.name } });
         continue;
       }
       try {
@@ -181,7 +182,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         editor.insertImage(id, size, f.name || 'Image', p);
         offset += 24;
       } catch (e) {
-        setNotice(`Couldn't place “${f.name}”: ${e instanceof Error ? e.message : 'unknown error'}`);
+        setNotice({ text: "Couldn't place “{name}”: {error}", vars: { name: f.name, error: e instanceof Error ? t(e.message) : t('unknown error') } });
       }
     }
   };
@@ -228,7 +229,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
     const offImages = onImageLoaded(() => editor.emit('view'));
     editor.onRequestImage = () => imageInput.current?.click();
     editor.onRequestRename = () => setRenaming(true);
-    editor.onNotice = (text) => setNotice(text);
+    editor.onNotice = (text) => setNotice({ text });
     editor.onRequestPresent = () => setPresenting({ start: presentFrom(editor) });
     editor.fileId = fileId;
     editor.onPastedImages = (from, ids) => {
@@ -396,14 +397,14 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   if (loadError) {
     return (
       <div className="center-message">
-        <p>{loadError}</p>
+        <p>{t(loadError)}</p>
         <button type="button" className="btn secondary" onClick={() => navigate('#/')}>
-          Back to files
+          {t('Back to files')}
         </button>
       </div>
     );
   }
-  if (!file) return <div className="center-message" aria-busy="true">Opening file…</div>;
+  if (!file) return <div className="center-message" aria-busy="true">{t('Opening file…')}</div>;
 
   const [saveStatus, saveError] = status.split('|');
 
@@ -456,7 +457,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         accept={IMAGE_ACCEPT}
         multiple
         hidden
-        aria-label="Place image"
+        aria-label={t('Place image')}
         onChange={(e) => {
           void placeImages([...(e.target.files ?? [])]);
           e.target.value = '';

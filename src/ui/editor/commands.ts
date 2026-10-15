@@ -1,6 +1,7 @@
 import type { Editor, Tool } from '../../engine/editor.ts';
 import { TEMPLATES } from '../../engine/templates.ts';
 import { ALT, MOD, SHIFT } from '../components.tsx';
+import { t } from '../i18n.ts';
 
 export type Command = {
   id: string;
@@ -146,12 +147,12 @@ export function buildCommands(editor: Editor, screen: ScreenActions): Command[] 
   ];
 }
 
-/** Commands matching a search: every word must appear in the label, group or keywords. */
+/** Commands matching a search: every word must appear in the label, group (in English or as shown) or keywords. */
 export function filterCommands(all: Command[], query: string): Command[] {
   const words = query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return all;
   return all.filter((c) => {
-    const hay = `${c.label} ${c.group} ${c.keywords ?? ''}`.toLocaleLowerCase();
+    const hay = `${c.label} ${t(c.label)} ${c.group} ${t(c.group)} ${c.keywords ?? ''}`.toLocaleLowerCase();
     return words.every((w) => hay.includes(w));
   });
 }

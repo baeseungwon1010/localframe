@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import type { Editor } from '../../engine/editor.ts';
 import { IconButton } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
+import { t } from '../i18n.ts';
 import { type CommentStore, CommentsPanel } from './Comments.tsx';
 import { LeftPanel } from './LeftPanel.tsx';
 import { PropertiesPanel } from './PropertiesPanel.tsx';
@@ -21,9 +22,9 @@ export function PhoneSheet(props: { editor: Editor; fileName: string; comments: 
   const [full, setFull] = useState(false);
   const commenting = editor.tool === 'comment';
   return (
-    <section className={`phone-sheet ${full ? 'full' : ''}`} aria-label="Edit panel">
+    <section className={`phone-sheet ${full ? 'full' : ''}`} aria-label={t('Edit panel')}>
       <div className="sheet-head">
-        <div className="sheet-tabs" role="tablist" aria-label="Panels">
+        <div className="sheet-tabs" role="tablist" aria-label={t('Panels')}>
           {(
             [
               ['edit', commenting ? 'Comments' : 'Properties'],
@@ -31,14 +32,14 @@ export function PhoneSheet(props: { editor: Editor; fileName: string; comments: 
             ] as const
           ).map(([id, label]) => (
             <button key={id} type="button" role="tab" aria-selected={tab === id} className="sheet-tab" onClick={() => setTab(id)}>
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
-        <IconButton label={full ? 'Show less' : 'Show more'} onClick={() => setFull(!full)}>
+        <IconButton label={full ? t('Show less') : t('Show more')} onClick={() => setFull(!full)}>
           {full ? <ChevronDown size={16} strokeWidth={1.5} /> : <ChevronUp size={16} strokeWidth={1.5} />}
         </IconButton>
-        <IconButton label="Close panel" onClick={props.onClose}>
+        <IconButton label={t('Close panel')} onClick={props.onClose}>
           <X size={16} strokeWidth={1.5} />
         </IconButton>
       </div>

@@ -3,22 +3,24 @@ import { X } from 'lucide-react';
 import type { Editor, Tool } from '../../engine/editor.ts';
 import { ALT as ALT_KEY, SHIFT as SHIFT_KEY } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
+import { t } from '../i18n.ts';
 
 const KEY = 'localframe.hideToolHints';
 // key names as words in a sentence ("Shift keeps it square"), without the shortcut "+"
 const SHIFT = `${SHIFT_KEY.replace(/\+$/, '')} `;
 const ALT = `${ALT_KEY.replace(/\+$/, '')} `;
 
+/** Hints in English with {shift} and {alt} for the key names; translated when shown. */
 const TOOL_HINTS: Partial<Record<Tool, string>> = {
-  frame: `Drag to draw a frame, or pick a size on the right. ${SHIFT}keeps it square, ${ALT}draws from the centre.`,
+  frame: 'Drag to draw a frame, or pick a size on the right. {shift}keeps it square, {alt}draws from the centre.',
   section: 'Drag around frames to put them in a section.',
   slice: 'Drag over the area you want to export. Slices are never drawn in the design.',
-  rect: `Drag to draw a rectangle. ${SHIFT}keeps it square, ${ALT}draws from the centre.`,
-  ellipse: `Drag to draw an ellipse. ${SHIFT}keeps it a circle, ${ALT}draws from the centre.`,
-  polygon: `Drag to draw a polygon. Change its sides on the right. ${SHIFT}keeps it even.`,
-  star: `Drag to draw a star. Change its points on the right. ${SHIFT}keeps it even.`,
-  line: `Drag to draw a line. ${SHIFT}snaps to 45°. Start or end on a shape to connect to it.`,
-  arrow: `Drag from one shape to another to connect them. ${SHIFT}snaps to 45°.`,
+  rect: 'Drag to draw a rectangle. {shift}keeps it square, {alt}draws from the centre.',
+  ellipse: 'Drag to draw an ellipse. {shift}keeps it a circle, {alt}draws from the centre.',
+  polygon: 'Drag to draw a polygon. Change its sides on the right. {shift}keeps it even.',
+  star: 'Drag to draw a star. Change its points on the right. {shift}keeps it even.',
+  line: 'Drag to draw a line. {shift}snaps to 45°. Start or end on a shape to connect to it.',
+  arrow: 'Drag from one shape to another to connect them. {shift}snaps to 45°.',
   pen: 'Click to add points, drag to curve. Click the first point to close the shape, Enter to finish.',
   pencil: 'Drag to draw freehand. The line is smoothed when you let go.',
   text: 'Click to type, or drag to make a text box of a set width.',
@@ -45,22 +47,23 @@ export function ToolHint({ editor }: { editor: Editor }) {
     }
   });
   if (hidden || editor.editingText) return null;
-  const text = editor.editingVector
-    ? `Drag points and handles. ${ALT}drag a handle to break the curve. Enter or Esc to finish.`
+  const hint = editor.editingVector
+    ? 'Drag points and handles. {alt}drag a handle to break the curve. Enter or Esc to finish.'
     : editor.cropping
       ? 'Drag to move the image in its shape; set the zoom on the right. Enter or Esc to finish.'
       : editor.tool === 'pencil' && editor.recognizeShapes
-        ? `Draw a box, circle, diamond or triangle and it becomes a clean shape; a line between shapes connects them. ${SHIFT}keeps it as drawn.`
+        ? 'Draw a box, circle, diamond or triangle and it becomes a clean shape; a line between shapes connects them. {shift}keeps it as drawn.'
         : TOOL_HINTS[editor.tool];
-  if (!text) return null;
+  if (!hint) return null;
+  const text = t(hint, { shift: SHIFT, alt: ALT });
   return (
     <div className="tool-hint" role="status">
       <span>{text}</span>
       <button
         type="button"
         className="mini-btn"
-        aria-label="Hide tips"
-        title="Hide tips"
+        aria-label={t('Hide tips')}
+        title={t('Hide tips')}
         onClick={() => {
           setHidden(true);
           try {

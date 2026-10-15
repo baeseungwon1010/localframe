@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import type { Editor } from '../../engine/editor.ts';
+import { t } from '../i18n.ts';
 import { type ScreenActions, buildCommands, filterCommands } from './commands.ts';
 
 /**
@@ -45,14 +46,14 @@ export function QuickActions({ editor, screen, onClose }: { editor: Editor; scre
   let lastGroup = '';
   return (
     <div className="dialog-backdrop palette-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="palette" role="dialog" aria-modal="true" aria-label="Quick actions" onKeyDown={onKey}>
+      <div className="palette" role="dialog" aria-modal="true" aria-label={t('Quick actions')} onKeyDown={onKey}>
         <div className="palette-search">
           <Search size={16} strokeWidth={1.5} aria-hidden="true" />
           <input
             autoFocus
             value={query}
-            placeholder="Search commands and shortcuts"
-            aria-label="Search commands"
+            placeholder={t('Search commands and shortcuts')}
+            aria-label={t('Search commands')}
             role="combobox"
             aria-expanded="true"
             aria-controls="palette-list"
@@ -60,15 +61,15 @@ export function QuickActions({ editor, screen, onClose }: { editor: Editor; scre
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <ul className="palette-list" id="palette-list" role="listbox" aria-label="Commands" ref={listRef}>
-          {list.length === 0 && <li className="palette-empty">No command matches “{query}”.</li>}
+        <ul className="palette-list" id="palette-list" role="listbox" aria-label={t('Commands')} ref={listRef}>
+          {list.length === 0 && <li className="palette-empty">{t('No command matches “{query}”.', { query })}</li>}
           {list.map((c, i) => {
             const why = c.unavailable();
             const head = !query && c.group !== lastGroup ? c.group : null;
             lastGroup = c.group;
             return (
               <li key={c.id} role="presentation">
-                {head && <div className="palette-group">{head}</div>}
+                {head && <div className="palette-group">{t(head)}</div>}
                 <div
                   id={`cmd-${c.id}`}
                   role="option"
@@ -80,10 +81,10 @@ export function QuickActions({ editor, screen, onClose }: { editor: Editor; scre
                   onClick={() => run(i)}
                 >
                   <span className="palette-label">
-                    {c.label}
-                    {why && <span className="palette-why">{why}</span>}
+                    {t(c.label)}
+                    {why && <span className="palette-why">{t(why)}</span>}
                   </span>
-                  {query && <span className="palette-meta">{c.group}</span>}
+                  {query && <span className="palette-meta">{t(c.group)}</span>}
                   {c.shortcut && <kbd>{c.shortcut}</kbd>}
                 </div>
               </li>
