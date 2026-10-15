@@ -14,6 +14,12 @@ async function canvasHelpers(page: Page) {
   return { at, drag };
 }
 
+/** File and view options in the title bar ("⋯"). */
+async function openFileMenu(page: Page, item: RegExp) {
+  await page.getByRole('button', { name: 'File and view options' }).click();
+  await page.getByRole('menuitem', { name: item }).click();
+}
+
 async function newFile(page: Page) {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -121,6 +127,8 @@ test('export PNG and SVG of a frame, and the whole file as JSON', async ({ page 
   await page.keyboard.type('Hello <world> & 안녕');
   await page.keyboard.press('Escape');
   await page.getByRole('treeitem', { name: /^Frame 1/ }).click();
+  // export settings start folded away
+  await page.getByRole('button', { name: 'Export section' }).click();
 
   const [png] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export Frame 1' }).click()]);
   expect(png.suggestedFilename()).toBe('Frame 1@2x.png');
@@ -185,7 +193,7 @@ test('pages, images, components, connectors and PDF export', async ({ page }) =>
   await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
 
   // whole file as PDF: two frames on page 1, its loose layers, and page 2
-  await page.getByRole('button', { name: 'Export file' }).click();
+  await openFileMenu(page, /Export file/);
   await page.getByLabel(/^PDF \(\.pdf\)/).check();
   const [pdf] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export', exact: true }).click()]);
   const pdfText = readFileSync(await pdf.path()).toString('latin1');
@@ -255,7 +263,7 @@ test('crop an image and print a vector PDF', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(fit).toHaveValue('crop');
 
-  await page.getByRole('button', { name: 'Export file' }).click();
+  await openFileMenu(page, /Export file/);
   await page.getByLabel(/^Vector PDF/).check();
   await page.getByRole('button', { name: 'Export', exact: true }).click();
   await expect(page.getByText('Sent to the print dialog')).toBeVisible();
@@ -310,7 +318,7 @@ test('version history: save a version, change the file, restore it', async ({ pa
   await drag([100, 100], [200, 200]);
   await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
 
-  await page.getByRole('button', { name: 'Version history' }).click();
+  await openFileMenu(page, /Version history/);
   await page.getByRole('textbox', { name: 'Version name' }).fill('One square');
   await page.getByRole('button', { name: 'Save version' }).click();
   await expect(page.getByRole('list', { name: 'Versions' })).toContainText('One square');
@@ -321,7 +329,7 @@ test('version history: save a version, change the file, restore it', async ({ pa
   await expect(page.getByRole('treeitem', { name: /^Ellipse 1/ })).toBeVisible();
   await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 5000 });
 
-  await page.getByRole('button', { name: 'Version history' }).click();
+  await openFileMenu(page, /Version history/);
   const item = page.getByRole('listitem').filter({ hasText: 'One square' });
   await item.getByRole('button', { name: 'Restore' }).click();
   await page.screenshot({ path: 'test-results/versions.png' });
@@ -331,7 +339,7 @@ test('version history: save a version, change the file, restore it', async ({ pa
   await expect(page.getByRole('treeitem', { name: /^Rectangle 1/ })).toBeVisible();
 
   // the state before restoring is kept as an autosave, and editing keeps saving
-  await page.getByRole('button', { name: 'Version history' }).click();
+  await openFileMenu(page, /Version history/);
   await expect(page.getByRole('list', { name: 'Versions' }).getByRole('listitem').first()).toContainText('Autosave');
   await page.getByRole('button', { name: 'Close' }).click();
   await page.keyboard.press('r');
