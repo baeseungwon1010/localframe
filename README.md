@@ -82,7 +82,8 @@ to keep. For a copy that keeps files on disk, run it locally (below).
   mode text layers get a bar for size, bold and colour.
 - **Touch and phones**: two fingers pan and pinch-zoom the canvas, a double tap writes in a shape, and
   holding a finger still opens the canvas menu. Handles and buttons are easier to hit with a finger.
-  Narrow screens always show the board view with the tool dock.
+  Narrow screens always show the board view with the tool dock; the panels button in the title bar
+  opens properties, layers (and comments) in a sheet from the bottom.
 - **Prototyping**: in the Prototype tab, make a layer open another frame on click, on mouse enter or after a
   delay, go back, open and close an overlay, change a component to another variant, or switch a variable
   mode, with instant, dissolve, smart animate, move in, push or slide in animations. Frames can scroll,
