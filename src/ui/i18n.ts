@@ -71,7 +71,7 @@ export function useLang(): Lang {
 export function t(en: string, vars?: Record<string, string | number>): string {
   let s = en;
   if (lang === 'ko') {
-    const k = ko[en];
+    const k = Object.hasOwn(ko, en) ? ko[en] : undefined;
     if (k !== undefined) s = k;
     else if (en.trim() && /[A-Za-z]/.test(en)) missing.add(en);
   }
