@@ -11,7 +11,9 @@ export const FONT_WEIGHTS = [
 /** Korean glyphs fall back to Noto Sans KR, which ships with the app. */
 export function fontStack(family: string): string {
   const safe = family.replace(/["\\]/g, '');
-  return safe === 'Noto Sans KR' ? '"Noto Sans KR", sans-serif' : `"${safe}", "Noto Sans KR", sans-serif`;
+  // stamps and emoji in text use the system's colour emoji font
+  const emoji = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"';
+  return safe === 'Noto Sans KR' ? `"Noto Sans KR", ${emoji}, sans-serif` : `"${safe}", "Noto Sans KR", ${emoji}, sans-serif`;
 }
 
 /** Font settings for one stretch of text. */
