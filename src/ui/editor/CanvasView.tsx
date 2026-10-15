@@ -3,9 +3,10 @@ import type { SolidPaint } from '../../../shared/schema.ts';
 import type { Editor, PointerInput } from '../../engine/editor.ts';
 import { hitDeepest, pickTarget } from '../../engine/hit.ts';
 import { multiply } from '../../engine/math.ts';
-import { type OverlayColors, renderEditor } from '../../engine/overlay.ts';
+import { type OverlayColors, frameCacheOf, renderEditor } from '../../engine/overlay.ts';
+import { onImageLoaded } from '../../engine/images.ts';
 import { paintCss } from '../../engine/render.ts';
-import { fontStack, layoutText, lineHeightPx } from '../../engine/text.ts';
+import { fontStack, forgetTextLayouts, layoutText, lineHeightPx } from '../../engine/text.ts';
 import { adjustRuns, rangeValue } from '../../engine/textRuns.ts';
 import { ALT, MOD, Menu, type MenuItem, SHIFT } from '../components.tsx';
 import { Rulers } from './Rulers.tsx';
@@ -114,13 +115,22 @@ export function CanvasView(props: {
       invalidate();
     };
     mq.addEventListener('change', onScheme);
-    document.fonts?.addEventListener?.('loadingdone', invalidate);
+    // a font that finished loading measures differently: lay text out again
+    const onFonts = () => {
+      forgetTextLayouts();
+      frameCacheOf(editor).clear();
+      invalidate();
+    };
+    // an image that arrived changes the frames it is in
+    const offImages = onImageLoaded(() => frameCacheOf(editor).clear());
+    document.fonts?.addEventListener?.('loadingdone', onFonts);
 
     return () => {
       ro.disconnect();
       mo.disconnect();
       mq.removeEventListener('change', onScheme);
-      document.fonts?.removeEventListener?.('loadingdone', invalidate);
+      document.fonts?.removeEventListener?.('loadingdone', onFonts);
+      offImages();
       offs.forEach((off) => off());
       if (frame) cancelAnimationFrame(frame);
     };

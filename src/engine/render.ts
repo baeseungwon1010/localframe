@@ -34,7 +34,19 @@ export type DrawOptions = {
   budget?: { left: number };
   /** Outline mode: every layer as a thin outline, no fills, images or effects. */
   outline?: boolean;
+  /**
+   * Screen pixels per unit, when drawing for the screen: far-out detail is simplified (layers
+   * smaller than a pixel are skipped, unreadably small text is drawn as grey bars).
+   */
+  scale?: number;
+  /** Pictures of frames to reuse while only the view (or the frame's position) changes. */
+  frames?: FrameCache;
 };
+
+/** Below this size on screen (px) a layer isn't drawn at all. */
+const MIN_DRAWN = 0.5;
+/** Text smaller than this on screen (px) is drawn as bars where its lines are. */
+const MIN_READABLE = 4;
 
 /** Upper bound on instance content drawn per frame, whatever the file says. */
 export const INSTANCE_DRAW_BUDGET = 200_000;
@@ -447,9 +459,20 @@ function drawLine(ctx: Ctx, n: SceneNode) {
   ctx.restore();
 }
 
-function drawText(ctx: Ctx, n: SceneNode) {
+function drawText(ctx: Ctx, n: SceneNode, scale?: number) {
   const t = n.text!;
   const layout = layoutText(t, t.autoResize === 'width' ? null : n.width);
+  if (scale && t.fontSize * scale < MIN_READABLE) {
+    // too small to read: a soft bar per line keeps the page's shape for much less work
+    const fill = n.fills.find((p): p is SolidPaint => p.visible && (p.type === undefined || p.type === 'SOLID'));
+    if (!fill) return;
+    ctx.fillStyle = rgba(fill.color, fill.opacity * 0.45);
+    for (const line of layout.lines) {
+      const x0 = line.indent + lineOffset(t.align, n.width - line.indent, line.width);
+      ctx.fillRect(x0, line.baseline - t.fontSize * 0.62, line.width, t.fontSize * 0.5);
+    }
+    return;
+  }
   if ('letterSpacing' in ctx) (ctx as CanvasRenderingContext2D).letterSpacing = `${t.letterSpacing}px`;
   if ('fontKerning' in ctx) (ctx as CanvasRenderingContext2D).fontKerning = t.kerning === false ? 'none' : 'normal';
   ctx.textBaseline = 'alphabetic';
@@ -600,7 +623,7 @@ function drawBody(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions, root
       drawLabel(ctx, n, opts);
       break;
     case 'TEXT':
-      drawText(ctx, n);
+      drawText(ctx, n, opts.scale);
       break;
   }
 }
@@ -975,10 +998,25 @@ function drawWithEffects(ctx: Ctx, doc: SceneDoc, n: SceneNode, effects: Effect[
   ctx.restore();
 }
 
+/** Layers with nothing that needs the canvas state saved around them (each part saves its own). */
+const SIMPLE = new Set(['RECTANGLE', 'ELLIPSE', 'TEXT', 'VECTOR', 'LINE']);
+
 export function drawNode(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions = {}) {
   if (!n.visible || n.slice || opts.skip?.has(n.id) || culled(doc, n, opts.cull)) return;
   if (opts.depth && opts.budget && opts.budget.left-- <= 0) return;
+  if (opts.scale && n.type !== 'LINE' && Math.max(n.width, n.height) * opts.scale < MIN_DRAWN) return;
+  if (opts.frames && !opts.depth && opts.frames.draw(ctx, doc, n, opts)) return;
   const root = opts.root ?? doc;
+  // the common case, an unturned plain shape or text: move there and back instead of save/restore
+  if (!opts.outline && n.rotation === 0 && SIMPLE.has(n.type) && !n.effects?.some((e) => e.visible) && (!n.blendMode || n.blendMode === 'normal')) {
+    const alpha = ctx.globalAlpha;
+    ctx.globalAlpha = alpha * n.opacity;
+    ctx.translate(n.x, n.y);
+    drawBody(ctx, doc, n, opts, root);
+    ctx.translate(-n.x, -n.y);
+    ctx.globalAlpha = alpha;
+    return;
+  }
   ctx.save();
   const m = localMatrix(n.x, n.y, n.rotation);
   ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
@@ -1033,3 +1071,133 @@ export function imagesUsed(doc: SceneDoc, ids: string[], root: SceneDoc = doc, d
 }
 
 export type { Paint };
+
+// ------------------------------------------------------------------ frame pictures
+
+type FramePicture = {
+  canvas: HTMLCanvasElement | OffscreenCanvas;
+  scale: number;
+  pad: number;
+  /** The frame (position aside) and every layer in it, as drawn: the same objects mean the same picture. */
+  root: SceneNode;
+  layers: SceneNode[];
+  bytes: number;
+  used: number;
+};
+
+/** Frames bigger than this on screen are drawn directly (only a few fit in view anyway). */
+const MAX_PICTURE_PIXELS = 4_000_000;
+const PICTURE_BUDGET = 192 * 1024 * 1024;
+
+/**
+ * Pictures of frames for the editor's canvas. Panning, and moving a frame, then draws one image
+ * per frame instead of every layer in it. A picture is made only once a frame has looked the same
+ * for two frames in a row, so zooming or editing inside it draws directly as before.
+ */
+export class FrameCache {
+  private pictures = new Map<string, FramePicture>();
+  private seen = new Map<string, { scale: number; root: SceneNode; layers: SceneNode[] }>();
+  private bytes = 0;
+  private tick = 0;
+
+  /** After fonts or images finish loading, every picture is out of date. */
+  clear() {
+    this.pictures.clear();
+    this.seen.clear();
+    this.bytes = 0;
+  }
+
+  /** Call once per canvas frame. */
+  nextFrame() {
+    this.tick++;
+  }
+
+  private static sameRoot(a: SceneNode, b: SceneNode): boolean {
+    if (a === b) return true;
+    for (const k of new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof SceneNode>) {
+      if (k === 'x' || k === 'y') continue;
+      if (a[k] !== b[k]) return false;
+    }
+    return true;
+  }
+
+  private static layersOf(doc: SceneDoc, id: string, out: SceneNode[]): boolean {
+    for (const k of doc.children(id)) {
+      const n = doc.get(k)!;
+      // instances draw their component's layers, which live elsewhere: no picture
+      if (n.type === 'INSTANCE' || out.length > 20_000) return false;
+      out.push(n);
+      if (!FrameCache.layersOf(doc, k, out)) return false;
+    }
+    return true;
+  }
+
+  private static sameLayers(a: SceneNode[], b: SceneNode[]) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+
+  /** Draws the frame from its picture when it can; false means draw it the usual way. */
+  draw(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions): boolean {
+    if (n.type !== 'FRAME' || n.section || !n.clipsContent || n.rotation !== 0 || n.isMask || (n.blendMode && n.blendMode !== 'normal')) return false;
+    if (n.effects?.some((e) => e.visible) || opts.outline || typeof ctx.getTransform !== 'function') return false;
+    if (opts.skip) for (const id of opts.skip) if (doc.has(id.split('~')[0]) && doc.ancestors(id.split('~')[0]).includes(n.id)) return false;
+    const m = ctx.getTransform();
+    if (m.b !== 0 || m.c !== 0 || m.a !== m.d) return false;
+    const scale = m.a;
+    const pad = n.strokes.some((p) => p.visible) ? Math.ceil(n.strokeWeight) + 1 : 0;
+    const w = Math.ceil((n.width + pad * 2) * scale);
+    const h = Math.ceil((n.height + pad * 2) * scale);
+    if (w <= 0 || h <= 0 || w * h > MAX_PICTURE_PIXELS) return false;
+    const layers: SceneNode[] = [];
+    if (!FrameCache.layersOf(doc, n.id, layers)) return false;
+
+    let pic = this.pictures.get(n.id);
+    if (pic && (pic.scale !== scale || !FrameCache.sameRoot(pic.root, n) || !FrameCache.sameLayers(pic.layers, layers))) {
+      this.drop(n.id);
+      pic = undefined;
+    }
+    if (!pic) {
+      // only a frame that stays the same between two frames gets a picture
+      const last = this.seen.get(n.id);
+      this.seen.set(n.id, { scale, root: n, layers });
+      if (!last || last.scale !== scale || !FrameCache.sameRoot(last.root, n) || !FrameCache.sameLayers(last.layers, layers)) return false;
+      const canvas = newCanvas(w, h);
+      const c = canvas?.getContext('2d') as Ctx | null;
+      if (!canvas || !c) return false;
+      c.setTransform(scale, 0, 0, scale, pad * scale, pad * scale);
+      drawNode(c, doc, { ...n, x: 0, y: 0, opacity: 1 }, { ...opts, cull: undefined, frames: undefined });
+      pic = { canvas, scale, pad, root: n, layers, bytes: w * h * 4, used: this.tick };
+      this.pictures.set(n.id, pic);
+      this.bytes += pic.bytes;
+      this.evict();
+    }
+    pic.used = this.tick;
+    // onto whole device pixels, so the picture stays sharp
+    const dx = Math.round(m.a * (n.x - pic.pad) + m.e);
+    const dy = Math.round(m.d * (n.y - pic.pad) + m.f);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha *= n.opacity;
+    ctx.drawImage(pic.canvas as CanvasImageSource, dx, dy);
+    ctx.restore();
+    return true;
+  }
+
+  private drop(id: string) {
+    const p = this.pictures.get(id);
+    if (!p) return;
+    this.bytes -= p.bytes;
+    this.pictures.delete(id);
+  }
+
+  private evict() {
+    if (this.bytes <= PICTURE_BUDGET) return;
+    const old = [...this.pictures].sort((a, b) => a[1].used - b[1].used);
+    for (const [id] of old) {
+      if (this.bytes <= PICTURE_BUDGET * 0.75) break;
+      this.drop(id);
+    }
+  }
+}

@@ -152,7 +152,30 @@ export function displayText(t: TextStyle): string {
   return out.join('');
 }
 
+/**
+ * Layouts already worked out, per text style object (styles are never changed in place, so a new
+ * style is a new key) and width. Drawing a page lays out every text on every frame otherwise.
+ * Fonts finishing loading change measurements: `forgetTextLayouts` starts over.
+ */
+let layoutCache = new WeakMap<TextStyle, Map<number | null, TextLayout>>();
+
+export function forgetTextLayouts() {
+  layoutCache = new WeakMap();
+}
+
 export function layoutText(t: TextStyle, maxWidth: number | null, measure: Measure = canvasMeasure): TextLayout {
+  if (measure !== canvasMeasure) return computeLayout(t, maxWidth, measure);
+  let byWidth = layoutCache.get(t);
+  if (!byWidth) layoutCache.set(t, (byWidth = new Map()));
+  let layout = byWidth.get(maxWidth);
+  if (!layout) {
+    if (byWidth.size > 8) byWidth.clear();
+    byWidth.set(maxWidth, (layout = computeLayout(t, maxWidth, measure)));
+  }
+  return layout;
+}
+
+function computeLayout(t: TextStyle, maxWidth: number | null, measure: Measure): TextLayout {
   const text = displayText(t);
   const { styles, at } = resolveStyles(t);
   const styleOf = (i: number) => styles[at ? at[i] : 0];

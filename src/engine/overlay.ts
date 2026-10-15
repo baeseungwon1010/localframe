@@ -2,7 +2,7 @@ import type { SceneNode } from '../../shared/schema.ts';
 import { type Editor, gridRects } from './editor.ts';
 import { type Mat, apply, multiply } from './math.ts';
 import { instanceDoc } from './instances.ts';
-import { drawChildren, imageRect } from './render.ts';
+import { FrameCache, drawChildren, imageRect } from './render.ts';
 import { getImage } from './images.ts';
 import { isScreen } from './prototype.ts';
 import { tracePath } from './vector.ts';
@@ -139,6 +139,15 @@ function crisp(v: number) {
   return Math.round(v) + 0.5;
 }
 
+const frameCaches = new WeakMap<Editor, FrameCache>();
+
+/** The frame pictures kept for an editor's canvas (cleared when fonts or images arrive). */
+export function frameCacheOf(editor: Editor): FrameCache {
+  let c = frameCaches.get(editor);
+  if (!c) frameCaches.set(editor, (c = new FrameCache()));
+  return c;
+}
+
 /** Draws the document and all editor overlays. `dpr` is the device pixel ratio. */
 export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr: number, c: OverlayColors) {
   const { width, height } = editor.viewSize;
@@ -156,6 +165,7 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
     outline: editor.outlineMode,
     skip: editor.editingText ? new Set([editor.editingText]) : editor.editingLabel ? new Set([`${editor.editingLabel}~label`]) : undefined,
     cull: { x: topLeft.x, y: topLeft.y, width: width / v.zoom, height: height / v.zoom },
+    scale: v.zoom,
   };
   if (editor.pixelPreview && v.zoom > 1 && typeof OffscreenCanvas !== 'undefined') {
     // pixel preview: draw at one pixel per unit, then blow it up without smoothing
@@ -173,9 +183,11 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
     ctx.drawImage(off, ox, oy);
     ctx.restore();
   } else {
+    const frames = frameCacheOf(editor);
+    frames.nextFrame();
     ctx.save();
     ctx.setTransform(dpr * v.zoom, 0, 0, dpr * v.zoom, dpr * v.x, dpr * v.y);
-    drawChildren(ctx, doc, null, drawOpts);
+    drawChildren(ctx, doc, null, { ...drawOpts, frames });
     ctx.restore();
   }
 
