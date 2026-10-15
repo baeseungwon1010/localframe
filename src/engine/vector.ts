@@ -157,8 +157,65 @@ export function smoothPath(pts: Point[]): VectorPoint[] {
   });
 }
 
+/** Outlines of the diagram shapes, filling a w × h box. */
+function diagramVector(kind: NonNullable<SceneNode['shape']>['kind'], w: number, h: number): Vector | null {
+  const P = (x: number, y: number, inn?: Point, out?: Point): VectorPoint => ({
+    x: round2(x),
+    y: round2(y),
+    ...(inn ? { in: { x: round2(inn.x), y: round2(inn.y) } } : {}),
+    ...(out ? { out: { x: round2(out.x), y: round2(out.y) } } : {}),
+  });
+  switch (kind) {
+    case 'diamond':
+      return { closed: true, points: [P(w / 2, 0), P(w, h / 2), P(w / 2, h), P(0, h / 2)] };
+    case 'parallelogram': {
+      const k = Math.min(w * 0.2, h);
+      return { closed: true, points: [P(k, 0), P(w, 0), P(w - k, h), P(0, h)] };
+    }
+    case 'chevron': {
+      const k = Math.min(w * 0.25, h / 2);
+      return { closed: true, points: [P(0, 0), P(w - k, 0), P(w, h / 2), P(w - k, h), P(0, h), P(k, h / 2)] };
+    }
+    case 'document': {
+      // a page whose bottom edge waves
+      const y = h * 0.86;
+      return {
+        closed: true,
+        points: [P(0, 0), P(w, 0), P(w, y, undefined, { x: w * 0.65, y: h * 1.12 }), P(0, y, { x: w * 0.35, y: h * 0.6 })],
+      };
+    }
+    case 'cylinder': {
+      // the outline, then the front edge of the top as a second (open) path
+      const e = Math.min(h * 0.12, w * 0.25);
+      const rx = w / 2;
+      const k = KAPPA;
+      return {
+        closed: true,
+        points: [
+          P(0, e, { x: 0, y: e - e * k }, undefined),
+          P(0, h - e, undefined, { x: 0, y: h - e + e * k }),
+          P(rx, h, { x: rx - rx * k, y: h }, { x: rx + rx * k, y: h }),
+          P(w, h - e, { x: w, y: h - e + e * k }, undefined),
+          P(w, e, undefined, { x: w, y: e - e * k }),
+          P(rx, 0, { x: rx + rx * k, y: 0 }, { x: rx - rx * k, y: 0 }),
+        ],
+        extra: [
+          {
+            closed: false,
+            points: [P(0, e, undefined, { x: 0, y: e + e * k }), P(rx, 2 * e, { x: rx - rx * k, y: 2 * e }, { x: rx + rx * k, y: 2 * e }), P(w, e, { x: w, y: e + e * k })],
+          },
+        ],
+      };
+    }
+    default:
+      return null;
+  }
+}
+
 /** Points of a polygon or star filling a w × h box, first point at the top. */
-export function shapeVector(shape: { kind: 'polygon' | 'star'; count: number; ratio: number }, w: number, h: number): Vector {
+export function shapeVector(shape: NonNullable<SceneNode['shape']>, w: number, h: number): Vector {
+  const diagram = diagramVector(shape.kind, w, h);
+  if (diagram) return diagram;
   const n = shape.kind === 'star' ? shape.count * 2 : shape.count;
   const unit: Point[] = [];
   for (let i = 0; i < n; i++) {

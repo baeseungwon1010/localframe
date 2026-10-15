@@ -75,10 +75,15 @@ import { canvasMeasure } from './text.ts';
 import { type RunProps, adjustRuns, styleRange } from './textRuns.ts';
 import { fitVector, outlineVector, scaleVector, shapeVector, simplifyPoints, smoothPath } from './vector.ts';
 import { areaToVector, booleanArea, strokeArea } from './pathOps.ts';
+import { canHaveLabel, defaultLabel } from './labels.ts';
+import { CONNECTOR_COLOR, DEFAULT_SHAPE_COLOR, DEFAULT_STICKY_COLOR, isDiagramItem } from './diagramColors.ts';
 
 export { fitText };
 
-export type Tool = 'move' | 'hand' | 'frame' | 'section' | 'slice' | 'pencil' | 'rect' | 'ellipse' | 'polygon' | 'star' | 'line' | 'arrow' | 'text' | 'pen' | 'comment';
+export type DiagramShape = 'diamond' | 'parallelogram' | 'cylinder' | 'document' | 'chevron';
+const DIAGRAM_SHAPES: readonly string[] = ['diamond', 'parallelogram', 'cylinder', 'document', 'chevron'];
+
+export type Tool = DiagramShape | 'sticky' | 'box' | 'move' | 'hand' | 'frame' | 'section' | 'slice' | 'pencil' | 'rect' | 'ellipse' | 'polygon' | 'star' | 'line' | 'arrow' | 'text' | 'pen' | 'comment';
 
 /** Where a new comment goes: on the page, and inside the layer under it if there is one. */
 export type CommentSpot = { x: number; y: number; nodeId?: string; offset?: Point };
@@ -146,6 +151,7 @@ type Interaction =
   | { kind: 'line-end'; id: string; end: 0 | 1; original: SceneNode }
   | { kind: 'create'; tool: Tool; start: Point; startScreen: Point; nodeId: string | null; parentId: string | null }
   | { kind: 'pen-handle' }
+  | { kind: 'quick-connect'; side: 'top' | 'right' | 'bottom' | 'left' }
   | { kind: 'pencil'; nodeId: string | null; parentId: string | null; points: Point[] }
   | { kind: 'vec-point'; id: string; index: number; part: 'point' | 'in' | 'out'; start: Point; original: Vector };
 
@@ -166,6 +172,13 @@ const TOOL_TYPE: Partial<Record<Tool, NodeType>> = {
   arrow: 'LINE',
   section: 'FRAME',
   slice: 'FRAME',
+  sticky: 'RECTANGLE',
+  box: 'RECTANGLE',
+  diamond: 'VECTOR',
+  parallelogram: 'VECTOR',
+  cylinder: 'VECTOR',
+  document: 'VECTOR',
+  chevron: 'VECTOR',
   polygon: 'VECTOR',
   star: 'VECTOR',
   text: 'TEXT',
@@ -2357,6 +2370,101 @@ export class Editor {
 
   // ----------------------------------------------------------- text editing
 
+  /** The shape or connector whose text is being typed. */
+  editingLabel: string | null = null;
+
+  /**
+   * Quick connect: with one shape selected, a "+" beyond each side (screen points). Unrotated
+   * shapes only, so the new shape lines up.
+   */
+  quickConnectSpots(): { side: 'top' | 'right' | 'bottom' | 'left'; at: Point }[] {
+    if (this.tool !== 'move' || this.selection.length !== 1 || this.isInteracting || this.editingLabel || this.editingText || this.editingVector || this.cropping) return [];
+    const n = this.doc.get(this.selection[0]);
+    if (!n || n.type === 'LINE' || !canHaveLabel(n) || n.rotation !== 0 || this.doc.isEffectivelyLocked(n.id)) return [];
+    const b = this.doc.worldBounds(n.id);
+    const a = this.toScreen({ x: b.x, y: b.y });
+    const w = b.width * this.viewport.zoom;
+    const h = b.height * this.viewport.zoom;
+    if (w < 24 || h < 24) return [];
+    const gap = 22;
+    return [
+      { side: 'top', at: { x: a.x + w / 2, y: a.y - gap } },
+      { side: 'right', at: { x: a.x + w + gap, y: a.y + h / 2 } },
+      { side: 'bottom', at: { x: a.x + w / 2, y: a.y + h + gap } },
+      { side: 'left', at: { x: a.x - gap, y: a.y + h / 2 } },
+    ];
+  }
+
+  /** Adds the same shape (style and size, no text) beyond a side, joined by an elbow arrow, and starts its text. */
+  quickConnect(side: 'top' | 'right' | 'bottom' | 'left') {
+    const n = this.selectedNodes()[0];
+    if (!n || !canHaveLabel(n) || n.type === 'LINE') return;
+    const GAP = 80;
+    const dx = side === 'right' ? n.width + GAP : side === 'left' ? -(n.width + GAP) : 0;
+    const dy = side === 'bottom' ? n.height + GAP : side === 'top' ? -(n.height + GAP) : 0;
+    const opposite = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' } as const;
+    const id = newId();
+    this.transact(() => {
+      const { label, ...rest } = n;
+      const copy: SceneNode = {
+        ...rest,
+        id,
+        // the next in its series: "Box 2" after "Box 1"
+        name: nextName(this.doc, n.name.replace(/ \d+$/, '') || n.type),
+        x: round2(n.x + dx),
+        y: round2(n.y + dy),
+        order: keyOnTop(this.doc, n.parentId),
+        reactions: undefined,
+        ...(label ? { label: { ...label, characters: '' } } : {}),
+      };
+      this.put(copy);
+      const line = createNode(this.doc, 'LINE', n.parentId, { x: n.x, y: n.y, width: 1, height: 0 });
+      this.put(
+        settleLine(this.doc, {
+          ...line,
+          strokes: [{ color: CONNECTOR_COLOR, opacity: 1, visible: true }],
+          strokeWeight: 2,
+          name: nextName(this.doc, 'Arrow'),
+          arrowEnd: true,
+          elbow: true,
+          startBind: { nodeId: n.id, anchor: side },
+          endBind: { nodeId: id, anchor: opposite[side] },
+        }),
+      );
+    });
+    this.startLabelEdit(id);
+  }
+
+  /** Starts typing in a shape or on a connector (double-click or Enter), like FigJam. */
+  startLabelEdit(id: string) {
+    const n = this.doc.get(id);
+    if (!n || !canHaveLabel(n) || this.doc.isEffectivelyLocked(id)) return;
+    if (this.editingVector) this.exitVectorEdit();
+    this.editingLabel = id;
+    this.setSelection([id]);
+    this.emit('view', 'tool');
+  }
+
+  /** Ends typing in a shape: the text is kept (an empty one removes the label). */
+  commitLabelEdit(characters: string) {
+    const id = this.editingLabel;
+    this.editingLabel = null;
+    const n = id ? this.doc.get(id) : undefined;
+    if (n) {
+      const text = characters.slice(0, 100_000);
+      const before = n.label?.characters ?? '';
+      if (text !== before) {
+        this.transact(() => {
+          if (!text.trim()) {
+            const { label: _l, ...rest } = n;
+            this.put(rest);
+          } else this.put({ ...n, label: { ...(n.label ?? defaultLabel(n)), characters: text } });
+        });
+      }
+    }
+    this.emit('view', 'tool', 'selection');
+  }
+
   startTextEdit(id: string) {
     const n = this.doc.get(id);
     if (!n || n.type !== 'TEXT' || this.doc.isEffectivelyLocked(id)) return;
@@ -2464,8 +2572,10 @@ export class Editor {
       for (let i = kids.length - 1; i >= 0; i--) {
         const n = this.doc.get(kids[i])!;
         if (parentId === null && this.doc.pageOf(n.id) !== page) continue;
-        if (n.type === 'TEXT' && n.text && (!scope || scope.has(n.id))) {
-          const hay = opts.matchCase ? n.text.characters : n.text.characters.toLocaleLowerCase();
+        // text layers, and text inside shapes and on connectors
+        const own = n.type === 'TEXT' ? n.text : n.label;
+        if (own && (!scope || scope.has(n.id))) {
+          const hay = opts.matchCase ? own.characters : own.characters.toLocaleLowerCase();
           let count = 0;
           for (let at = hay.indexOf(needle); at >= 0; at = hay.indexOf(needle, at + needle.length)) count++;
           if (count) out.push({ id: n.id, count });
@@ -2486,7 +2596,7 @@ export class Editor {
     this.transact(() => {
       for (const { id } of found) {
         const n = this.doc.get(id)!;
-        let t = n.text!;
+        let t = n.type === 'TEXT' ? n.text! : n.label!;
         const hay = opts.matchCase ? t.characters : t.characters.toLocaleLowerCase();
         const needle = opts.matchCase ? query : query.toLocaleLowerCase();
         const starts: number[] = [];
@@ -2498,7 +2608,7 @@ export class Editor {
           t = adjustRuns(t, next);
           total++;
         }
-        this.put(fitText({ ...n, text: t }));
+        this.put(n.type === 'TEXT' ? fitText({ ...n, text: t }) : { ...n, label: t });
       }
     });
     this.emit('view');
@@ -2665,6 +2775,12 @@ export class Editor {
     }
 
     // move tool
+    const spot = this.quickConnectSpots().find((s) => Math.hypot(s.at.x - e.sx, s.at.y - e.sy) <= 10);
+    // runs on release, so the new shape's text box keeps the focus
+    if (spot) {
+      this.interaction = { kind: 'quick-connect', side: spot.side };
+      return;
+    }
     const handle = this.handleAt(e.sx, e.sy);
     if (handle) return this.startHandleDrag(handle, p);
     const g = this.guideAt(e.sx, e.sy);
@@ -2911,6 +3027,10 @@ export class Editor {
       this.emit('view');
       return;
     }
+    if (it.kind === 'quick-connect') {
+      this.quickConnect(it.side);
+      return;
+    }
     if (it.kind === 'pencil') {
       // a click without a stroke draws nothing; a stroke is simplified and smoothed
       if (it.nodeId) {
@@ -3006,8 +3126,10 @@ export class Editor {
     if (sel) {
       const node = this.doc.get(sel)!;
       if (node.type === 'TEXT' && deepest === sel) return this.startTextEdit(sel);
-      if (node.type === 'VECTOR' && deepest === sel) return this.startVectorEdit(sel);
       if (deepest === sel && node.fills.some((f) => f.type === 'IMAGE')) return this.startCrop(sel);
+      // shapes and connectors take text; plain vectors edit their points
+      if (deepest === sel && canHaveLabel(node) && !(node.type === 'VECTOR' && !node.shape)) return this.startLabelEdit(sel);
+      if (node.type === 'VECTOR' && deepest === sel) return this.startVectorEdit(sel);
       if (node.type === 'INSTANCE' && deepest === sel) {
         this.selectInner(sel, e.sx, e.sy);
         return;
@@ -3023,6 +3145,7 @@ export class Editor {
     const target = pickTarget(this.doc, deepest, this.selection);
     const t = this.doc.get(target)!;
     if (t.type === 'TEXT') this.startTextEdit(target);
+    else if (target === deepest && canHaveLabel(t) && !(t.type === 'VECTOR' && !t.shape) && !t.fills.some((f) => f.type === 'IMAGE')) this.startLabelEdit(target);
     else this.setSelection([target]);
   }
 
@@ -3766,6 +3889,45 @@ export class Editor {
         clipsContent: false,
       };
     }
+    if (tool === 'sticky') {
+      return {
+        ...node,
+        name: nextName(this.doc, 'Sticky'),
+        sticky: true,
+        fills: [solid(DEFAULT_STICKY_COLOR.sticky)],
+        strokes: [],
+        radii: [6, 6, 6, 6],
+        effects: [
+          { type: 'DROP_SHADOW', color: '#1E1E1E', opacity: 0.08, x: 0, y: 1, blur: 2, spread: 0, visible: true },
+          { type: 'DROP_SHADOW', color: '#1E1E1E', opacity: 0.1, x: 0, y: 6, blur: 14, spread: 0, visible: true },
+        ],
+        label: { ...defaultLabel({ ...node, sticky: true }), characters: '' },
+      };
+    }
+    if (tool === 'box') {
+      return {
+        ...node,
+        name: nextName(this.doc, 'Box'),
+        fills: [solid(DEFAULT_SHAPE_COLOR.fill)],
+        strokes: [solid(DEFAULT_SHAPE_COLOR.stroke)],
+        strokeWeight: 2,
+        strokeAlign: 'inside',
+        radii: [12, 12, 12, 12],
+        label: { ...defaultLabel(node), characters: '' },
+      };
+    }
+    if (DIAGRAM_SHAPES.includes(tool)) {
+      // diagram shapes: a soft fill with an outline of the same hue, ready for text
+      return {
+        ...node,
+        name: nextName(this.doc, tool[0].toUpperCase() + tool.slice(1)),
+        fills: [solid(DEFAULT_SHAPE_COLOR.fill)],
+        strokes: [solid(DEFAULT_SHAPE_COLOR.stroke)],
+        strokeWeight: 2,
+        strokeAlign: 'inside',
+        shape: { kind: tool as DiagramShape, count: 4, ratio: 0.5 },
+      };
+    }
     if (tool !== 'polygon' && tool !== 'star') return node;
     return {
       ...node,
@@ -3788,8 +3950,8 @@ export class Editor {
       let node = createNode(this.doc, type, it.parentId, {
         x: round2(at.x),
         y: round2(at.y),
-        width: type === 'LINE' ? 100 : 100,
-        height: type === 'LINE' ? 0 : 100,
+        width: it.tool === 'sticky' ? 200 : it.tool === 'box' ? 160 : it.tool === 'parallelogram' || it.tool === 'chevron' || it.tool === 'document' ? 140 : 100,
+        height: type === 'LINE' ? 0 : it.tool === 'sticky' ? 200 : it.tool === 'box' ? 80 : 100,
       });
       if (it.tool === 'arrow') node = { ...node, arrowEnd: true, name: nextName(this.doc, 'Arrow') };
       node = this.asShape(node, it.tool);
@@ -3807,7 +3969,13 @@ export class Editor {
       const tol = this.hitTolerance();
       const startBind = bindingAt(this.doc, it.start, tol, skip) ?? undefined;
       const endBind = bindingAt(this.doc, this.toWorld(e.sx, e.sy), tol, skip) ?? undefined;
-      if (startBind || endBind) this.put(settleLine(this.doc, { ...n, startBind, endBind }));
+      if (startBind || endBind) {
+        // a connector between diagram shapes takes the diagram look
+        const ends = [startBind, endBind].map((b) => (b ? this.doc.get(b.nodeId) : undefined));
+        const diagram = ends.some((e) => e && isDiagramItem(e));
+        const look = diagram ? { strokes: [{ color: CONNECTOR_COLOR, opacity: 1, visible: true }], strokeWeight: 2, elbow: true } : {};
+        this.put(settleLine(this.doc, { ...n, ...look, startBind, endBind }));
+      }
     }
     if (it.tool === 'section' && it.nodeId) this.adoptIntoSection(it.nodeId);
     this.bindTarget = null;
@@ -3817,6 +3985,8 @@ export class Editor {
       this.pendingTextCreate = it.nodeId;
       this.startTextEdit(it.nodeId);
     }
+    // a new sticky note is for writing on
+    if (it.tool === 'sticky' && it.nodeId) this.startLabelEdit(it.nodeId);
     this.emit('selection', 'view');
   }
 
@@ -4026,6 +4196,9 @@ export class Editor {
       case 'KeyH':
         this.setTool('hand');
         return true;
+      case 'KeyN':
+        this.setTool('sticky');
+        return true;
       case 'KeyS':
         this.setTool('slice');
         return true;
@@ -4038,6 +4211,11 @@ export class Editor {
         return true;
       case 'Enter': {
         const sel = this.selectedNodes();
+        // diagram shapes and connectors: Enter types in them (plain vectors edit their points)
+        if (sel.length === 1 && !shift && canHaveLabel(sel[0]) && !(sel[0].type === 'VECTOR' && !sel[0].shape)) {
+          this.startLabelEdit(sel[0].id);
+          return true;
+        }
         if (sel.length === 1 && sel[0].type === 'VECTOR' && !shift) {
           this.startVectorEdit(sel[0].id);
           return true;
@@ -4100,6 +4278,7 @@ export class Editor {
     if (this.spaceDown || this.tool === 'hand') return 'grab';
     if (this.tool === 'text') return 'text';
     if (this.tool !== 'move') return 'crosshair';
+    if (this.quickConnectSpots().some((s) => Math.hypot(s.at.x - sx, s.at.y - sy) <= 10)) return 'pointer';
     if (it === 'guide' || this.guideAt(sx, sy) !== null) {
       const axis = this.guideDrag?.axis ?? (this.currentPage.guides ?? [])[this.guideAt(sx, sy) ?? 0]?.axis;
       return axis === 'x' ? 'col-resize' : 'row-resize';

@@ -5,9 +5,10 @@ import { ensureImages, imageDataUrl, imageSize } from './images.ts';
 import { instanceDoc } from './instances.ts';
 import { type Mat, type Rect, IDENTITY, localMatrix, unionRects } from './math.ts';
 import { buildPdf, type PdfPage } from './pdf.ts';
-import { arrowSize, capOf, clampRadii, gradientRaster, imageFilter, drawNode, effectReach, imageRect, imagesUsed, joinOf, lineShape, sideBands } from './render.ts';
+import { ELBOW_RADIUS, arrowSize, capOf, clampRadii, gradientRaster, imageFilter, tracePolyline, drawNode, effectReach, imageRect, imagesUsed, joinOf, lineShape, sideBands } from './render.ts';
 import { fontStack, layoutText, lineOffset } from './text.ts';
 import { svgPathData } from './vector.ts';
+import { labelNode } from './labels.ts';
 
 /** What to export: these layers on this background, cut to `clip` (a slice's area) when given. */
 export type ExportTarget = { ids: string[]; background: string | null; clip?: Rect };
@@ -403,7 +404,17 @@ class SvgWriter {
     const dash = n.strokeDash.length ? ` stroke-dasharray="${n.strokeDash.map(num).join(' ')}"` : '';
     const out: string[] = [];
     for (const p of paints) {
-      out.push(`<path d="${poly(shape.points)}" fill="none" stroke-linecap="${capOf(n)}" stroke-linejoin="round"${this.paint(p, 'stroke', Math.max(1, len), Math.max(1, n.strokeWeight))} stroke-width="${num(n.strokeWeight)}"${dash}/>`);
+      const d: string[] = [];
+      tracePolyline(
+        {
+          moveTo: (x, y) => d.push(`M${num(x)} ${num(y)}`),
+          lineTo: (x, y) => d.push(`L${num(x)} ${num(y)}`),
+          quadraticCurveTo: (cx, cy, x, y) => d.push(`Q${num(cx)} ${num(cy)} ${num(x)} ${num(y)}`),
+        },
+        shape.points,
+        n.elbow ? ELBOW_RADIUS : 0,
+      );
+      out.push(`<path d="${d.join('')}" fill="none" stroke-linecap="${capOf(n)}" stroke-linejoin="round"${this.paint(p, 'stroke', Math.max(1, len), Math.max(1, n.strokeWeight))} stroke-width="${num(n.strokeWeight)}"${dash}/>`);
       for (const h of shape.heads) out.push(`<path d="${poly(h)}Z"${this.paint(p, 'fill', Math.max(1, len), Math.max(1, n.strokeWeight))}/>`);
     }
     return out.join('');
@@ -577,6 +588,15 @@ class SvgWriter {
       case 'TEXT':
         body = this.text(n);
         break;
+    }
+    // text inside shapes and on connectors
+    const ln = n.label?.characters ? labelNode(n) : null;
+    if (ln) {
+      const pill =
+        n.type === 'LINE'
+          ? `<rect x="${num(ln.x - 6)}" y="${num(ln.y - 3)}" width="${num(ln.width + 12)}" height="${num(ln.height + 6)}" rx="4" fill="#FFFFFF"/>`
+          : '';
+      body += `${pill}<g transform="translate(${num(ln.x)} ${num(ln.y)})">${this.text(ln)}</g>`;
     }
     const effects = (n.effects ?? []).filter((e) => e.visible && e.type !== 'BACKGROUND_BLUR');
     if (effects.length) body = `<g${this.filter(n, effects)}>${body}</g>`;

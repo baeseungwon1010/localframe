@@ -15,6 +15,7 @@ import { getImage } from './images.ts';
 import { instanceDoc } from './instances.ts';
 import { type Point, type Rect, boundsOfPoints, localMatrix, rectsIntersect } from './math.ts';
 import { linePoints } from './geometry.ts';
+import { labelNode } from './labels.ts';
 import { fontString, layoutText, lineOffset } from './text.ts';
 import { tracePath } from './vector.ts';
 
@@ -364,6 +365,33 @@ export function arrowSize(strokeWeight: number) {
   return { length: 6 + strokeWeight * 3, halfWidth: 3 + strokeWeight * 1.6 };
 }
 
+/** Elbow connectors turn their corners on this radius (less where segments are short). */
+export const ELBOW_RADIUS = 10;
+
+/** A polyline, its corners rounded on `r` (0 for sharp corners). Works on canvas paths and SVG sinks. */
+export function tracePolyline(sink: { moveTo(x: number, y: number): void; lineTo(x: number, y: number): void; quadraticCurveTo(cx: number, cy: number, x: number, y: number): void }, pts: Point[], r: number) {
+  if (!pts.length) return;
+  sink.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i];
+    const next = pts[i + 1];
+    if (!next || r <= 0) {
+      sink.lineTo(p.x, p.y);
+      continue;
+    }
+    const prev = pts[i - 1];
+    const d1 = Math.hypot(p.x - prev.x, p.y - prev.y);
+    const d2 = Math.hypot(next.x - p.x, next.y - p.y);
+    const k = Math.min(r, d1 / 2, d2 / 2);
+    if (k <= 0.01) {
+      sink.lineTo(p.x, p.y);
+      continue;
+    }
+    sink.lineTo(p.x + ((prev.x - p.x) * k) / d1, p.y + ((prev.y - p.y) * k) / d1);
+    sink.quadraticCurveTo(p.x, p.y, p.x + ((next.x - p.x) * k) / d2, p.y + ((next.y - p.y) * k) / d2);
+  }
+}
+
 /**
  * A line's stroke (trimmed where arrowheads sit) and its arrowhead triangles, in its own
  * coordinates. Heads point along the first and last segments, so elbows get them right too.
@@ -407,7 +435,7 @@ function drawLine(ctx: Ctx, n: SceneNode) {
     ctx.strokeStyle = style;
     ctx.fillStyle = style;
     ctx.beginPath();
-    shape.points.forEach((q, i) => (i === 0 ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y)));
+    tracePolyline(ctx, shape.points, n.elbow ? ELBOW_RADIUS : 0);
     ctx.stroke();
     for (const head of shape.heads) {
       ctx.beginPath();
@@ -503,6 +531,13 @@ function drawOutline(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions, r
     case 'TEXT':
       drawText(ctx, { ...n, fills: [{ color: OUTLINE_INK, opacity: 1, visible: true }] });
       return;
+    case 'RECTANGLE':
+    case 'ELLIPSE':
+    case 'VECTOR':
+      shapePath(ctx, n);
+      ctx.stroke();
+      drawLabel(ctx, { ...n, labelColor: OUTLINE_INK }, opts);
+      return;
     case 'LINE': {
       ctx.beginPath();
       linePoints(n).forEach((q, i) => (i === 0 ? ctx.moveTo(q.x, q.y) : ctx.lineTo(q.x, q.y)));
@@ -543,6 +578,7 @@ function drawBody(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions, root
       shapePath(ctx, n);
       fillShape(ctx, n);
       strokeShape(ctx, n);
+      drawLabel(ctx, n, opts);
       break;
     case 'INSTANCE': {
       const depth = opts.depth ?? 0;
@@ -557,14 +593,34 @@ function drawBody(ctx: Ctx, doc: SceneDoc, n: SceneNode, opts: DrawOptions, root
       shapePath(ctx, n);
       fillShape(ctx, n);
       strokeShape(ctx, n);
+      drawLabel(ctx, n, opts);
       break;
     case 'LINE':
       drawLine(ctx, n);
+      drawLabel(ctx, n, opts);
       break;
     case 'TEXT':
       drawText(ctx, n);
       break;
   }
+}
+
+/** Text inside a shape, or on a white pill in the middle of a connector. Skipped while it is being typed. */
+function drawLabel(ctx: Ctx, n: SceneNode, opts: DrawOptions) {
+  if (!n.label?.characters || opts.skip?.has(`${n.id}~label`)) return;
+  const ln = labelNode(n);
+  if (!ln) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  if (n.type === 'LINE') {
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.roundRect(ln.x - 6, ln.y - 3, ln.width + 12, ln.height + 6, 4);
+    ctx.fill();
+  }
+  ctx.translate(ln.x, ln.y);
+  drawText(ctx, ln);
+  ctx.restore();
 }
 
 // ------------------------------------------------------------------ effects

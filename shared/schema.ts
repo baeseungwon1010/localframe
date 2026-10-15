@@ -473,13 +473,22 @@ export const SceneNodeSchema = z
     fixedOnScroll: z.boolean().optional(),
     /** A main component copied from another file (a library): where from, and which version. */
     libraryRef: z.object({ fileId: id, componentId: id, version: z.string().max(64) }).strict().optional(),
+    /** Text inside a shape, or along a connector (like FigJam). */
+    label: TextStyleSchema.optional(),
+    labelColor: hexColor.optional(),
+    /** A rectangle used as a sticky note: its text starts top-left. */
+    sticky: z.boolean().optional(),
     /** A frame used as a slice: never drawn, holds nothing, exports the area under it. */
     slice: z.boolean().optional(),
     /** A frame used as a section: a labelled area on the page that holds frames. Top level only. */
     section: z.boolean().optional(),
     /** A vector drawn as a polygon or star: its points are rebuilt from these when it changes size. */
     shape: z
-      .object({ kind: z.enum(['polygon', 'star']), count: z.number().int().min(3).max(60), ratio: z.number().min(0.01).max(1) })
+      .object({
+        kind: z.enum(['polygon', 'star', 'diamond', 'parallelogram', 'cylinder', 'document', 'chevron']),
+        count: z.number().int().min(3).max(60),
+        ratio: z.number().min(0.01).max(1),
+      })
       .strict()
       .optional(),
     /** Size limits applied by auto layout (to a hugging frame, and to its children). */
@@ -539,6 +548,8 @@ export const SceneNodeSchema = z
     if (n.type !== 'VECTOR' && n.shape) issue('only VECTOR has a shape');
     if (n.type !== 'COMPONENT' && n.libraryRef) issue('only components come from libraries');
     if (n.slice && n.type !== 'FRAME') issue('a slice is a frame');
+    if ((n.label || n.labelColor) && !['RECTANGLE', 'ELLIPSE', 'VECTOR', 'LINE'].includes(n.type)) issue('only shapes and lines have labels');
+    if (n.sticky && n.type !== 'RECTANGLE') issue('a sticky note is a rectangle');
     if (n.section && (n.type !== 'FRAME' || n.parentId !== null)) issue('a section is a frame on the page itself');
     if ((n.type === 'INSTANCE') !== (n.componentId !== undefined)) issue('INSTANCE needs componentId');
     if (n.type !== 'INSTANCE' && n.overrides) issue('only INSTANCE has overrides');

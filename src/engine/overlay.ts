@@ -154,7 +154,7 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
   const topLeft = editor.toWorld(0, 0);
   const drawOpts = {
     outline: editor.outlineMode,
-    skip: editor.editingText ? new Set([editor.editingText]) : undefined,
+    skip: editor.editingText ? new Set([editor.editingText]) : editor.editingLabel ? new Set([`${editor.editingLabel}~label`]) : undefined,
     cull: { x: topLeft.x, y: topLeft.y, width: width / v.zoom, height: height / v.zoom },
   };
   if (editor.pixelPreview && v.zoom > 1 && typeof OffscreenCanvas !== 'undefined') {
@@ -398,6 +398,23 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
   }
 
   if (editor.prototypeView) drawPrototype(ctx, editor, c);
+
+  // quick connect: "+" beyond each side of the selected shape
+  for (const s of editor.quickConnectSpots()) {
+    ctx.beginPath();
+    ctx.arc(s.at.x, s.at.y, 8, 0, Math.PI * 2);
+    ctx.fillStyle = c.handleFill;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = c.accent;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(s.at.x - 4, s.at.y);
+    ctx.lineTo(s.at.x + 4, s.at.y);
+    ctx.moveTo(s.at.x, s.at.y - 4);
+    ctx.lineTo(s.at.x, s.at.y + 4);
+    ctx.stroke();
+  }
 
   // slices: dashed outlines (they are never drawn in the design or exports)
   ctx.save();
