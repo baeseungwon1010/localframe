@@ -216,6 +216,9 @@ have changed and haven't been backed up for a while. In Chrome or Edge on a comp
 a folder you choose instead, refreshed whenever you come back to the file list (the one before is kept
 as `localframe-backup-previous.zip`).
 
+**Share** (in the title bar's ⋯ menu) sends the selection, or else the page, as a PNG or PDF through the
+device's share sheet, to messages, mail or files. Where the browser has no share sheet, the file is saved.
+
 ## Development
 
 ```bash
