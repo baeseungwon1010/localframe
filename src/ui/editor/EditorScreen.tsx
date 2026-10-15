@@ -15,6 +15,7 @@ import { PhoneSheet } from './PhoneSheet.tsx';
 import { loadHistory, saveHistory } from '../undoStore.ts';
 import { type ShareFormat, shareView } from '../share.ts';
 import { type CopyFormat, copyAs } from '../copyAs.ts';
+import { looksLikeSvg } from '../svgPaste.ts';
 import { LONG_LINK_CHARS, makeShareLink } from '../shareLink.ts';
 import { CanvasView, type Notice } from './CanvasView.tsx';
 import { LeftPanel } from './LeftPanel.tsx';
@@ -82,8 +83,6 @@ const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml,.s
 /** Larger SVG files than this aren't read (the importer refuses them anyway). */
 const MAX_SVG_BYTES = 5 * 1024 * 1024;
 const isSvgFile = (f: File) => f.type === 'image/svg+xml' || /\.svg$/i.test(f.name);
-/** Pasted text that is an SVG drawing (copied from a design tool or an icon site). */
-const looksLikeSvg = (text: string) => /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(text);
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; theme: Theme; setTheme: (t: Theme) => void }) {
