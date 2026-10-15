@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from 'react';
-import { ko } from './i18n/ko/index.ts';
 
 /**
  * The interface in English or Korean. Code is written in English, and the English text is the key:
@@ -29,6 +28,16 @@ function detect(): Lang {
 }
 
 let lang: Lang = detect();
+/** Korean texts, loaded only when Korean is in use (see loadLanguage). */
+let ko: Record<string, string> = {};
+
+/**
+ * Loads the dictionary for a language. Called before the app first draws (main.tsx) and when the
+ * language changes, so t() itself can stay synchronous; English needs nothing loaded.
+ */
+export async function loadLanguage(next: Lang): Promise<void> {
+  if (next === 'ko' && !Object.keys(ko).length) ko = (await import('./i18n/ko/index.ts')).ko;
+}
 const listeners = new Set<() => void>();
 /** Texts asked for in Korean that have no translation yet (tests read it). */
 const missing = new Set<string>();
@@ -43,8 +52,9 @@ export const LANGUAGES: { lang: Lang; name: string }[] = [
   { lang: 'ko', name: '한국어' },
 ];
 
-export function setLang(next: Lang) {
+export async function setLang(next: Lang) {
   if (next === lang) return;
+  await loadLanguage(next);
   lang = next;
   try {
     localStorage.setItem(KEY, next);
