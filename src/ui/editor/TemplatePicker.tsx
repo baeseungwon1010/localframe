@@ -21,7 +21,7 @@ export function TemplatePicker({ editor }: { editor: Editor }) {
           );
         })}
       </div>
-      <p>Or start from nothing: press N for a sticky note, or pick a tool below.</p>
+      <p>Or start from nothing: pick a tool below (N adds a sticky note).</p>
     </section>
   );
 }

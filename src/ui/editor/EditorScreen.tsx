@@ -6,7 +6,7 @@ import { onImageLoaded, readImageSize, retryFailedImages, useImagesOf } from '..
 import { drawChildren } from '../../engine/render.ts';
 import { SyncQueue } from '../../engine/sync.ts';
 import { navigate } from '../App.tsx';
-import { type Theme, loadFonts, useDiagramMode, useEditorRev } from '../hooks.ts';
+import { type Theme, loadFonts, useDiagramMode, useEditorRev, useMediaQuery } from '../hooks.ts';
 import { ExportFileDialog } from '../ExportFileDialog.tsx';
 import { RenameDialog } from './framePanels.tsx';
 import { CanvasView } from './CanvasView.tsx';
@@ -34,6 +34,9 @@ function presentFrom(editor: Editor): string | null {
   return cur?.id ?? editor.currentPage.prototypeStart ?? null;
 }
 import { DOCK_TOOLS, ToolRail } from './ToolRail.tsx';
+
+/** Screens this narrow show the board view whatever the file's mode. */
+const NARROW = '(max-width: 760px)';
 
 const THUMB_W = 480;
 const THUMB_H = 300;
@@ -80,7 +83,10 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   const [history, setHistory] = useState(false);
   const [finding, setFinding] = useState(false);
   const [palette, setPalette] = useState(false);
-  const [diagramMode, setDiagramModeRaw] = useDiagramMode(fileId);
+  const [diagramChoice, setDiagramModeRaw] = useDiagramMode(fileId);
+  // a phone has no room for the panels: it always gets the board view
+  const narrow = useMediaQuery(NARROW);
+  const diagramMode = diagramChoice || narrow;
   const setDiagramMode = (on: boolean) => {
     // a tool the dock doesn't offer would be stuck on with no button to see it by
     if (on && !DOCK_TOOLS.has(editor.tool)) editor.setTool('move');
@@ -368,7 +374,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         onPresent={present}
         onQuickActions={() => setPalette(true)}
         diagramMode={diagramMode}
-        onDiagramMode={setDiagramMode}
+        onDiagramMode={narrow ? undefined : setDiagramMode}
         onRename={async (name) => {
           const meta = await api.updateFile(fileId, { name });
           setFile(meta);
@@ -422,7 +428,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
             placeImage: () => imageInput.current?.click(),
             rename: () => setRenaming(true),
             diagramMode,
-            setDiagramMode,
+            setDiagramMode: narrow ? undefined : setDiagramMode,
           }}
         />
       )}

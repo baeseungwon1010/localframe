@@ -101,3 +101,16 @@ export function useDiagramMode(fileId: string): [boolean, (v: boolean) => void] 
   };
   return [value, set];
 }
+
+/** Whether a CSS media query matches, kept up to date. */
+export function useMediaQuery(query: string): boolean {
+  const subscribe = useCallback(
+    (fn: () => void) => {
+      const mq = window.matchMedia(query);
+      mq.addEventListener('change', fn);
+      return () => mq.removeEventListener('change', fn);
+    },
+    [query],
+  );
+  return useSyncExternalStore(subscribe, () => window.matchMedia(query).matches, () => false);
+}

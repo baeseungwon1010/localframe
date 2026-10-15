@@ -104,17 +104,17 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
             <path d="M9 7v18M23 7v18M7 9h18M7 23h18" stroke="var(--color-surface)" strokeWidth="2" strokeLinecap="round" />
             <rect x="12" y="12" width="8" height="8" fill="var(--color-accent)" />
           </svg>
-          <span>localframe</span>
+          <span className="brand-name">localframe</span>
         </div>
         <div className="files-actions">
           <button type="button" className="btn ghost" onClick={openSample}>
             Sample file
           </button>
-          <button type="button" className="btn secondary" onClick={() => importRef.current?.click()}>
-            <Upload size={14} strokeWidth={1.75} /> Import file
+          <button type="button" className="btn secondary" aria-label="Import file" onClick={() => importRef.current?.click()}>
+            <Upload size={14} strokeWidth={1.75} /> <span className="btn-label">Import file</span>
           </button>
-          <button type="button" className="btn primary" onClick={create}>
-            <FilePlus2 size={14} strokeWidth={1.75} /> New file
+          <button type="button" className="btn primary" aria-label="New file" onClick={create}>
+            <FilePlus2 size={14} strokeWidth={1.75} /> <span className="btn-label">New file</span>
           </button>
           <ThemeToggle theme={theme} setTheme={setTheme} />
           <input

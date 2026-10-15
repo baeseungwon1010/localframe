@@ -28,7 +28,8 @@ export function TitleBar(props: {
   onPresent: () => void;
   onQuickActions: () => void;
   diagramMode: boolean;
-  onDiagramMode: (on: boolean) => void;
+  /** Absent when the screen can only show the board (then there's no switch). */
+  onDiagramMode?: (on: boolean) => void;
 }) {
   const { editor, file, saveStatus, saveError } = props;
   useEditorRev(editor, 'view', 'doc');
@@ -72,14 +73,16 @@ export function TitleBar(props: {
         </span>
       </div>
       <div className="titlebar-right">
-        <div className="mode-switch" role="group" aria-label="Editor mode">
-          <button type="button" aria-pressed={!props.diagramMode} onClick={() => props.onDiagramMode(false)} title="Every tool and panel">
-            Design
-          </button>
-          <button type="button" aria-pressed={props.diagramMode} onClick={() => props.onDiagramMode(true)} title="Just the board: sticky notes, shapes and connectors">
-            Diagram
-          </button>
-        </div>
+        {props.onDiagramMode && (
+          <div className="mode-switch" role="group" aria-label="Editor mode">
+            <button type="button" aria-pressed={!props.diagramMode} onClick={() => props.onDiagramMode?.(false)} title="Every tool and panel">
+              Design
+            </button>
+            <button type="button" aria-pressed={props.diagramMode} onClick={() => props.onDiagramMode?.(true)} title="Just the board: sticky notes, shapes and connectors">
+              Diagram
+            </button>
+          </div>
+        )}
         <button type="button" className="quick-btn" onClick={props.onQuickActions} aria-label="Quick actions" data-tip={`Quick actions  ${MOD}/`} data-tip-side="bottom">
           <Search size={14} strokeWidth={1.5} aria-hidden="true" />
           <span>Search commands</span>
@@ -116,7 +119,7 @@ export function TitleBar(props: {
           </IconButton>
         </span>
         <button type="button" className="btn primary small present-btn" onClick={props.onPresent} title={`Present (${MOD}${ALT}Enter)`}>
-          <Play size={12} strokeWidth={2} /> Present
+          <Play size={12} strokeWidth={2} /> <span className="present-label">Present</span>
         </button>
       </div>
       {moreMenu && (

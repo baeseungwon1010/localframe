@@ -2533,3 +2533,85 @@ button:disabled {
   font-size: var(--text-xs);
   line-height: 1.4;
 }
+
+/* ------------------------------------------------------------- touch and phones */
+
+/* fingers need bigger targets than a mouse */
+@media (pointer: coarse) {
+  .tooldock .tool-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .diagram-swatch {
+    width: 28px;
+    height: 28px;
+  }
+
+  .diagram-bar {
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .diagram-bar .mini-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .menu-item {
+    height: 40px;
+  }
+}
+
+@media (max-width: 760px) {
+  .titlebar {
+    padding: 0 var(--space-2);
+  }
+
+  .titlebar-right {
+    gap: var(--space-1);
+  }
+
+  .save-status,
+  .zoom-btn,
+  .present-label {
+    display: none;
+  }
+
+  .title-name {
+    max-width: 40vw;
+  }
+
+  /* the dock scrolls sideways rather than running off a small screen */
+  .tooldock {
+    max-width: calc(100% - 16px);
+    overflow-x: auto;
+    bottom: var(--space-4);
+    scrollbar-width: none;
+  }
+
+  .editor.diagram-mode .tool-hint,
+  .editor.diagram-mode .toast {
+    bottom: 84px;
+  }
+
+  .template-picker {
+    padding: var(--space-6);
+  }
+}
+
+/* the file list header keeps its buttons on a phone: icons only */
+@media (max-width: 560px) {
+  .files-header {
+    padding: 0 var(--space-5);
+  }
+
+  .files-actions {
+    gap: var(--space-2);
+  }
+
+  .brand-name,
+  .files-header .btn-label {
+    display: none;
+  }
+}
