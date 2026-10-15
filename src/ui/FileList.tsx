@@ -5,7 +5,7 @@ import type { FileMeta } from '../../shared/schema.ts';
 import { ApiError, api, BROWSER_STORAGE, STORAGE_DOWN } from '../api.ts';
 import { navigate } from './App.tsx';
 import { IconButton, Menu, type MenuItem, ThemeToggle, relativeTime } from './components.tsx';
-import type { Theme } from './hooks.ts';
+import { type Theme, rememberDiagramMode } from './hooks.ts';
 import { useInstall } from './pwa.ts';
 import { backupDue, backupFolder, canBackUpToFolder, forgetBackupFolder, lastBackup, markBackedUp, snoozeBackupReminder } from './backupStatus.ts';
 
@@ -143,9 +143,11 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
       : []),
   ];
 
-  const create = async () => {
+  /** A new file; a board opens in diagram mode, with its templates. */
+  const create = async (board = false) => {
     try {
-      const f = await api.createFile('Untitled');
+      const f = await api.createFile(board ? 'Untitled board' : 'Untitled');
+      if (board) rememberDiagramMode(f.id);
       navigate(`#/file/${f.id}`);
     } catch (e) {
       setError(e instanceof ApiError ? `Couldn't create a file: ${e.message}` : STORAGE_DOWN);
@@ -224,7 +226,7 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
           <button type="button" className="btn secondary" aria-label="Import file" onClick={() => importRef.current?.click()}>
             <Upload size={14} strokeWidth={1.75} /> <span className="btn-label">Import file</span>
           </button>
-          <button type="button" className="btn primary" aria-label="New file" onClick={create}>
+          <button type="button" className="btn primary" aria-label="New file" onClick={() => void create()}>
             <FilePlus2 size={14} strokeWidth={1.75} /> <span className="btn-label">New file</span>
           </button>
           <button
@@ -266,7 +268,8 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
 
       <main className="files-main">
         <h1>Files</h1>
-        {BROWSER_STORAGE && (
+        {/* the welcome says this on a first visit */}
+        {BROWSER_STORAGE && !!files?.length && (
           <p className="browser-note">
             Files are saved in this browser only, on this device. Nothing is uploaded. Clearing site data removes them, so use
             Export to keep a copy.
@@ -319,17 +322,32 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
           </p>
         )}
         {files && files.length === 0 && (
-          <div className="files-empty">
-            <p>No files yet. Start a blank file, or open a finished sample to see how it's built.</p>
-            <div className="files-empty-actions">
-              <button type="button" className="btn primary" onClick={create}>
-                <FilePlus2 size={14} strokeWidth={1.75} /> New file
-              </button>
-              <button type="button" className="btn secondary" onClick={openSample}>
-                Open a sample file
-              </button>
+          <section className="welcome" aria-labelledby="welcome-title">
+            <div className="welcome-text">
+              <h2 id="welcome-title">Design screens and draw diagrams, right in your browser</h2>
+              <ul>
+                <li>
+                  {BROWSER_STORAGE
+                    ? 'Nothing to sign up for. Your files are saved in this browser, on this device.'
+                    : 'Nothing to sign up for. Your files are saved on this computer.'}
+                </li>
+                {BROWSER_STORAGE && <li>Once it has loaded it works offline, and it installs like an app.</li>}
+                <li>Share a board as an image, a PDF{BROWSER_STORAGE ? ' or a link' : ''}.</li>
+              </ul>
+              <div className="files-empty-actions">
+                <button type="button" className="btn primary" onClick={() => void create()}>
+                  <FilePlus2 size={14} strokeWidth={1.75} /> New file
+                </button>
+                <button type="button" className="btn secondary" onClick={() => void create(true)}>
+                  Start a board
+                </button>
+                <button type="button" className="btn ghost" onClick={openSample}>
+                  Open a sample file
+                </button>
+              </div>
             </div>
-          </div>
+            <img className="welcome-art" src={`${import.meta.env.BASE_URL}board-sketch.svg`} alt="" width="360" height="240" />
+          </section>
         )}
         {files && files.length > 0 && (
           <ul className="file-grid">

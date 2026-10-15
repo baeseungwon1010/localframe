@@ -84,6 +84,17 @@ export function useRemembered(name: string, initial: boolean): [boolean, (v: boo
 
 const DIAGRAM_FILES = 'localframe.diagramFiles';
 
+/** Opens a file in diagram mode from now on (before it is first opened). */
+export function rememberDiagramMode(fileId: string) {
+  try {
+    const list = JSON.parse(localStorage.getItem(DIAGRAM_FILES) ?? '[]') as unknown;
+    const ids = Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string' && x !== fileId) : [];
+    localStorage.setItem(DIAGRAM_FILES, JSON.stringify([...ids, fileId].slice(-500)));
+  } catch {
+    /* opens in design mode */
+  }
+}
+
 /** Whether a file opens in diagram mode (the simple board view), kept per file in this browser. */
 export function useDiagramMode(fileId: string): [boolean, (v: boolean) => void] {
   const read = (): string[] => {

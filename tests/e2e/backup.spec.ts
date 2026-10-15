@@ -26,7 +26,7 @@ test('back up every file to one ZIP, delete them, and restore them from it', asy
     await page.getByRole('menuitem', { name: 'Delete file' }).click();
     await expect(page.locator('.file-name')).toHaveCount(left - 1);
   }
-  await expect(page.getByText('No files yet')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /right in your browser/ })).toBeVisible();
 
   await page.getByLabel('Backup to restore').setInputFiles(zip);
   await expect(page.getByRole('status').filter({ hasText: `Restored ${names.length}` })).toBeVisible();
