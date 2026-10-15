@@ -346,4 +346,12 @@ export const editorChrome: Record<string, string> = {
   'This SVG is too large to import.': '이 SVG는 너무 커서 가져올 수 없어요.',
   'This SVG is nested too deeply to import.': '이 SVG는 너무 깊게 중첩되어 가져올 수 없어요.',
   'This SVG could not be imported.': '이 SVG는 가져올 수 없어요.',
+  // copying pictures
+  'Copy as PNG': 'PNG로 복사',
+  'Copy as SVG': 'SVG로 복사',
+  'Copied as PNG.': 'PNG로 복사했어요.',
+  'Copied as SVG.': 'SVG로 복사했어요.',
+  'Select something to copy first.': '복사할 것을 먼저 선택하세요.',
+  "This browser can't copy pictures. Use Export instead.": '이 브라우저는 그림을 복사할 수 없어요. 내보내기를 써 주세요.',
+  "Couldn't copy: {error}": '복사하지 못했어요: {error}',
 };

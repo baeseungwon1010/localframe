@@ -14,6 +14,7 @@ import { RenameDialog } from './framePanels.tsx';
 import { PhoneSheet } from './PhoneSheet.tsx';
 import { loadHistory, saveHistory } from '../undoStore.ts';
 import { type ShareFormat, shareView } from '../share.ts';
+import { type CopyFormat, copyAs } from '../copyAs.ts';
 import { LONG_LINK_CHARS, makeShareLink } from '../shareLink.ts';
 import { CanvasView, type Notice } from './CanvasView.tsx';
 import { LeftPanel } from './LeftPanel.tsx';
@@ -137,6 +138,17 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
       setNotice({ text: 'Link copied. Whoever opens it can save their own copy of this file.{notes}', vars: { notes: notes.map((n) => ` ${n}`).join('') } });
     } catch (e) {
       setNotice({ text: "Couldn't make a link: {error}", vars: { error: e instanceof Error ? t(e.message) : t('something went wrong') } });
+    }
+  };
+  /** The selection to the clipboard as a picture or as SVG text. */
+  const copyPicture = async (format: CopyFormat) => {
+    try {
+      const done = await copyAs(editor, format);
+      if (done === 'empty') setNotice({ text: 'Select something to copy first.' });
+      else if (done === 'unsupported') setNotice({ text: "This browser can't copy pictures. Use Export instead." });
+      else setNotice({ text: format === 'png' ? 'Copied as PNG.' : 'Copied as SVG.' });
+    } catch (e) {
+      setNotice({ text: "Couldn't copy: {error}", vars: { error: e instanceof Error ? t(e.message) : t('unknown error') } });
     }
   };
   const share = async (format: ShareFormat) => {
@@ -491,6 +503,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         diagram={diagramMode}
         onReady={onCanvasReady}
         onDropFiles={(files, at) => void placeImages(files, at)}
+        onCopyAs={(f) => void copyPicture(f)}
         notice={notice}
         onDismissNotice={() => setNotice(null)}
       >
@@ -540,6 +553,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
               setDiagramMode: narrow ? undefined : setDiagramMode,
               share: (f) => void share(f),
             presentBoard: () => setBoardPresenting(true),
+            copyAs: (f) => void copyPicture(f),
               shareLink: BROWSER_STORAGE ? () => void shareLink() : undefined,
             }}
           />

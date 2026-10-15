@@ -25,6 +25,7 @@ export type ScreenActions = {
   rename: () => void;
   share?: (format: 'png' | 'pdf') => void;
   presentBoard?: () => void;
+  copyAs?: (format: 'png' | 'svg') => void;
   shareLink?: () => void;
   diagramMode: boolean;
   /** Absent when the screen can only show the board. */
@@ -80,6 +81,12 @@ export function buildCommands(editor: Editor, screen: ScreenActions): Command[] 
 
     cmd('Edit', 'undo', 'Undo', () => editor.undo(), () => (editor.canUndo ? null : 'Nothing to undo'), `${MOD}Z`),
     cmd('Edit', 'redo', 'Redo', () => editor.redo(), () => (editor.canRedo ? null : 'Nothing to redo'), `${MOD}${SHIFT}Z`),
+    ...(screen.copyAs
+      ? [
+          cmd('Edit', 'copy-png', 'Copy as PNG', () => screen.copyAs?.('png'), needSel, undefined, 'clipboard picture image screenshot'),
+          cmd('Edit', 'copy-svg', 'Copy as SVG', () => screen.copyAs?.('svg'), needSel, undefined, 'clipboard vector code'),
+        ]
+      : []),
     cmd('Edit', 'select-all', 'Select all', () => editor.selectAll(), always, `${MOD}A`),
     cmd('Edit', 'select-matching', 'Select matching layers', () => editor.selectMatching(), needSel, `${MOD}${ALT}A`, 'same similar'),
     cmd('Edit', 'duplicate', 'Duplicate', () => editor.duplicateSelection(), needSel, `${MOD}D`, 'copy clone'),

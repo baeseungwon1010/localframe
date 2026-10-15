@@ -59,6 +59,8 @@ export function CanvasView(props: {
   onDismissNotice: () => void;
   /** Diagram mode: the board view with the tool dock. */
   diagram?: boolean;
+  /** Copies the selection to the clipboard as a picture or SVG. */
+  onCopyAs?: (format: 'png' | 'svg') => void;
   children?: React.ReactNode;
 }) {
   const { editor, onReady } = props;
@@ -272,6 +274,12 @@ export function CanvasView(props: {
         if (text) void navigator.clipboard?.writeText(text);
       },
     },
+    ...(props.onCopyAs
+      ? ([
+          { label: t('Copy as PNG'), disabled: !hasSel, onSelect: () => props.onCopyAs?.('png') },
+          { label: t('Copy as SVG'), disabled: !hasSel, onSelect: () => props.onCopyAs?.('svg') },
+        ] as MenuItem[])
+      : []),
     {
       label: t('Paste'),
       shortcut: `${MOD}V`,
