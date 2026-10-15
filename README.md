@@ -238,6 +238,20 @@ The browser tests run in Chromium locally; `E2E_BROWSERS=firefox npm run test:e2
 Firefox, and the "Browser tests" workflow runs them in Firefox and WebKit (Safari's engine) on every
 push.
 
+### Bringing work in
+
+Paste SVG (as copied from a design tool or an icon site) or drop or pick an `.svg` file, and it becomes
+editable layers in a frame: paths with every command and arcs, rectangles, circles, lines, text,
+groups and transforms, fills, strokes, gradients, styles from `<style>` and `style=""`, and `<use>`.
+Clip paths, masks, filters, patterns and embedded images are left out.
+
+### Boards and history
+
+In diagram mode, **Present** shows the board's sections (or frames) one after another in reading
+order, gliding from one to the next; arrow keys, a swipe or a tap move on, F goes full screen. Undo
+reaches back past a reload: each file's recent history is kept in the browser while the file is as
+that history left it. After an update the file list says once what's new, with a link for feedback.
+
 ### Languages
 
 The interface is in English and Korean: it follows the browser's language, and the language button
