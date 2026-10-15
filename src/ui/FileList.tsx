@@ -17,6 +17,7 @@ import {
   forgetBackupFolder,
   lastBackup,
   makeBackup,
+  markBackedUp,
   restoreBackup,
   snoozeBackupReminder,
 } from './backup.ts';
@@ -83,8 +84,9 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
         if (n === null) return setError(`Couldn't write to the “${folder.name}” folder: permission was not given.`);
         setNotice(`Backed up ${n} ${n === 1 ? 'file' : 'files'} to the “${folder.name}” folder.`);
       } else {
-        const { blob, filename, count } = await makeBackup();
+        const { blob, filename, count, createdAt } = await makeBackup();
         downloadBlob(blob, filename);
+        markBackedUp(createdAt);
         setNotice(`Backed up ${count} ${count === 1 ? 'file' : 'files'} to ${filename}. Keep it somewhere safe, such as a cloud drive.`);
       }
       setError(null);

@@ -14,7 +14,8 @@ const LAST_KEY = 'localframe.lastBackup';
 const SNOOZE_KEY = 'localframe.backupSnoozedUntil';
 const DAY = 24 * 60 * 60 * 1000;
 
-export async function makeBackup(): Promise<{ blob: Blob; filename: string; count: number }> {
+/** The backup as a ZIP. Call `markBackedUp(createdAt)` once it is safely saved somewhere. */
+export async function makeBackup(): Promise<{ blob: Blob; filename: string; count: number; createdAt: string }> {
   const files = await api.listFiles();
   const used = new Set<string>([MANIFEST]);
   const enc = new TextEncoder();
@@ -28,12 +29,15 @@ export async function makeBackup(): Promise<{ blob: Blob; filename: string; coun
   }
   const createdAt = new Date().toISOString();
   entries.unshift({ name: MANIFEST, data: enc.encode(JSON.stringify({ format: 'localframe-backup', version: 1, createdAt, files: listed }, null, 2)) });
-  markBackedUp(createdAt);
-  return { blob: buildZip(entries), filename: `localframe-backup-${createdAt.slice(0, 10)}.zip`, count: files.length };
+  return { blob: buildZip(entries), filename: `localframe-backup-${createdAt.slice(0, 10)}.zip`, count: files.length, createdAt };
 }
 
 /** Imports every file in a backup (as new files next to the ones here). */
+/** Larger files than this aren't read (it all has to fit in memory, on phones too). */
+export const MAX_BACKUP_BYTES = 600 * 1024 * 1024;
+
 export async function restoreBackup(file: Blob): Promise<{ restored: string[]; failed: string[] }> {
+  if (file.size > MAX_BACKUP_BYTES) throw new Error('That backup is larger than 600 MB, which is the limit.');
   const entries = await readZip(new Uint8Array(await file.arrayBuffer()));
   const dec = new TextDecoder();
   const restored: string[] = [];
@@ -72,7 +76,7 @@ export const lastBackup = (): Date | null => {
   return v && !Number.isNaN(Date.parse(v)) ? new Date(v) : null;
 };
 
-function markBackedUp(iso: string) {
+export function markBackedUp(iso: string) {
   write(LAST_KEY, iso);
 }
 
@@ -156,7 +160,7 @@ export async function backUpToFolder(dir: DirHandle, ask: boolean): Promise<numb
   if (!(await folderReady(dir))) {
     if (!ask || (await dir.requestPermission?.({ mode: 'readwrite' })) !== 'granted') return null;
   }
-  const { blob, count } = await makeBackup();
+  const { blob, count, createdAt } = await makeBackup();
   try {
     const old = await dir.getFileHandle('localframe-backup.zip');
     const prev = await dir.getFileHandle('localframe-backup-previous.zip', { create: true });
@@ -170,5 +174,7 @@ export async function backUpToFolder(dir: DirHandle, ask: boolean): Promise<numb
   const w = await fh.createWritable();
   await w.write(blob);
   await w.close();
+  // only now is it safe: a folder that was moved or full leaves the backup due
+  markBackedUp(createdAt);
   return count;
 }
