@@ -1,0 +1,40 @@
+name: Browser tests
+
+# The browser tests in Firefox and WebKit (Safari's engine) against the web version. Chromium runs
+# locally; WebKit needs system libraries a local machine may not have, and the runner installs them.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browsers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, webkit]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - run: npm run test:e2e:web
+        env:
+          E2E_BROWSERS: ${{ matrix.browser }}
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.browser }}
+          path: test-results
+          retention-days: 7
