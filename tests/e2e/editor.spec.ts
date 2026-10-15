@@ -662,3 +662,32 @@ test('boards: start from a template, notes grow as you write, and stamps', async
   expect(Number(await page.getByLabel('Height', { exact: true }).inputValue())).toBeGreaterThan(200);
   expect(errors).toEqual([]);
 });
+
+test('diagram mode: a text bar for size, bold and colour', async ({ page }) => {
+  const errors = await newFile(page);
+  await page.getByRole('group', { name: 'Editor mode' }).getByRole('button', { name: 'Diagram' }).click();
+  const { at } = await canvasHelpers(page);
+  await page.keyboard.press('t');
+  await page.mouse.click(...at(200, 200));
+  await page.keyboard.type('Board title');
+  await page.keyboard.press('Escape');
+  const bar = page.getByRole('toolbar', { name: 'Text style' });
+  await expect(bar).toBeVisible();
+  await bar.getByRole('button', { name: 'Extra large text' }).click();
+  await bar.getByRole('button', { name: 'Bold' }).click();
+  await bar.getByRole('button', { name: 'Blue text' }).click();
+  await expect(bar.getByRole('button', { name: 'Extra large text' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(bar.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(bar.getByRole('button', { name: 'Blue text' })).toHaveAttribute('aria-pressed', 'true');
+  await page.screenshot({ path: 'test-results/text-bar.png' });
+
+  // a sticky note: its colours and the same sizes
+  await page.keyboard.press('n');
+  await page.mouse.click(...at(600, 300));
+  await page.getByRole('textbox', { name: 'Shape text' }).fill('Note');
+  await page.keyboard.press('Escape');
+  const shapes = page.getByRole('toolbar', { name: 'Diagram colours' });
+  await shapes.getByRole('button', { name: 'Large text', exact: true }).click();
+  await expect(shapes.getByRole('button', { name: 'Large text', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  expect(errors).toEqual([]);
+});

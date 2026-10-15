@@ -3,6 +3,8 @@ import { Editor, type PointerInput } from '../../src/engine/editor.ts';
 import { labelMatrix, labelNode } from '../../src/engine/labels.ts';
 import { apply, matRotation, multiply } from '../../src/engine/math.ts';
 import { STAMPS, TEMPLATES } from '../../src/engine/templates.ts';
+import { isBold, textColorOf, textSizeOf, withBold, withTextColor, withTextSize } from '../../src/engine/diagramColors.ts';
+import { hitDeepest } from '../../src/engine/hit.ts';
 import { SceneNodeSchema, validateTree } from '../../shared/schema.ts';
 
 const ptr = (sx: number, sy: number): PointerInput => ({ sx, sy, button: 0, shift: false, alt: false, mod: false });
@@ -116,5 +118,48 @@ describe('diagram boards', () => {
     ed.setStamp('not a stamp');
     expect(ed.stamp).toBe('⭐');
     valid(ed);
+  });
+
+  it('board text controls: size, bold and colour apply to all of a text, and shapes grow to the size', () => {
+    const ed = setup();
+    ed.setTool('text');
+    ed.pointerDown(ptr(100, 100));
+    ed.pointerUp(ptr(100, 100));
+    const id = ed.editingText!;
+    ed.commitTextEdit('Hello board');
+    const n = ed.doc.get(id)!;
+    // a styled stretch that the controls override
+    const styled = { ...n, text: { ...n.text!, runs: [{ start: 0, end: 5, fontSize: 40, color: '#FF0000', fontWeight: 400 }] } };
+    expect(textSizeOf(styled)).toBeNull();
+    const big = withTextSize(styled, 36);
+    expect(textSizeOf(big)).toBe(36);
+    expect(big.text!.runs).toEqual([{ start: 0, end: 5, color: '#FF0000', fontWeight: 400 }]);
+    const bold = withBold(big, true);
+    expect(isBold(bold)).toBe(true);
+    const blue = withTextColor(bold, '#5B8DEF');
+    expect(textColorOf(blue)).toBe('#5B8DEF');
+    expect(blue.text!.runs).toBeUndefined();
+    ed.updateNodes([id], () => blue);
+    expect(ed.doc.get(id)!.height).toBeGreaterThan(n.height);
+
+    ed.insertTemplate('brainstorm');
+    const sticky = [...ed.doc.all()].find((x) => x.label?.characters === 'What problem does it solve?')!;
+    const grown = withTextSize(sticky, 36);
+    expect(grown.label!.fontSize).toBe(36);
+    expect(grown.height).toBeGreaterThan(sticky.height);
+    valid(ed);
+  });
+
+  it('clicking the text on a connector picks the connector, even off a steep line', () => {
+    const ed = setup();
+    ed.insertTemplate('flowchart');
+    const yes = [...ed.doc.all()].find((x) => x.label?.characters === 'Yes')!;
+    const ln = labelNode(yes)!;
+    const world = multiply(ed.doc.world(yes.id), labelMatrix(yes, ln));
+    // the right end of the upright text, well off the vertical line
+    const p = apply(world, { x: ln.width - 1, y: ln.height / 2 });
+    const linePt = apply(ed.doc.world(yes.id), { x: ln.x + ln.width / 2, y: ln.y + ln.height / 2 });
+    expect(Math.abs(p.x - linePt.x)).toBeGreaterThan(5);
+    expect(hitDeepest(ed.doc, p, 0.5)).toBe(yes.id);
   });
 });
