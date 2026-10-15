@@ -66,3 +66,27 @@ test('on a phone: the board view, pinch zoom, double tap to write and a long pre
   await page.screenshot({ path: 'test-results/phone.png' });
   expect(errors).toEqual([]);
 });
+
+test('on a phone: the panels open in a sheet from the bottom', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.goto('/');
+  await page.getByRole('button', { name: 'New file' }).first().click();
+  await page.getByRole('button', { name: /Flowchart/ }).tap();
+
+  await page.getByRole('button', { name: 'Show panels' }).tap();
+  const sheet = page.getByRole('region', { name: 'Edit panel' });
+  await expect(sheet).toBeVisible();
+  // the template is selected: its properties, then its layers
+  await expect(sheet.getByRole('complementary', { name: 'Properties' })).toBeVisible();
+  await sheet.getByRole('tab', { name: 'Layers' }).tap();
+  await expect(sheet.getByRole('treeitem', { name: /^Circle 1/ })).toBeVisible();
+  await sheet.getByRole('treeitem', { name: /^Box 1/ }).tap();
+  await sheet.getByRole('tab', { name: 'Properties' }).tap();
+  await expect(sheet.getByLabel('Width', { exact: true })).toHaveValue('160');
+  await sheet.getByRole('button', { name: 'Show more' }).tap();
+  await page.screenshot({ path: 'test-results/phone-sheet.png' });
+  await sheet.getByRole('button', { name: 'Close panel' }).tap();
+  await expect(sheet).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
