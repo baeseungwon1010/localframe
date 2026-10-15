@@ -11,6 +11,7 @@ import { navigate } from '../App.tsx';
 import { type Theme, loadFonts, useDiagramMode, useEditorRev, useMediaQuery } from '../hooks.ts';
 import { ExportFileDialog } from '../ExportFileDialog.tsx';
 import { RenameDialog } from './framePanels.tsx';
+import { type ShareFormat, shareView } from '../share.ts';
 import { CanvasView } from './CanvasView.tsx';
 import { LeftPanel } from './LeftPanel.tsx';
 import { PropertiesPanel } from './PropertiesPanel.tsx';
@@ -97,6 +98,15 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   }, [diagramMode, editor]);
   const [presenting, setPresenting] = useState<{ start: string | null } | null>(null);
   const present = () => setPresenting({ start: presentFrom(editor) });
+  const share = async (format: ShareFormat) => {
+    try {
+      const done = await shareView(editor, file?.name ?? 'localframe', format);
+      if (done === 'empty') setNotice('Nothing to share on this page yet.');
+      if (done === 'saved') setNotice(`This browser can't share files, so the ${format.toUpperCase()} was saved to your downloads.`);
+    } catch (e) {
+      setNotice(`Couldn't share: ${e instanceof Error ? e.message : 'something went wrong'}`);
+    }
+  };
   const comments = useComments(fileId);
   const { setDraft, setOpen } = comments;
   useEffect(() => {
@@ -376,6 +386,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         theme={theme}
         setTheme={setTheme}
         onExportFile={() => setExporting(true)}
+        onShare={(f) => void share(f)}
         onHistory={() => setHistory(true)}
         onPresent={present}
         onQuickActions={() => setPalette(true)}
@@ -435,6 +446,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
             rename: () => setRenaming(true),
             diagramMode,
             setDiagramMode: narrow ? undefined : setDiagramMode,
+            share: (f) => void share(f),
           }}
         />
       )}

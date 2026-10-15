@@ -24,6 +24,7 @@ export function TitleBar(props: {
   setTheme: (t: Theme) => void;
   onRename: (name: string) => Promise<void>;
   onExportFile: () => void;
+  onShare: (format: 'png' | 'pdf') => void;
   onHistory: () => void;
   onPresent: () => void;
   onQuickActions: () => void;
@@ -129,6 +130,9 @@ export function TitleBar(props: {
           y={moreMenu.y}
           onClose={() => setMoreMenu(null)}
           items={[
+            { label: editor.selection.length ? 'Share selection as image' : 'Share page as image', onSelect: () => props.onShare('png') },
+            { label: editor.selection.length ? 'Share selection as PDF' : 'Share page as PDF', onSelect: () => props.onShare('pdf') },
+            'separator',
             { label: 'Export file…', shortcut: `${MOD}${SHIFT}E`, onSelect: props.onExportFile },
             { label: 'Version history…', onSelect: props.onHistory },
             'separator',

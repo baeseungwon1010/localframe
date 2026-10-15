@@ -22,6 +22,7 @@ export type ScreenActions = {
   find: () => void;
   placeImage: () => void;
   rename: () => void;
+  share?: (format: 'png' | 'pdf') => void;
   diagramMode: boolean;
   /** Absent when the screen can only show the board. */
   setDiagramMode?: (on: boolean) => void;
@@ -129,6 +130,12 @@ export function buildCommands(editor: Editor, screen: ScreenActions): Command[] 
     cmd('View', 'pixel-snap', 'Snap to pixel grid', () => editor.toggleView('snapToPixels'), always),
 
     cmd('File', 'present', 'Present', screen.present, () => (editor.topFrames().length ? null : 'Draw a frame first'), `${MOD}${ALT}Enter`, 'play prototype'),
+    ...(screen.share
+      ? [
+          cmd('File', 'share-png', 'Share as image', () => screen.share?.('png'), always, undefined, 'send png picture message'),
+          cmd('File', 'share-pdf', 'Share as PDF', () => screen.share?.('pdf'), always, undefined, 'send document message'),
+        ]
+      : []),
     cmd('File', 'export', 'Export file', screen.exportFile, always, `${MOD}${SHIFT}E`, 'download png pdf svg'),
     cmd('File', 'history', 'Version history', screen.history, always, undefined, 'restore save'),
     cmd('File', 'add-page', 'Add page', () => editor.addPage(), always),
