@@ -302,7 +302,6 @@ export const editorChrome: Record<string, string> = {
   Presentation: '발표',
   '{n} of {total}': '{n} / {total}',
   Restart: '처음부터',
-  'Close presentation': '발표 닫기',
   'Open {href}': '{href} 열기',
   'This page has no frames to present. Draw a frame first.': '이 페이지에는 발표할 프레임이 없어요. 프레임을 먼저 그리세요.',
   "Couldn't show this frame": '이 프레임을 보여 줄 수 없어요',
@@ -330,4 +329,13 @@ export const editorChrome: Record<string, string> = {
   'Horizontal ruler. Drag down to add a guide.': '가로 눈금자. 아래로 드래그하면 가이드가 추가돼요.',
   'Vertical ruler. Drag right to add a guide.': '세로 눈금자. 오른쪽으로 드래그하면 가이드가 추가돼요.',
   'Drop images to place them': '이미지를 놓아 배치하세요',
+  // board presentation
+  'Present board': '보드 발표',
+  'Nothing to present on this page yet.': '이 페이지에는 아직 발표할 것이 없어요.',
+  'Slide {n} of {total}: {name}': '{total}개 중 {n}번째 슬라이드: {name}',
+  '{n} / {total}': '{n} / {total}',
+  Previous: '이전',
+  Next: '다음',
+  'Full screen': '전체 화면',
+  'Close presentation': '발표 끝내기',
 };
