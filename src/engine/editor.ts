@@ -20,7 +20,10 @@ import {
   MAX_DEPTH,
   MAX_NODES_PER_FILE,
   MAX_PAGES,
+  PagesSchema,
   SceneNodeSchema,
+  StylesSchema,
+  VariablesSchema,
   validateTree,
 } from '../../shared/schema.ts';
 import {
@@ -129,6 +132,9 @@ type HistoryEntry = {
 
 export type FileState = { pages: Page[]; styles: Style[]; variables: Variables };
 export type CommitInfo = { patches: Patch[]; pagesChanged: boolean; stylesChanged: boolean; variablesChanged: boolean };
+
+/** Sizes of history steps as JSON, measured once each (see historySnapshot). */
+const entrySize = new WeakMap<object, number>();
 
 const sameJson = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
 
@@ -685,14 +691,24 @@ export class Editor {
    * steps each, dropping the oldest until it fits in `maxChars` of JSON.
    */
   historySnapshot(max = 100, maxChars = 8_000_000): { undo: HistoryEntry[]; redo: HistoryEntry[] } {
-    let undo = this.undoStack.slice(-max);
-    let redo = this.redoStack.slice(-max);
-    const size = () => JSON.stringify({ undo, redo }).length;
-    while ((undo.length || redo.length) && size() > maxChars) {
-      if (undo.length >= redo.length) undo = undo.slice(1);
-      else redo = redo.slice(1);
-    }
-    return { undo, redo };
+    // each step's size is measured once (steps never change), so saving after every edit stays cheap
+    const size = (e: HistoryEntry) => {
+      let n = entrySize.get(e);
+      if (n === undefined) entrySize.set(e, (n = JSON.stringify(e).length + 1));
+      return n;
+    };
+    const keep = (list: HistoryEntry[], budget: number) => {
+      const out: HistoryEntry[] = [];
+      for (let i = list.length - 1; i >= 0 && out.length < max; i--) {
+        budget -= size(list[i]);
+        if (budget < 0) break;
+        out.unshift(list[i]);
+      }
+      return out;
+    };
+    const undo = keep(this.undoStack, maxChars - 32);
+    const used = undo.reduce((n, e) => n + size(e), 0);
+    return { undo, redo: keep(this.redoStack, maxChars - 32 - used) };
   }
 
   /**
@@ -703,9 +719,16 @@ export class Editor {
   restoreHistory(saved: unknown): boolean {
     const h = saved as { undo?: unknown; redo?: unknown } | null;
     if (!h || !Array.isArray(h.undo) || !Array.isArray(h.redo) || h.undo.length + h.redo.length > 1000) return false;
+    const fileOk = (f: unknown) => {
+      if (f === undefined) return true;
+      const x = f as FileState;
+      return !!x && PagesSchema.safeParse(x.pages).success && StylesSchema.safeParse(x.styles).success && VariablesSchema.safeParse(x.variables).success;
+    };
     const entryOk = (e: unknown): e is HistoryEntry => {
       const x = e as HistoryEntry;
       if (!x || !Array.isArray(x.patches) || !Array.isArray(x.selBefore) || !Array.isArray(x.selAfter) || x.patches.length > 100_000) return false;
+      if (!fileOk(x.fileBefore) || !fileOk(x.fileAfter)) return false;
+      if ([x.pageBefore, x.pageAfter].some((p) => p !== undefined && typeof p !== 'string')) return false;
       return x.patches.every(
         (p) =>
           p &&
@@ -721,6 +744,10 @@ export class Editor {
     const latest = new Map<string, SceneNode | null>();
     for (const e of undo) for (const p of e.patches) latest.set(p.id, p.after);
     for (const [id, after] of latest) if (!sameData(this.doc.get(id) ?? null, after)) return false;
+    // pages, styles and variables too: as the newest step that changed them left them
+    let file: FileState | undefined;
+    for (const e of undo) if (e.fileAfter) file = e.fileAfter;
+    if (file && !sameData({ pages: file.pages, styles: file.styles, variables: file.variables }, { pages: this.pages, styles: this.styles, variables: this.variables })) return false;
     // redo starts empty: it would need the same care in the other direction, for little use
     this.undoStack = undo;
     this.redoStack = [];
@@ -734,7 +761,7 @@ export class Editor {
     if (!entry) return;
     this.doc.applyPatches(entry.patches, true);
     this.redoStack.push(entry);
-    if (entry.fileBefore) Object.assign(this, entry.fileBefore);
+    if (entry.fileBefore) this.setFileState(entry.fileBefore);
     this.showPage(entry.pageBefore);
     this.selection = entry.selBefore.filter((id) => this.doc.has(id));
     this.commitListeners.forEach((fn) => fn(this.commitOf(entry.patches, entry.fileAfter, entry.fileBefore)));
@@ -747,7 +774,7 @@ export class Editor {
     if (!entry) return;
     this.doc.applyPatches(entry.patches);
     this.undoStack.push(entry);
-    if (entry.fileAfter) Object.assign(this, entry.fileAfter);
+    if (entry.fileAfter) this.setFileState(entry.fileAfter);
     this.showPage(entry.pageAfter);
     this.selection = entry.selAfter.filter((id) => this.doc.has(id));
     this.commitListeners.forEach((fn) => fn(this.commitOf(entry.patches, entry.fileBefore, entry.fileAfter)));
