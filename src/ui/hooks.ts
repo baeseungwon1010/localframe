@@ -52,3 +52,25 @@ export function loadFonts(): Promise<void> {
   loads.push(document.fonts.load('500 12px "IBM Plex Sans"'));
   return Promise.race([Promise.allSettled(loads).then(() => undefined), new Promise<void>((r) => setTimeout(r, 3000))]);
 }
+
+/** A boolean UI choice kept in this browser (for example, whether extra options are shown). */
+export function useRemembered(name: string, initial: boolean): [boolean, (v: boolean) => void] {
+  const key = `localframe.ui.${name}`;
+  const [value, setValue] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem(key);
+      return v === null ? initial : v === '1';
+    } catch {
+      return initial;
+    }
+  });
+  const set = (v: boolean) => {
+    setValue(v);
+    try {
+      localStorage.setItem(key, v ? '1' : '0');
+    } catch {
+      /* not remembered */
+    }
+  };
+  return [value, set];
+}

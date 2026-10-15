@@ -50,7 +50,7 @@ import { FONT_FAMILIES, FONT_WEIGHTS, fontStack } from '../../engine/text.ts';
 import { IconButton, MOD } from '../components.tsx';
 import { type RunProps, adjustRuns, rangeValue } from '../../engine/textRuns.ts';
 import { downloadBlob, safeFileName } from '../download.ts';
-import { useEditorRev } from '../hooks.ts';
+import { useEditorRev, useRemembered } from '../hooks.ts';
 import { MIXED, NumberField, Section, Segmented, SelectField, common, normalizeHex } from './fields.tsx';
 import { DEFAULT_SHADOW, EffectEditor, PaintEditor } from './paints.tsx';
 import { ComponentSetSection, InnerLayerSection, InstanceProps, LinkProps, PropDefinitions, VariantValues } from './componentPanels.tsx';
@@ -152,6 +152,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
   const ids = nodes.map((n) => n.id);
   const [keepAspect, setKeepAspect] = useState(false);
   const [corners, setCorners] = useState(false);
+  const [strokeMore, setStrokeMore] = useRemembered('strokeMore', false);
   const update = (fn: (n: SceneNode) => SceneNode) => editor.updateNodes(ids, fn);
   const single = nodes.length === 1 ? nodes[0] : null;
   const allType = (t: SceneNode['type']) => nodes.every((n) => n.type === t);
@@ -362,7 +363,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
       )}
 
       {single?.type === 'VECTOR' && single.shape && (single.shape.kind === 'polygon' || single.shape.kind === 'star') && <ShapeSection node={single} update={update} />}
-      {single && canHaveLabel(single) && <LabelSection editor={editor} node={single} update={update} />}
+      {single && canHaveLabel(single) && (single.label !== undefined || isDiagramItem(single)) && <LabelSection editor={editor} node={single} update={update} />}
 
       {constrained && <ConstraintsSection nodes={nodes} update={update} />}
 
@@ -428,6 +429,12 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
             max={1000}
             onCommit={(v) => update((n) => ({ ...n, strokeWeight: v }))}
           />
+          <button type="button" className="mini-btn wide more-btn" aria-expanded={strokeMore} onClick={() => setStrokeMore(!strokeMore)}>
+            {strokeMore ? 'Fewer options' : 'More stroke options'}
+          </button>
+        </div>
+        {strokeMore && (
+          <div className="grid2">
           {!allLines && (
             <SelectField
               label="Stroke position"
@@ -475,7 +482,10 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
               onChange={(v) => update((n) => ({ ...n, strokeJoin: v }))}
             />
           )}
-        </div>
+          </div>
+        )}
+        {strokeMore && (
+          <>
         {nodes.every((n) => n.type === 'RECTANGLE' || n.type === 'FRAME' || n.type === 'COMPONENT') && (
           <>
             <label className="check-row">
@@ -508,6 +518,8 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
                 ))}
               </div>
             )}
+          </>
+        )}
           </>
         )}
         {allLines && (
@@ -557,7 +569,7 @@ function SelectionProps({ editor, nodes }: { editor: Editor; nodes: SceneNode[] 
 function ConstraintsSection({ nodes, update }: { nodes: SceneNode[]; update: (fn: (n: SceneNode) => SceneNode) => void }) {
   const get = (n: SceneNode): Constraints => n.constraints ?? { horizontal: 'left', vertical: 'top' };
   return (
-    <Section title="Constraints">
+    <Section folded title="Constraints">
       <div className="grid2">
         <SelectField
           label="Horizontal constraint"
@@ -958,6 +970,7 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
   if (withSettings.length) {
     return (
       <Section
+        folded
         title="Export"
         action={
           single && settings.length < 10 ? (
@@ -1053,7 +1066,8 @@ function ExportSection(props: { editor: Editor; ids: string[]; name: string; pag
 
   return (
     <Section
-      title="Export"
+      folded
+        title="Export"
       action={
         single ? (
           <IconButton label="Add export setting" onClick={() => setSettings([{ format: 'png', scale: 1, suffix: '' }])}>

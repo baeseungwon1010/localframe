@@ -326,27 +326,29 @@ export function ImagePaintRow(props: { paint: ImagePaint; label: string; onChang
   );
 }
 
-const FOLD_KEY = 'localframe.foldedSections';
-const folded = new Set<string>(
-  (() => {
-    try {
-      return JSON.parse(localStorage.getItem(FOLD_KEY) ?? '[]') as string[];
-    } catch {
-      return [];
-    }
-  })(),
-);
+const FOLD_KEY = 'localframe.sectionsFolded';
+/** Section title -> folded, for sections the person opened or closed themselves. */
+const foldChoice: Record<string, boolean> = (() => {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(FOLD_KEY) ?? '{}');
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
+})();
 
-/** A properties section; its title folds it away, and that is remembered for every layer. */
-export function Section(props: { title: string; action?: ReactNode; children?: ReactNode }) {
-  const [closed, setClosed] = useState(() => folded.has(props.title));
+/**
+ * A properties section; its title folds it away, and that is remembered for every layer.
+ * `folded` sections (rarely needed ones) start closed until opened once.
+ */
+export function Section(props: { title: string; action?: ReactNode; children?: ReactNode; folded?: boolean }) {
+  const [closed, setClosed] = useState(() => foldChoice[props.title] ?? !!props.folded);
   const toggle = () => {
     const next = !closed;
     setClosed(next);
-    if (next) folded.add(props.title);
-    else folded.delete(props.title);
+    foldChoice[props.title] = next;
     try {
-      localStorage.setItem(FOLD_KEY, JSON.stringify([...folded]));
+      localStorage.setItem(FOLD_KEY, JSON.stringify(foldChoice));
     } catch {
       /* not remembered */
     }
@@ -364,7 +366,10 @@ export function Section(props: { title: string; action?: ReactNode; children?: R
             props.title
           )}
         </h3>
-        {props.action}
+        {/* adding something to a folded section opens it */}
+        <span className="prop-actions" onClickCapture={() => closed && props.children && toggle()}>
+          {props.action}
+        </span>
       </div>
       {props.children && !closed && <div className="prop-body">{props.children}</div>}
     </section>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Minus, Plus, Sparkles, Type, Variable } from 'lucide-react';
+import { Minus, Plus, Sparkles, Type, Variable, SwatchBook } from 'lucide-react';
 import { type Bindable, type Effect, type Paint, type SceneNode, type Style, type Variables, BINDABLE, isGradientPaint } from '../../../shared/schema.ts';
 import { BINDING_TYPE, type StyleField, STYLE_KEY } from '../../engine/assets.ts';
 import type { Editor } from '../../engine/editor.ts';
@@ -28,6 +28,18 @@ export function StylePicker(props: { editor: Editor; nodes: SceneNode[]; field: 
   const current = common(nodes, (n) => n[key] ?? '');
   const options = editor.styles.filter((s) => s.type === FIELD_TYPE[field]);
   const canCreate = nodes.length === 1;
+  const create = () => {
+    const name = window.prompt('Name for the new style', `${field === 'text' ? 'Text' : field === 'effect' ? 'Shadow' : 'Color'} ${options.length + 1}`);
+    if (name) editor.createStyle(field, nodes[0].id, name);
+  };
+  // no styles of this kind yet: a small button instead of a dropdown with nothing in it
+  if (options.length === 0 && current === '') {
+    return canCreate ? (
+      <IconButton label={`Create ${field} style`} onClick={create}>
+        <SwatchBook {...ICON} />
+      </IconButton>
+    ) : null;
+  }
   return (
     <select
       className="select-field style-picker"
@@ -35,11 +47,7 @@ export function StylePicker(props: { editor: Editor; nodes: SceneNode[]; field: 
       value={current === MIXED ? '__mixed' : current}
       onChange={(e) => {
         const v = e.target.value;
-        if (v === '__create') {
-          const name = window.prompt('Name for the new style', `${field === 'text' ? 'Text' : field === 'effect' ? 'Shadow' : 'Color'} ${options.length + 1}`);
-          if (name) editor.createStyle(field, nodes[0].id, name);
-          return;
-        }
+        if (v === '__create') return create();
         editor.applyStyle(nodes.map((n) => n.id), field, v || null);
       }}
     >
@@ -96,7 +104,7 @@ export function StylesList({ editor }: { editor: Editor }) {
         );
       })}
       {editor.styles.length === 0 && (
-        <p className="panel-empty">No styles yet. Select a layer and choose “Create style…” in its Fill, Text or Effects section.</p>
+        <p className="panel-empty">No styles yet. Select a layer and use the style button in its Fill, Stroke, Text or Effects section.</p>
       )}
     </div>
   );
@@ -413,6 +421,7 @@ export function VariablesSection({ editor, nodes }: { editor: Editor; nodes: Sce
   const boundCount = relevant.filter((p) => nodes.some((n) => n.bindings?.[p])).length;
   return (
     <Section
+      folded
       title="Variables"
       action={
         <IconButton label={open ? 'Hide variable bindings' : 'Show variable bindings'} pressed={open} onClick={() => setOpen(!open)}>

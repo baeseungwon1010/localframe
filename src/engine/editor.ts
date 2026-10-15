@@ -2380,7 +2380,8 @@ export class Editor {
   quickConnectSpots(): { side: 'top' | 'right' | 'bottom' | 'left'; at: Point }[] {
     if (this.tool !== 'move' || this.selection.length !== 1 || this.isInteracting || this.editingLabel || this.editingText || this.editingVector || this.cropping) return [];
     const n = this.doc.get(this.selection[0]);
-    if (!n || n.type === 'LINE' || !canHaveLabel(n) || n.rotation !== 0 || this.doc.isEffectivelyLocked(n.id)) return [];
+    // diagram shapes only: ordinary design layers don't sprout "+" buttons
+    if (!n || n.type === 'LINE' || !isDiagramItem(n) || n.rotation !== 0 || this.doc.isEffectivelyLocked(n.id)) return [];
     const b = this.doc.worldBounds(n.id);
     const a = this.toScreen({ x: b.x, y: b.y });
     const w = b.width * this.viewport.zoom;
