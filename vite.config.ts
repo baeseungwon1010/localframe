@@ -52,16 +52,27 @@ const CORE = ${JSON.stringify(core)};
 const scoped = (path) => new URL(path, self.registration.scope).href;
 
 self.addEventListener('install', (event) => {
-  // waits (no skipWaiting) until the page asks, so a running editor never meets new files
-  event.waitUntil(caches.open(SHELL).then((cache) => cache.addAll(CORE.map(scoped))));
+  // waits (no skipWaiting) until the page asks, so a running editor never meets new files; the
+  // files come from the server, never from the browser's HTTP cache (an older page could be there)
+  event.waitUntil(caches.open(SHELL).then((cache) => cache.addAll(CORE.map((path) => new Request(scoped(path), { cache: 'reload' })))));
 });
 
+const KEPT = 'localframe-kept';
+
 self.addEventListener('activate', (event) => {
+  // the version before this one stays too: other open tabs still run it and load its files later
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('localframe-shell-') && k !== SHELL).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim()),
+    (async () => {
+      const kept = await caches.open(KEPT);
+      const previous = (await (await kept.match('previous'))?.text()) ?? null;
+      const current = (await (await kept.match('current'))?.text()) ?? null;
+      const keep = new Set([SHELL, current !== SHELL ? current : previous].filter(Boolean));
+      await kept.put('previous', new Response(current !== SHELL ? (current ?? '') : (previous ?? '')));
+      await kept.put('current', new Response(SHELL));
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((k) => k.startsWith('localframe-shell-') && !keep.has(k)).map((k) => caches.delete(k)));
+      await self.clients.claim();
+    })(),
   );
 });
 
