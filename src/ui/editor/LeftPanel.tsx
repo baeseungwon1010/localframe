@@ -29,7 +29,12 @@ export function LeftPanel({ editor }: { editor: Editor }) {
 
 function PagesSection({ editor }: { editor: Editor }) {
   useEditorRev(editor, 'pages');
-  const [open, setOpen] = useState(true);
+  // one page: a single row; the list opens when there are more (or when asked)
+  const many = editor.pages.length > 1;
+  const [open, setOpen] = useState(many);
+  useEffect(() => {
+    if (many) setOpen(true);
+  }, [many]);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const current = editor.currentPage.id;
@@ -60,6 +65,7 @@ function PagesSection({ editor }: { editor: Editor }) {
         <button type="button" className="pages-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
           {open ? <ChevronDown size={12} strokeWidth={1.5} /> : <ChevronRight size={12} strokeWidth={1.5} />}
           Pages
+          {!open && <span className="pages-current">{editor.currentPage.name}</span>}
         </button>
         <IconButton label="Add page" onClick={() => editor.addPage()}>
           <Plus size={14} strokeWidth={1.5} />
