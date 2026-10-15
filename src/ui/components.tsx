@@ -44,10 +44,18 @@ export type MenuItem =
   | 'separator';
 
 /** A small popup menu positioned at a point (context menu) or under an anchor. */
-/** A menu at (x, y); with `above`, its bottom edge sits at y instead (for menus opened from the bottom). */
-export function Menu(props: { x: number; y: number; items: MenuItem[]; onClose: () => void; label: string; above?: boolean }) {
+/** Clicks this soon after a long-press menu opens are the finger that opened it lifting (ms). */
+const MENU_ARM_MS = 400;
+
+/**
+ * A menu at (x, y); with `above`, its bottom edge sits at y instead (for menus opened from the
+ * bottom). `fromLongPress` ignores the release of the finger that opened it.
+ */
+export function Menu(props: { x: number; y: number; items: MenuItem[]; onClose: () => void; label: string; above?: boolean; fromLongPress?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: props.x, y: props.y });
+  // the finger that long-pressed to open it lifts over an item: that release is not a choice
+  const [openedAt] = useState(() => performance.now());
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -101,7 +109,8 @@ export function Menu(props: { x: number; y: number; items: MenuItem[]; onClose: 
             role="menuitem"
             className={`menu-item ${item.danger ? 'danger' : ''}`}
             disabled={item.disabled}
-            onClick={() => {
+            onClick={(e) => {
+              if (props.fromLongPress && e.detail > 0 && performance.now() - openedAt < MENU_ARM_MS) return;
               props.onClose();
               item.onSelect();
             }}

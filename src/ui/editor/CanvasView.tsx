@@ -13,6 +13,7 @@ import { defaultLabel, labelMatrix, labelNode } from '../../engine/labels.ts';
 import { ToolHint } from './ToolHint.tsx';
 import { DiagramBar } from './DiagramBar.tsx';
 import { TemplatePicker } from './TemplatePicker.tsx';
+import { LONG_PRESS_MS, TouchGestures } from './touch.ts';
 import { useEditorRev } from '../hooks.ts';
 
 function readColors(): OverlayColors {
@@ -30,7 +31,10 @@ function readColors(): OverlayColors {
   };
 }
 
-function toInput(e: { clientX: number; clientY: number; button: number; shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean }, rect: DOMRect): PointerInput {
+function toInput(
+  e: { clientX: number; clientY: number; button: number; shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean; pointerType?: string },
+  rect: DOMRect,
+): PointerInput {
   return {
     sx: e.clientX - rect.left,
     sy: e.clientY - rect.top,
@@ -38,6 +42,7 @@ function toInput(e: { clientX: number; clientY: number; button: number; shiftKey
     shift: e.shiftKey,
     alt: e.altKey,
     mod: e.ctrlKey || e.metaKey,
+    touch: e.pointerType === 'touch',
   };
 }
 
@@ -56,7 +61,7 @@ export function CanvasView(props: {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const colors = useRef<OverlayColors | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; touch?: boolean } | null>(null);
   useEditorRev(editor, 'view', 'tool');
 
   // size + render loop
@@ -143,39 +148,97 @@ export function CanvasView(props: {
   }, [editor]);
 
   const rect = () => canvasRef.current!.getBoundingClientRect();
+  const touch = useRef(new TouchGestures());
+  const pressTimer = useRef(0);
+  /** When a double tap last went to the editor, so the browser's own dblclick isn't a second one. */
+  const lastDoubleTap = useRef(0);
+
+  /** The canvas menu for what is under a screen point (right-click, or a long press). */
+  const openMenuAt = (clientX: number, clientY: number, touch = false) => {
+    if (editor.tool !== 'move' || editor.editingText) return;
+    const r = rect();
+    const p = editor.toWorld(clientX - r.left, clientY - r.top);
+    const deepest = hitDeepest(editor.doc, p, (editor.coarse ? 10 : 4) / editor.viewport.zoom);
+    if (deepest) {
+      const target = pickTarget(editor.doc, deepest, editor.selection);
+      if (!editor.selection.includes(target)) editor.setSelection([target]);
+    } else editor.setSelection([]);
+    setMenu({ x: clientX, y: clientY, touch });
+  };
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (menu) setMenu(null);
     if (e.button === 2) return;
     (document.activeElement as HTMLElement | null)?.blur?.();
     e.currentTarget.setPointerCapture(e.pointerId);
+    if (e.pointerType === 'touch') {
+      const r = rect();
+      const what = touch.current.down(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top });
+      if (what === 'pinch') {
+        // the first finger's drag becomes a pinch: drop what it started
+        window.clearTimeout(pressTimer.current);
+        if (editor.isInteracting) editor.cancelInteraction();
+        return;
+      }
+      if (what === 'ignore') return;
+      const id = e.pointerId;
+      const { clientX, clientY } = e;
+      window.clearTimeout(pressTimer.current);
+      pressTimer.current = window.setTimeout(() => {
+        if (!touch.current.longPress(id)) return;
+        if (editor.isInteracting) editor.cancelInteraction();
+        openMenuAt(clientX, clientY, true);
+      }, LONG_PRESS_MS);
+    }
     editor.pointerDown(toInput(e, rect()));
     e.currentTarget.style.cursor = editor.cursorAt(e.clientX - rect().left, e.clientY - rect().top);
   };
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const input = toInput(e, rect());
+    if (e.pointerType === 'touch') {
+      const step = touch.current.move(e.pointerId, { x: input.sx, y: input.sy });
+      if (step === 'ignore') return;
+      if (step !== 'editor') {
+        editor.wheel(step.at.x, step.at.y, -step.dx, -step.dy, false);
+        if (Math.abs(step.zoom - 1) > 1e-4) editor.zoomAt(step.zoom, step.at.x, step.at.y);
+        return;
+      }
+    }
     editor.pointerMove(input);
     e.currentTarget.style.cursor = editor.cursorAt(input.sx, input.sy);
   };
   const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
-    editor.pointerUp(toInput(e, rect()));
+    const input = toInput(e, rect());
+    if (e.pointerType === 'touch') {
+      window.clearTimeout(pressTimer.current);
+      const what = touch.current.up(e.pointerId, { x: input.sx, y: input.sy }, e.timeStamp);
+      if (what === 'ignore') return;
+      editor.pointerUp(input);
+      if (what === 'double-tap') {
+        lastDoubleTap.current = e.timeStamp;
+        editor.doubleClick(input);
+      }
+      return;
+    }
+    editor.pointerUp(input);
   };
-  const onLostCapture = () => {
+  const onPointerCancel = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType === 'touch') {
+      window.clearTimeout(pressTimer.current);
+      touch.current.cancel(e.pointerId);
+    }
     if (editor.isInteracting) editor.cancelInteraction();
   };
-  const onDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => editor.doubleClick(toInput(e, rect()));
+  const onDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (e.timeStamp - lastDoubleTap.current < 500) return;
+    editor.doubleClick(toInput(e, rect()));
+  };
   const onContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault();
-    if (editor.tool !== 'move' || editor.editingText) return;
-    const input = toInput(e, rect());
-    const p = editor.toWorld(input.sx, input.sy);
-    const deepest = hitDeepest(editor.doc, p, 4 / editor.viewport.zoom);
-    if (deepest) {
-      const target = pickTarget(editor.doc, deepest, editor.selection);
-      if (!editor.selection.includes(target)) editor.setSelection([target]);
-    } else editor.setSelection([]);
-    setMenu({ x: e.clientX, y: e.clientY });
+    // a long press opens the menu itself (some browsers also send contextmenu for it)
+    if (menu) return;
+    openMenuAt(e.clientX, e.clientY);
   };
 
   const sel = editor.selectedNodes();
@@ -297,7 +360,7 @@ export function CanvasView(props: {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerCancel={onLostCapture}
+        onPointerCancel={onPointerCancel}
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}
         onPointerLeave={() => !editor.isInteracting && editor.setHover(null)}
@@ -314,7 +377,7 @@ export function CanvasView(props: {
       {props.children}
       <ToolHint editor={editor} />
       <DiagramBar editor={editor} />
-      {menu && <Menu label="Canvas actions" x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}
+      {menu && <Menu label="Canvas actions" x={menu.x} y={menu.y} fromLongPress={menu.touch} items={menuItems} onClose={() => setMenu(null)} />}
       {props.notice && (
         <div className="toast" role="alert">
           <span>{props.notice}</span>
