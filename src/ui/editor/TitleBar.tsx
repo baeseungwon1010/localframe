@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ChevronDown, ChevronLeft, Ellipsis, Play, Redo2, Search, Undo2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, Ellipsis, Play, Redo2, Search, SlidersHorizontal, Undo2 } from 'lucide-react';
 import type { FileMeta } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
 import type { SaveStatus } from '../../engine/sync.ts';
@@ -29,6 +29,9 @@ export function TitleBar(props: {
   onPresent: () => void;
   onQuickActions: () => void;
   diagramMode: boolean;
+  /** On a phone: opens or closes the panel sheet. */
+  onPanels?: () => void;
+  panelsOpen?: boolean;
   /** Absent when the screen can only show the board (then there's no switch). */
   onDiagramMode?: (on: boolean) => void;
 }) {
@@ -83,6 +86,11 @@ export function TitleBar(props: {
               Diagram
             </button>
           </div>
+        )}
+        {props.onPanels && (
+          <IconButton label={props.panelsOpen ? 'Hide panels' : 'Show panels'} pressed={props.panelsOpen} onClick={props.onPanels}>
+            <SlidersHorizontal size={16} strokeWidth={1.5} />
+          </IconButton>
         )}
         <button type="button" className="quick-btn" onClick={props.onQuickActions} aria-label="Quick actions" data-tip={`Quick actions  ${MOD}/`} data-tip-side="bottom">
           <Search size={14} strokeWidth={1.5} aria-hidden="true" />

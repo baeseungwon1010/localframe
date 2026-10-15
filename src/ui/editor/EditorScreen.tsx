@@ -11,6 +11,7 @@ import { navigate } from '../App.tsx';
 import { type Theme, loadFonts, useDiagramMode, useEditorRev, useMediaQuery } from '../hooks.ts';
 import { ExportFileDialog } from '../ExportFileDialog.tsx';
 import { RenameDialog } from './framePanels.tsx';
+import { PhoneSheet } from './PhoneSheet.tsx';
 import { type ShareFormat, shareView } from '../share.ts';
 import { CanvasView } from './CanvasView.tsx';
 import { LeftPanel } from './LeftPanel.tsx';
@@ -90,6 +91,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   // a phone has no room for the panels: it always gets the board view
   const narrow = useMediaQuery(NARROW);
   const diagramMode = diagramChoice || narrow;
+  const [sheet, setSheet] = useState(false);
   const setDiagramMode = (on: boolean) => setDiagramModeRaw(on);
   // a tool the dock doesn't offer would be stuck on with no button to see it by (also when a
   // window narrows into the board view)
@@ -392,6 +394,8 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         onQuickActions={() => setPalette(true)}
         diagramMode={diagramMode}
         onDiagramMode={narrow ? undefined : setDiagramMode}
+        onPanels={narrow ? () => setSheet(!sheet) : undefined}
+        panelsOpen={sheet}
         onRename={async (name) => {
           const meta = await api.updateFile(fileId, { name });
           setFile(meta);
@@ -411,7 +415,11 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         <CommentPins editor={editor} store={comments} />
         {diagramMode && <ToolRail editor={editor} dock />}
       </CanvasView>
-      <RightPanel editor={editor} fileName={file.name} comments={comments} onPresent={present} diagram={diagramMode} />
+      {narrow ? (
+        sheet && <PhoneSheet editor={editor} fileName={file.name} comments={comments} onPresent={present} onClose={() => setSheet(false)} />
+      ) : (
+        <RightPanel editor={editor} fileName={file.name} comments={comments} onPresent={present} diagram={diagramMode} />
+      )}
       <input
         ref={imageInput}
         type="file"
