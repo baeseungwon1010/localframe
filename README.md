@@ -71,6 +71,10 @@ to keep. For a copy that keeps files on disk, run it locally (below).
 - **Connectors**: a line or arrow drawn from one shape to another attaches to both and follows them when
   they move. Lines can be straight or elbow (right-angled). Dropping an end on a side's midpoint pins it to
   that side; Ctrl/Cmd while drawing leaves the ends loose.
+- **Diagrams (like FigJam)**: sticky notes (N), rounded boxes, diamonds, parallelograms, cylinders,
+  documents and chevrons in soft colours. Double-click a shape or connector (or press Enter) to write in
+  it; the "+" on a selected shape's sides adds the next shape with an elbow arrow; a colour bar above
+  diagram items recolours them.
 - **Prototyping**: in the Prototype tab, make a layer open another frame on click, on mouse enter or after a
   delay, go back, open and close an overlay, change a component to another variant, or switch a variable
   mode, with instant, dissolve, smart animate, move in, push or slide in animations. Frames can scroll,
@@ -131,6 +135,7 @@ elsewhere and `LOCALFRAME_API_PORT` to change the port. Back up a file with **Ex
 | --- | --- |
 | Move, Frame, Rectangle, Ellipse, Line, Pen, Text, Hand, Comment | V, F, R, O, L, P, T, H, C |
 | Quick actions | Ctrl/Cmd+/ or Ctrl/Cmd+K |
+| Sticky note / write in a shape | N / double-click or Enter |
 | Section / Slice / Pencil | Shift+S / S / Shift+P |
 | Flatten / Outline stroke | Ctrl/Cmd+E / Ctrl/Cmd+Shift+O |
 | Outline mode | Ctrl/Cmd+Y |
