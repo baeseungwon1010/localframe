@@ -5,6 +5,7 @@ import { cssFor } from '../../engine/css.ts';
 import type { Editor } from '../../engine/editor.ts';
 import { IconButton } from '../components.tsx';
 import { Section } from './fields.tsx';
+import { t } from '../i18n.ts';
 
 /** The Code tab: CSS for the selected layer, ready to copy. */
 export function CodePanel({ editor, nodes }: { editor: Editor; nodes: SceneNode[] }) {
@@ -12,8 +13,8 @@ export function CodePanel({ editor, nodes }: { editor: Editor; nodes: SceneNode[
   if (nodes.length !== 1) {
     return (
       <>
-        <div className="panel-title">Code</div>
-        <p className="panel-empty">Select one layer to see its CSS.</p>
+        <div className="panel-title">{t('Code')}</div>
+        <p className="panel-empty">{t('Select one layer to see its CSS.')}</p>
       </>
     );
   }
@@ -32,21 +33,21 @@ export function CodePanel({ editor, nodes }: { editor: Editor; nodes: SceneNode[
   return (
     <>
       <div className="panel-title">
-        Code<span className="panel-subtitle">{node.name}</span>
+        {t('Code')}<span className="panel-subtitle">{node.name}</span>
       </div>
       <Section
         title="CSS"
         action={
-          <IconButton label={copied ? 'Copied' : 'Copy CSS'} onClick={copy}>
+          <IconButton label={copied ? t('Copied') : t('Copy CSS')} onClick={copy}>
             <Copy size={14} strokeWidth={1.5} />
           </IconButton>
         }
       >
-        <pre className="code-block" aria-label="CSS for the selected layer" tabIndex={0}>
+        <pre className="code-block" aria-label={t('CSS for the selected layer')} tabIndex={0}>
           {text}
         </pre>
         <p className="field-caption" role="status">
-          {copied ? 'Copied to the clipboard' : 'Positions are relative to the parent frame. Auto layout becomes flexbox.'}
+          {copied ? t('Copied to the clipboard') : t('Positions are relative to the parent frame. Auto layout becomes flexbox.')}
         </p>
       </Section>
     </>

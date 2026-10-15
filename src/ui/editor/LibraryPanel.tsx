@@ -5,6 +5,7 @@ import { SceneDoc } from '../../engine/doc.ts';
 import { Editor } from '../../engine/editor.ts';
 import { retryFailedImages } from '../../engine/images.ts';
 import { useEditorRev } from '../hooks.ts';
+import { t } from '../i18n.ts';
 
 const KEY = (fileId: string) => `localframe.library.${fileId}`;
 
@@ -51,7 +52,7 @@ export function LibraryPanel({ editor }: { editor: Editor }) {
         doc.load(nodes);
         setSource({ fileId: lib, nodes, doc });
       })
-      .catch(() => live && setMessage("Couldn't open that file."));
+      .catch(() => live && setMessage(t("Couldn't open that file.")));
     return () => {
       live = false;
     };
@@ -96,7 +97,7 @@ export function LibraryPanel({ editor }: { editor: Editor }) {
     for (const id of ids) {
       const out = editor.importLibraryComponent(source, id);
       if (!out) {
-        setMessage('That component is too large to copy into this file.');
+        setMessage(t('That component is too large to copy into this file.'));
         return;
       }
       last = out.id;
@@ -109,42 +110,42 @@ export function LibraryPanel({ editor }: { editor: Editor }) {
         retryFailedImages();
         editor.emit('view');
       } catch {
-        setMessage('Some images could not be copied.');
+        setMessage(t('Some images could not be copied.'));
       }
     }
     if (insert && last) editor.createInstance(last, editor.toWorld(editor.viewSize.width / 2, editor.viewSize.height / 2));
-    if (!insert) setMessage(`Updated ${ids.length} component${ids.length === 1 ? '' : 's'}.`);
+    if (!insert) setMessage(ids.length === 1 ? t('Updated 1 component.') : t('Updated {n} components.', { n: ids.length }));
   };
 
   return (
-    <section className="library" aria-label="Libraries">
-      <h4 className="asset-heading">Libraries</h4>
-      <select className="select-field" aria-label="Library file" value={lib} onChange={(e) => pick(e.target.value)}>
-        <option value="">Use components from another file…</option>
+    <section className="library" aria-label={t('Libraries')}>
+      <h4 className="asset-heading">{t('Libraries')}</h4>
+      <select className="select-field" aria-label={t('Library file')} value={lib} onChange={(e) => pick(e.target.value)}>
+        <option value="">{t('Use components from another file…')}</option>
         {files.map((f) => (
           <option key={f.id} value={f.id}>
             {f.name}
           </option>
         ))}
       </select>
-      {source && comps.length === 0 && <p className="panel-empty">That file has no components.</p>}
+      {source && comps.length === 0 && <p className="panel-empty">{t('That file has no components.')}</p>}
       {outdated.length > 0 && (
         <button type="button" className="btn secondary small full" onClick={() => void bring(outdated.map((c) => c.id), false)}>
-          Update {outdated.length} changed component{outdated.length === 1 ? '' : 's'}
+          {outdated.length === 1 ? t('Update 1 changed component') : t('Update {n} changed components', { n: outdated.length })}
         </button>
       )}
       {comps.length > 0 && (
-        <ul className="asset-list" aria-label="Library components">
+        <ul className="asset-list" aria-label={t('Library components')}>
           {comps.map((c) => {
             const st = status(c);
             return (
               <li key={c.id} className="asset-row">
                 <div className="asset-text">
                   <span className="row-name">{c.name}</span>
-                  <span className="file-time">{st === 'new' ? 'Not in this file yet' : st === 'current' ? 'Up to date here' : 'Changed in the library'}</span>
+                  <span className="file-time">{st === 'new' ? t('Not in this file yet') : st === 'current' ? t('Up to date here') : t('Changed in the library')}</span>
                 </div>
                 <button type="button" className="btn secondary small" onClick={() => void bring([c.id], true)}>
-                  Insert
+                  {t('Insert')}
                 </button>
               </li>
             );

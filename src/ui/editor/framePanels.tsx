@@ -4,6 +4,7 @@ import type { LayoutGrid, SceneNode } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
 import { IconButton } from '../components.tsx';
 import { MIXED, NumberField, Section, SelectField, common, normalizeHex } from './fields.tsx';
+import { t } from '../i18n.ts';
 
 const ICON = { size: 14, strokeWidth: 1.5 };
 
@@ -15,10 +16,10 @@ export function GridsSection({ nodes, update }: { nodes: SceneNode[]; update: (f
   const set = (i: number, patch: Partial<LayoutGrid>) => update((n) => ({ ...n, grids: (n.grids ?? []).map((g, j) => (j === i ? { ...g, ...patch } : g)) }));
   return (
     <Section
-      title="Layout grid"
+      title={t('Layout grid')}
       action={
         <IconButton
-          label="Add layout grid"
+          label={t('Add layout grid')}
           onClick={() => update((n) => ({ ...n, grids: grids === MIXED ? [DEFAULT_GRID] : [...(n.grids ?? []), DEFAULT_GRID].slice(0, 8) }))}
         >
           <Plus {...ICON} />
@@ -26,39 +27,39 @@ export function GridsSection({ nodes, update }: { nodes: SceneNode[]; update: (f
       }
     >
       {grids === MIXED ? (
-        <p className="field-caption">Mixed. Click + to replace them with one grid.</p>
+        <p className="field-caption">{t('Mixed. Click + to replace them with one grid.')}</p>
       ) : (
         grids.map((g, i) => (
           <div key={i} className="effect-editor">
             <div className="effect-head">
               <SelectField
-                label={`Grid ${i + 1} type`}
+                label={t('Grid {n} type', { n: i + 1 })}
                 value={g.type}
                 options={[
-                  { value: 'columns', label: 'Columns' },
-                  { value: 'rows', label: 'Rows' },
-                  { value: 'grid', label: 'Grid' },
+                  { value: 'columns', label: t('Columns') },
+                  { value: 'rows', label: t('Rows') },
+                  { value: 'grid', label: t('Grid') },
                 ]}
                 onChange={(v) => set(i, { type: v })}
               />
-              <button type="button" className="mini-btn" aria-label={g.visible ? `Hide grid ${i + 1}` : `Show grid ${i + 1}`} aria-pressed={!g.visible} onClick={() => set(i, { visible: !g.visible })}>
+              <button type="button" className="mini-btn" aria-label={g.visible ? t('Hide grid {n}', { n: i + 1 }) : t('Show grid {n}', { n: i + 1 })} aria-pressed={!g.visible} onClick={() => set(i, { visible: !g.visible })}>
                 {g.visible ? <Eye {...ICON} /> : <EyeOff {...ICON} />}
               </button>
-              <button type="button" className="mini-btn" aria-label={`Remove grid ${i + 1}`} onClick={() => update((n) => ({ ...n, grids: (n.grids ?? []).filter((_, j) => j !== i) }))}>
+              <button type="button" className="mini-btn" aria-label={t('Remove grid {n}', { n: i + 1 })} onClick={() => update((n) => ({ ...n, grids: (n.grids ?? []).filter((_, j) => j !== i) }))}>
                 <Minus {...ICON} />
               </button>
             </div>
             <div className="grid2">
               {g.type === 'grid' ? (
-                <NumberField label="Size" ariaLabel={`Grid ${i + 1} size`} value={g.size} min={1} max={1000} onCommit={(v) => set(i, { size: v })} />
+                <NumberField label={t('Size')} ariaLabel={t('Grid {n} size', { n: i + 1 })} value={g.size} min={1} max={1000} onCommit={(v) => set(i, { size: v })} />
               ) : (
                 <>
-                  <NumberField label="Count" ariaLabel={`Grid ${i + 1} count`} value={g.count} min={1} max={100} precision={0} onCommit={(v) => set(i, { count: Math.round(v) })} />
-                  <NumberField label="Gutter" ariaLabel={`Grid ${i + 1} gutter`} value={g.gutter} min={0} max={1000} onCommit={(v) => set(i, { gutter: v })} />
-                  <NumberField label="Margin" ariaLabel={`Grid ${i + 1} margin`} value={g.margin} min={0} max={10_000} onCommit={(v) => set(i, { margin: v })} />
+                  <NumberField label={t('Count')} ariaLabel={t('Grid {n} count', { n: i + 1 })} value={g.count} min={1} max={100} precision={0} onCommit={(v) => set(i, { count: Math.round(v) })} />
+                  <NumberField label={t('Gutter')} ariaLabel={t('Grid {n} gutter', { n: i + 1 })} value={g.gutter} min={0} max={1000} onCommit={(v) => set(i, { gutter: v })} />
+                  <NumberField label={t('Margin')} ariaLabel={t('Grid {n} margin', { n: i + 1 })} value={g.margin} min={0} max={10_000} onCommit={(v) => set(i, { margin: v })} />
                 </>
               )}
-              <GridColor grid={g} label={`Grid ${i + 1}`} onChange={(patch) => set(i, patch)} />
+              <GridColor grid={g} label={t('Grid {n}', { n: i + 1 })} onChange={(patch) => set(i, patch)} />
             </div>
           </div>
         ))
@@ -73,11 +74,11 @@ function GridColor({ grid, label, onChange }: { grid: LayoutGrid; label: string;
   return (
     <div className="paint-row compact">
       <label className="swatch" style={{ background: grid.color, opacity: Math.max(0.3, grid.opacity * 3) }}>
-        <input type="color" aria-label={`${label} colour`} value={grid.color.toLowerCase()} onChange={(e) => onChange({ color: e.target.value.toUpperCase() })} />
+        <input type="color" aria-label={t('{label} colour', { label })} value={grid.color.toLowerCase()} onChange={(e) => onChange({ color: e.target.value.toUpperCase() })} />
       </label>
       <input
         className="hex-input"
-        aria-label={`${label} hex`}
+        aria-label={t('{label} hex', { label })}
         value={hex}
         maxLength={7}
         onChange={(e) => setHex(e.target.value)}
@@ -140,13 +141,14 @@ const PRESETS: { group: string; items: [string, number, number][] }[] = [
 export function FramePresets({ editor }: { editor: Editor }) {
   return (
     <>
-      <div className="panel-title">Frame</div>
-      <p className="panel-empty">Drag on the canvas to draw a frame, or pick a size.</p>
+      <div className="panel-title">{t('Frame')}</div>
+      <p className="panel-empty">{t('Drag on the canvas to draw a frame, or pick a size.')}</p>
       {PRESETS.map((g) => (
         <Section key={g.group} title={g.group}>
           {g.items.map(([name, w, h]) => (
             <button key={name} type="button" className="preset-row" onClick={() => editor.createFramePreset(w, h, name)}>
-              <span>{name}</span>
+              {/* "Letter" (the paper size) stays as is: the same English word is letter spacing elsewhere */}
+              <span>{name === 'Letter' ? name : t(name)}</span>
               <span className="file-time">
                 {w} × {h}
               </span>
@@ -188,37 +190,37 @@ export function RenameDialog({ editor, onClose }: { editor: Editor; onClose: () 
   return (
     <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="rename-title">
-        <h2 id="rename-title">Rename {nodes.length} layer{nodes.length === 1 ? '' : 's'}</h2>
+        <h2 id="rename-title">{nodes.length === 1 ? t('Rename 1 layer') : t('Rename {n} layers', { n: nodes.length })}</h2>
         <label className="dialog-field">
-          <span>Rename to</span>
+          <span>{t('Rename to')}</span>
           <input className="hex-input override-input" value={pattern} onChange={(e) => setPattern(e.target.value)} onKeyDown={(e) => e.stopPropagation()} aria-describedby="rename-help" autoFocus />
         </label>
         <p id="rename-help" className="field-caption">
-          $&amp; is the current name, $n a number counting from the start below.
+          {t('$& is the current name, $n a number counting from the start below.')}
         </p>
         <div className="grid2">
           <label className="dialog-field">
-            <span>Find</span>
+            <span>{t('Find')}</span>
             <input className="hex-input override-input" value={find} onChange={(e) => setFind(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
           </label>
           <label className="dialog-field">
-            <span>Replace with</span>
+            <span>{t('Replace with')}</span>
             <input className="hex-input override-input" value={replace} onChange={(e) => setReplace(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
           </label>
         </div>
-        <NumberField label="Start" ariaLabel="Start number" value={start} min={0} max={1e6} precision={0} onCommit={(v) => setStart(Math.round(v))} />
-        <div className="rename-preview" aria-label="Preview">
+        <NumberField label={t('Start')} ariaLabel={t('Start number')} value={start} min={0} max={1e6} precision={0} onCommit={(v) => setStart(Math.round(v))} />
+        <div className="rename-preview" aria-label={t('Preview')}>
           {preview.map((p, i) => (
             <div key={i}>{p}</div>
           ))}
-          {nodes.length > 4 && <div className="file-time">and {nodes.length - 4} more</div>}
+          {nodes.length > 4 && <div className="file-time">{t('and {n} more', { n: nodes.length - 4 })}</div>}
         </div>
         <div className="dialog-actions">
           <button type="button" className="btn secondary" onClick={onClose}>
-            Cancel
+            {t('Cancel')}
           </button>
           <button type="button" className="btn primary" onClick={apply}>
-            Rename
+            {t('Rename')}
           </button>
         </div>
       </div>

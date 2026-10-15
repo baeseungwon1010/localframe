@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { VersionMeta } from '../../../shared/schema.ts';
 import { api } from '../../api.ts';
+import { t } from '../i18n.ts';
 
 const when = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -24,7 +25,7 @@ export function VersionHistory(props: {
     try {
       setVersions(await api.listVersions(fileId));
     } catch (e) {
-      setError(`Couldn't load versions: ${e instanceof Error ? e.message : 'unknown error'}`);
+      setError(t("Couldn't load versions: {error}", { error: e instanceof Error ? t(e.message) : t('unknown error') }));
     }
   }, [fileId]);
 
@@ -50,7 +51,7 @@ export function VersionHistory(props: {
       await fn();
       await reload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong');
+      setError(e instanceof Error ? t(e.message) : t('Something went wrong'));
     } finally {
       setBusy(false);
     }
@@ -66,7 +67,7 @@ export function VersionHistory(props: {
   return (
     <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
       <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="versions-title">
-        <h2 id="versions-title">Version history</h2>
+        <h2 id="versions-title">{t('Version history')}</h2>
         <form
           className="version-save"
           onSubmit={(e) => {
@@ -78,26 +79,26 @@ export function VersionHistory(props: {
             className="hex-input override-input"
             value={name}
             maxLength={120}
-            placeholder="Name this version"
-            aria-label="Version name"
+            placeholder={t('Name this version')}
+            aria-label={t('Version name')}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.stopPropagation()}
             autoFocus
           />
           <button type="submit" className="btn primary" disabled={busy || !name.trim()}>
-            Save version
+            {t('Save version')}
           </button>
         </form>
         <p className="field-caption">
-          The file is also saved here on its own when you start editing again after ten minutes. Restoring keeps what you have now as an autosave.
+          {t('The file is also saved here on its own when you start editing again after ten minutes. Restoring keeps what you have now as an autosave.')}
         </p>
         {error && (
           <p className="field-caption error-text" role="alert">
             {error}
           </p>
         )}
-        <ul className="version-list" aria-label="Versions" aria-busy={versions === null}>
-          {versions?.length === 0 && <li className="version-empty">No versions yet. Name one above to keep this state of the file.</li>}
+        <ul className="version-list" aria-label={t('Versions')} aria-busy={versions === null}>
+          {versions?.length === 0 && <li className="version-empty">{t('No versions yet. Name one above to keep this state of the file.')}</li>}
           {versions?.map((v) => (
             <li key={v.id} className="version-item">
               {renaming === v.id ? (
@@ -105,7 +106,7 @@ export function VersionHistory(props: {
                   className="hex-input override-input"
                   defaultValue={v.name ?? ''}
                   maxLength={120}
-                  aria-label="Version name"
+                  aria-label={t('Version name')}
                   autoFocus
                   onKeyDown={(e) => {
                     e.stopPropagation();
@@ -120,17 +121,17 @@ export function VersionHistory(props: {
                 />
               ) : (
                 <div className="version-text">
-                  <span className="version-name">{v.name ?? 'Autosave'}</span>
+                  <span className="version-name">{v.name ?? t('Autosave')}</span>
                   <span className="file-time">
-                    {when.format(new Date(v.createdAt))}, {v.nodeCount} layer{v.nodeCount === 1 ? '' : 's'}
+                    {when.format(new Date(v.createdAt))}, {v.nodeCount === 1 ? t('1 layer') : t('{n} layers', { n: v.nodeCount })}
                   </span>
                 </div>
               )}
               {confirming === v.id ? (
                 <div className="version-actions">
-                  <span className="field-caption">Replace the file with this version?</span>
+                  <span className="field-caption">{t('Replace the file with this version?')}</span>
                   <button type="button" className="mini-btn wide" onClick={() => setConfirming(null)}>
-                    Cancel
+                    {t('Cancel')}
                   </button>
                   <button
                     type="button"
@@ -141,19 +142,19 @@ export function VersionHistory(props: {
                       void run(() => props.onRestore(v.id));
                     }}
                   >
-                    Restore
+                    {t('Restore')}
                   </button>
                 </div>
               ) : (
                 <div className="version-actions">
                   <button type="button" className="mini-btn wide" disabled={busy} onClick={() => setConfirming(v.id)}>
-                    Restore
+                    {t('Restore')}
                   </button>
                   <button type="button" className="mini-btn wide" disabled={busy} onClick={() => setRenaming(v.id)}>
-                    {v.auto ? 'Name' : 'Rename'}
+                    {v.auto ? t('Name') : t('Rename')}
                   </button>
-                  <button type="button" className="mini-btn wide" disabled={busy} aria-label={`Delete ${v.name ?? 'autosave'}`} onClick={() => void run(() => api.deleteVersion(fileId, v.id))}>
-                    Delete
+                  <button type="button" className="mini-btn wide" disabled={busy} aria-label={v.name != null ? t('Delete {name}', { name: v.name }) : t('Delete autosave')} onClick={() => void run(() => api.deleteVersion(fileId, v.id))}>
+                    {t('Delete')}
                   </button>
                 </div>
               )}
@@ -162,7 +163,7 @@ export function VersionHistory(props: {
         </ul>
         <div className="dialog-actions">
           <button type="button" className="btn secondary" onClick={onClose} disabled={busy}>
-            Close
+            {t('Close')}
           </button>
         </div>
       </div>

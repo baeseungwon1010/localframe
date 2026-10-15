@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { Editor } from '../../engine/editor.ts';
 import { useEditorRev } from '../hooks.ts';
+import { t } from '../i18n.ts';
 
 /** Find text on the page (or in the selection), step through matches and replace them. */
 export function FindReplace({ editor, onClose }: { editor: Editor; onClose: () => void }) {
@@ -42,7 +43,7 @@ export function FindReplace({ editor, onClose }: { editor: Editor; onClose: () =
 
   const replaceAll = () => {
     const n = editor.replaceText(query, replacement, opts);
-    setMessage(n ? `Replaced ${n} match${n === 1 ? '' : 'es'}` : 'Nothing to replace');
+    setMessage(n ? (n === 1 ? t('Replaced 1 match') : t('Replaced {n} matches', { n })) : t('Nothing to replace'));
   };
 
   const keys = (e: React.KeyboardEvent) => {
@@ -55,24 +56,24 @@ export function FindReplace({ editor, onClose }: { editor: Editor; onClose: () =
   };
 
   return (
-    <div className="find-panel" role="dialog" aria-label="Find and replace" onKeyDown={keys}>
+    <div className="find-panel" role="dialog" aria-label={t('Find and replace')} onKeyDown={keys}>
       <div className="find-head">
-        <span className="find-title">Find and replace</span>
-        <button type="button" className="mini-btn" aria-label="Close" onClick={onClose}>
+        <span className="find-title">{t('Find and replace')}</span>
+        <button type="button" className="mini-btn" aria-label={t('Close')} onClick={onClose}>
           <X size={14} strokeWidth={1.5} />
         </button>
       </div>
-      <input ref={input} className="hex-input override-input" value={query} placeholder="Find text" aria-label="Find" maxLength={1000} onChange={(e) => setQuery(e.target.value)} />
-      <input className="hex-input override-input" value={replacement} placeholder="Replace with" aria-label="Replace with" maxLength={10_000} onChange={(e) => setReplacement(e.target.value)} />
+      <input ref={input} className="hex-input override-input" value={query} placeholder={t('Find text')} aria-label={t('Find')} maxLength={1000} onChange={(e) => setQuery(e.target.value)} />
+      <input className="hex-input override-input" value={replacement} placeholder={t('Replace with')} aria-label={t('Replace with')} maxLength={10_000} onChange={(e) => setReplacement(e.target.value)} />
       <div className="find-options">
         <label className="check-row">
           <input type="checkbox" checked={matchCase} onChange={(e) => setMatchCase(e.target.checked)} />
-          Match case
+          {t('Match case')}
         </label>
         {scopeIds.length > 0 && (
           <label className="check-row">
             <input type="checkbox" checked={inSelection} onChange={(e) => setInSelection(e.target.checked)} />
-            Only in selection
+            {t('Only in selection')}
           </label>
         )}
       </div>
@@ -80,16 +81,20 @@ export function FindReplace({ editor, onClose }: { editor: Editor; onClose: () =
         {message ??
           (query
             ? total
-              ? `${total} match${total === 1 ? '' : 'es'} in ${found.length} text layer${found.length === 1 ? '' : 's'}`
-              : 'No matches on this page'
-            : 'Text inside instances is changed in their main component.')}
+              ? total === 1
+                ? t('1 match in 1 text layer')
+                : found.length === 1
+                  ? t('{n} matches in 1 text layer', { n: total })
+                  : t('{n} matches in {layers} text layers', { n: total, layers: found.length })
+              : t('No matches on this page')
+            : t('Text inside instances is changed in their main component.'))}
       </p>
       <div className="dialog-actions">
         <button type="button" className="btn secondary small" disabled={!found.length} onClick={next}>
-          Next
+          {t('Next')}
         </button>
         <button type="button" className="btn primary small" disabled={!found.length} onClick={replaceAll}>
-          Replace all
+          {t('Replace all')}
         </button>
       </div>
     </div>

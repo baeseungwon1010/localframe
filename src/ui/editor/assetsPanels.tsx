@@ -9,6 +9,7 @@ import { IconButton } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
 import { MIXED, NumberField, Section, SelectField, common, normalizeHex } from './fields.tsx';
 import { EffectEditor, PaintEditor, gradientCss } from './paints.tsx';
+import { t } from '../i18n.ts';
 
 const ICON = { size: 14, strokeWidth: 1.5 };
 
@@ -20,6 +21,13 @@ export function paintPreview(p: Paint | undefined): string {
 }
 
 const FIELD_TYPE: Record<StyleField, Style['type']> = { fill: 'FILL', stroke: 'FILL', text: 'TEXT', effect: 'EFFECT' };
+/** Labels for a section's style picker, in English (translated where they are shown). */
+const FIELD_LABEL: Record<StyleField, { create: string; picker: string }> = {
+  fill: { create: 'Create fill style', picker: 'fill style' },
+  stroke: { create: 'Create stroke style', picker: 'stroke style' },
+  text: { create: 'Create text style', picker: 'text style' },
+  effect: { create: 'Create effect style', picker: 'effect style' },
+};
 
 /** "Style: [None ▾]" picker for a section, with "Create style". */
 export function StylePicker(props: { editor: Editor; nodes: SceneNode[]; field: StyleField }) {
@@ -29,13 +37,13 @@ export function StylePicker(props: { editor: Editor; nodes: SceneNode[]; field: 
   const options = editor.styles.filter((s) => s.type === FIELD_TYPE[field]);
   const canCreate = nodes.length === 1;
   const create = () => {
-    const name = window.prompt('Name for the new style', `${field === 'text' ? 'Text' : field === 'effect' ? 'Shadow' : 'Color'} ${options.length + 1}`);
+    const name = window.prompt(t('Name for the new style'), `${field === 'text' ? 'Text' : field === 'effect' ? 'Shadow' : 'Color'} ${options.length + 1}`);
     if (name) editor.createStyle(field, nodes[0].id, name);
   };
   // no styles of this kind yet: a small button instead of a dropdown with nothing in it
   if (options.length === 0 && current === '') {
     return canCreate ? (
-      <IconButton label={`Create ${field} style`} onClick={create}>
+      <IconButton label={t(FIELD_LABEL[field].create)} onClick={create}>
         <SwatchBook {...ICON} />
       </IconButton>
     ) : null;
@@ -43,7 +51,7 @@ export function StylePicker(props: { editor: Editor; nodes: SceneNode[]; field: 
   return (
     <select
       className="select-field style-picker"
-      aria-label={`${field} style`}
+      aria-label={t(FIELD_LABEL[field].picker)}
       value={current === MIXED ? '__mixed' : current}
       onChange={(e) => {
         const v = e.target.value;
@@ -53,16 +61,16 @@ export function StylePicker(props: { editor: Editor; nodes: SceneNode[]; field: 
     >
       {current === MIXED && (
         <option value="__mixed" disabled>
-          Mixed styles
+          {t('Mixed styles')}
         </option>
       )}
-      <option value="">No style</option>
+      <option value="">{t('No style')}</option>
       {options.map((s) => (
         <option key={s.id} value={s.id}>
           {s.name}
         </option>
       ))}
-      {canCreate && <option value="__create">Create style…</option>}
+      {canCreate && <option value="__create">{t('Create style…')}</option>}
     </select>
   );
 }
@@ -72,9 +80,9 @@ export function StylesList({ editor }: { editor: Editor }) {
   useEditorRev(editor, 'pages');
   const [open, setOpen] = useState<string | null>(null);
   const groups: [Style['type'], string][] = [
-    ['FILL', 'Color styles'],
-    ['TEXT', 'Text styles'],
-    ['EFFECT', 'Effect styles'],
+    ['FILL', t('Color styles')],
+    ['TEXT', t('Text styles')],
+    ['EFFECT', t('Effect styles')],
   ];
   return (
     <div className="styles-list">
@@ -104,7 +112,7 @@ export function StylesList({ editor }: { editor: Editor }) {
         );
       })}
       {editor.styles.length === 0 && (
-        <p className="panel-empty">No styles yet. Select a layer and use the style button in its Fill, Stroke, Text or Effects section.</p>
+        <p className="panel-empty">{t('No styles yet. Select a layer and use the style button in its Fill, Stroke, Text or Effects section.')}</p>
       )}
     </div>
   );
@@ -117,7 +125,7 @@ function StyleEditor({ editor, style, onDone }: { editor: Editor; style: Style; 
     <div className="style-editor">
       <input
         className="hex-input override-input"
-        aria-label="Style name"
+        aria-label={t('Style name')}
         value={name}
         onChange={(e) => setName(e.target.value)}
         onBlur={() => name !== style.name && editor.updateStyle(style.id, { name })}
@@ -131,7 +139,7 @@ function StyleEditor({ editor, style, onDone }: { editor: Editor; style: Style; 
           <PaintEditor
             key={i}
             paint={p}
-            label={`Style paint ${i + 1}`}
+            label={t('Style paint {n}', { n: i + 1 })}
             allowImage={false}
             onChange={(next) => editor.updateStyle(style.id, { value: style.value.map((q, j) => (j === i ? next : q)) })}
             onRemove={() => style.value.length > 1 && editor.updateStyle(style.id, { value: style.value.filter((_, j) => j !== i) })}
@@ -140,21 +148,21 @@ function StyleEditor({ editor, style, onDone }: { editor: Editor; style: Style; 
       {style.type === 'TEXT' && (
         <div className="grid2">
           <SelectField
-            label="Style font"
+            label={t('Style font')}
             value={style.value.fontFamily}
             options={FONT_FAMILIES.map((f) => ({ value: f, label: f }))}
             onChange={(v) => editor.updateStyle(style.id, { value: { ...style.value, fontFamily: v } })}
           />
           <SelectField
-            label="Style weight"
+            label={t('Style weight')}
             value={style.value.fontWeight}
-            options={FONT_WEIGHTS.map((w) => ({ value: w.value, label: w.label }))}
+            options={FONT_WEIGHTS.map((w) => ({ value: w.value, label: t(w.label) }))}
             onChange={(v) => editor.updateStyle(style.id, { value: { ...style.value, fontWeight: v } })}
           />
-          <NumberField label="Size" ariaLabel="Style font size" value={style.value.fontSize} min={1} max={2000} onCommit={(v) => editor.updateStyle(style.id, { value: { ...style.value, fontSize: v } })} />
+          <NumberField label={t('Size')} ariaLabel={t('Style font size')} value={style.value.fontSize} min={1} max={2000} onCommit={(v) => editor.updateStyle(style.id, { value: { ...style.value, fontSize: v } })} />
           <NumberField
-            label="Letter"
-            ariaLabel="Style letter spacing"
+            label={t('Letter')}
+            ariaLabel={t('Style letter spacing')}
             value={style.value.letterSpacing}
             step={0.1}
             min={-200}
@@ -175,16 +183,16 @@ function StyleEditor({ editor, style, onDone }: { editor: Editor; style: Style; 
         ))}
       <div className="grid2">
         <button type="button" className="btn secondary full" onClick={onDone}>
-          Done
+          {t('Done')}
         </button>
         <button
           type="button"
           className="btn secondary full danger-text"
           onClick={() => {
-            if (window.confirm(`Delete the style “${style.name}”? Layers keep their look.`)) editor.deleteStyle(style.id);
+            if (window.confirm(t('Delete the style “{name}”? Layers keep their look.', { name: style.name }))) editor.deleteStyle(style.id);
           }}
         >
-          Delete
+          {t('Delete')}
         </button>
       </div>
     </div>
@@ -252,16 +260,16 @@ export function VariablesDialog({ editor, onClose }: { editor: Editor; onClose: 
     <div className="dialog-backdrop" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={ref} className="dialog wide" role="dialog" aria-modal="true" aria-labelledby="vars-title">
         <div className="dialog-head">
-          <h2 id="vars-title">Variables</h2>
+          <h2 id="vars-title">{t('Variables')}</h2>
           <button type="button" className="btn secondary small" onClick={addCollection}>
-            <Plus {...ICON} /> Collection
+            <Plus {...ICON} /> {t('Collection')}
           </button>
         </div>
         {vars.collections.length === 0 ? (
-          <p className="field-caption">Variables hold colours and numbers you can reuse and switch between modes (for example light and dark). Start with a collection.</p>
+          <p className="field-caption">{t('Variables hold colours and numbers you can reuse and switch between modes (for example light and dark). Start with a collection.')}</p>
         ) : (
           <>
-            <div className="tabs" role="tablist" aria-label="Collections">
+            <div className="tabs" role="tablist" aria-label={t('Collections')}>
               {vars.collections.map((c) => (
                 <button key={c.id} type="button" role="tab" aria-selected={c.id === col?.id} className={c.id === col?.id ? 'on' : ''} onClick={() => setColId(c.id)}>
                   {c.name}
@@ -271,34 +279,34 @@ export function VariablesDialog({ editor, onClose }: { editor: Editor; onClose: 
             {col && (
               <>
                 <div className="vars-toolbar">
-                  <BlurInput value={col.name} label="Collection name" onCommit={renameCol} />
+                  <BlurInput value={col.name} label={t('Collection name')} onCommit={renameCol} />
                   <button type="button" className="btn secondary small" onClick={addMode} disabled={col.modes.length >= 20}>
-                    <Plus {...ICON} /> Mode
+                    <Plus {...ICON} /> {t('Mode')}
                   </button>
                   <button type="button" className="btn secondary small" onClick={() => addVar('COLOR')}>
-                    <Plus {...ICON} /> Color
+                    <Plus {...ICON} /> {t('Color')}
                   </button>
                   <button type="button" className="btn secondary small" onClick={() => addVar('NUMBER')}>
-                    <Plus {...ICON} /> Number
+                    <Plus {...ICON} /> {t('Number')}
                   </button>
                   <button type="button" className="btn secondary small" onClick={() => addVar('STRING')}>
-                    <Plus {...ICON} /> String
+                    <Plus {...ICON} /> {t('String')}
                   </button>
                   <button type="button" className="btn secondary small" onClick={() => addVar('BOOLEAN')}>
-                    <Plus {...ICON} /> Boolean
+                    <Plus {...ICON} /> {t('Boolean')}
                   </button>
                 </div>
                 <div className="vars-table-wrap">
                   <table className="vars-table">
                     <thead>
                       <tr>
-                        <th scope="col">Name</th>
+                        <th scope="col">{t('Name')}</th>
                         {col.modes.map((m) => (
                           <th key={m.id} scope="col">
-                            <BlurInput value={m.name} label={`Mode name ${m.name}`} onCommit={(v) => renameMode(m.id, v)} />
+                            <BlurInput value={m.name} label={t('Mode name {name}', { name: m.name })} onCommit={(v) => renameMode(m.id, v)} />
                           </th>
                         ))}
-                        <th aria-label="Actions" />
+                        <th aria-label={t('Actions')} />
                       </tr>
                     </thead>
                     <tbody>
@@ -307,26 +315,26 @@ export function VariablesDialog({ editor, onClose }: { editor: Editor; onClose: 
                         .map((v) => (
                           <tr key={v.id}>
                             <td>
-                              <BlurInput value={v.name} label={`Variable name ${v.name}`} onCommit={(name) => renameVar(v.id, name)} />
+                              <BlurInput value={v.name} label={t('Variable name {name}', { name: v.name })} onCommit={(name) => renameVar(v.id, name)} />
                             </td>
                             {col.modes.map((m) => {
                               const value = v.values[m.id] ?? v.values[col.modes[0].id];
                               return (
                                 <td key={m.id}>
                                   {v.type === 'COLOR' ? (
-                                    <ColorCell value={String(value)} label={`${v.name} in ${m.name}`} onCommit={(c) => setValue(v.id, m.id, c)} />
+                                    <ColorCell value={String(value)} label={t('{name} in {mode}', { name: v.name, mode: m.name })} onCommit={(c) => setValue(v.id, m.id, c)} />
                                   ) : v.type === 'STRING' ? (
-                                    <BlurInput value={String(value)} label={`${v.name} in ${m.name}`} onCommit={(s) => setValue(v.id, m.id, s.slice(0, 10_000))} />
+                                    <BlurInput value={String(value)} label={t('{name} in {mode}', { name: v.name, mode: m.name })} onCommit={(s) => setValue(v.id, m.id, s.slice(0, 10_000))} />
                                   ) : v.type === 'BOOLEAN' ? (
-                                    <input type="checkbox" aria-label={`${v.name} in ${m.name}`} checked={value === true} onChange={(e) => setValue(v.id, m.id, e.target.checked)} />
+                                    <input type="checkbox" aria-label={t('{name} in {mode}', { name: v.name, mode: m.name })} checked={value === true} onChange={(e) => setValue(v.id, m.id, e.target.checked)} />
                                   ) : (
-                                    <NumberField label="" ariaLabel={`${v.name} in ${m.name}`} value={Number(value)} min={-1e7} max={1e7} onCommit={(n) => setValue(v.id, m.id, n)} />
+                                    <NumberField label="" ariaLabel={t('{name} in {mode}', { name: v.name, mode: m.name })} value={Number(value)} min={-1e7} max={1e7} onCommit={(n) => setValue(v.id, m.id, n)} />
                                   )}
                                 </td>
                               );
                             })}
                             <td>
-                              <IconButton label={`Delete ${v.name}`} onClick={() => removeVar(v.id)}>
+                              <IconButton label={t('Delete {name}', { name: v.name })} onClick={() => removeVar(v.id)}>
                                 <Minus {...ICON} />
                               </IconButton>
                             </td>
@@ -341,7 +349,7 @@ export function VariablesDialog({ editor, onClose }: { editor: Editor; onClose: 
         )}
         <div className="dialog-actions">
           <button type="button" className="btn primary" onClick={onClose}>
-            Done
+            {t('Done')}
           </button>
         </div>
       </div>
@@ -373,11 +381,11 @@ function ColorCell(props: { value: string; label: string; onCommit: (c: string) 
   return (
     <div className="paint-row compact">
       <label className="swatch" style={{ background: props.value }}>
-        <input type="color" aria-label={`${props.label} colour`} value={props.value.toLowerCase()} onChange={(e) => props.onCommit(e.target.value.toUpperCase())} />
+        <input type="color" aria-label={t('{label} colour', { label: props.label })} value={props.value.toLowerCase()} onChange={(e) => props.onCommit(e.target.value.toUpperCase())} />
       </label>
       <input
         className="hex-input"
-        aria-label={`${props.label} hex`}
+        aria-label={t('{label} hex', { label: props.label })}
         value={hex}
         maxLength={7}
         onChange={(e) => setHex(e.target.value)}
@@ -392,6 +400,7 @@ function ColorCell(props: { value: string; label: string; onCommit: (c: string) 
   );
 }
 
+// in English here, translated where they are shown
 const BIND_LABEL: Record<Bindable, string> = {
   fill: 'Fill color',
   stroke: 'Stroke color',
@@ -422,33 +431,33 @@ export function VariablesSection({ editor, nodes }: { editor: Editor; nodes: Sce
   return (
     <Section
       folded
-      title="Variables"
+      title={t('Variables')}
       action={
-        <IconButton label={open ? 'Hide variable bindings' : 'Show variable bindings'} pressed={open} onClick={() => setOpen(!open)}>
+        <IconButton label={open ? t('Hide variable bindings') : t('Show variable bindings')} pressed={open} onClick={() => setOpen(!open)}>
           <Variable {...ICON} />
         </IconButton>
       }
     >
-      {!open && boundCount > 0 && <p className="field-caption">{boundCount} propert{boundCount === 1 ? 'y follows' : 'ies follow'} variables.</p>}
+      {!open && boundCount > 0 && <p className="field-caption">{boundCount === 1 ? t('1 property follows variables.') : t('{n} properties follow variables.', { n: boundCount })}</p>}
       {open &&
         relevant.map((prop) => {
           const options = vars.vars.filter((v) => v.type === BINDING_TYPE[prop]);
           const value = common(nodes, (n) => n.bindings?.[prop] ?? '');
           return (
             <label key={prop} className="variant-row">
-              <span className="field-caption">{BIND_LABEL[prop]}</span>
+              <span className="field-caption">{t(BIND_LABEL[prop])}</span>
               <select
                 className="select-field"
-                aria-label={`${BIND_LABEL[prop]} variable`}
+                aria-label={t('{property} variable', { property: t(BIND_LABEL[prop]) })}
                 value={value === MIXED ? '__mixed' : value}
                 onChange={(e) => editor.bind(ids, prop, e.target.value || null)}
               >
                 {value === MIXED && (
                   <option value="__mixed" disabled>
-                    Mixed
+                    {t('Mixed')}
                   </option>
                 )}
-                <option value="">No variable</option>
+                <option value="">{t('No variable')}</option>
                 {options.map((v) => (
                   <option key={v.id} value={v.id}>
                     {vars.collections.find((c) => c.id === v.collectionId)?.name} / {v.name}
@@ -463,19 +472,19 @@ export function VariablesSection({ editor, nodes }: { editor: Editor; nodes: Sce
           const value = common(nodes, (n) => n.modes?.[c.id] ?? '');
           return (
             <label key={c.id} className="variant-row">
-              <span className="field-caption">{c.name} mode</span>
+              <span className="field-caption">{t('{name} mode', { name: c.name })}</span>
               <select
                 className="select-field"
-                aria-label={`${c.name} mode`}
+                aria-label={t('{name} mode', { name: c.name })}
                 value={value === MIXED ? '__mixed' : value}
                 onChange={(e) => editor.setMode(ids, c.id, e.target.value || null)}
               >
                 {value === MIXED && (
                   <option value="__mixed" disabled>
-                    Mixed
+                    {t('Mixed')}
                   </option>
                 )}
-                <option value="">Inherit ({c.modes[0].name})</option>
+                <option value="">{t('Inherit ({mode})', { mode: c.modes[0].name })}</option>
                 {c.modes.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name}

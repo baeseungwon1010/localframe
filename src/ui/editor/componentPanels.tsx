@@ -6,6 +6,7 @@ import { componentPropsOf, instanceDoc, variantOptions } from '../../engine/inst
 import { IconButton } from '../components.tsx';
 import { Section } from './fields.tsx';
 import { PaintEditor } from './paints.tsx';
+import { t } from '../i18n.ts';
 
 const ICON = { size: 14, strokeWidth: 1.5 };
 
@@ -60,38 +61,38 @@ export function PropDefinitions({ editor, owner }: { editor: Editor; owner: Scen
   const props = owner.componentProps ?? [];
   return (
     <Section
-      title="Properties"
+      title={t('Properties')}
       action={
         <div className="inline-actions">
           <button type="button" className="mini-btn wide" onClick={() => editor.addComponentProp(owner.id, 'TEXT')}>
-            <Plus {...ICON} /> Text
+            <Plus {...ICON} /> {t('Text')}
           </button>
           <button type="button" className="mini-btn wide" onClick={() => editor.addComponentProp(owner.id, 'BOOLEAN')}>
-            <Plus {...ICON} /> Boolean
+            <Plus {...ICON} /> {t('Boolean')}
           </button>
           <button type="button" className="mini-btn wide" onClick={() => editor.addComponentProp(owner.id, 'INSTANCE_SWAP')}>
-            <Plus {...ICON} /> Instance
+            <Plus {...ICON} /> {t('Instance')}
           </button>
         </div>
       }
     >
       {props.length === 0 ? (
-        <p className="field-caption">Add a property, then link layers inside to it. Instances can then change it.</p>
+        <p className="field-caption">{t('Add a property, then link layers inside to it. Instances can then change it.')}</p>
       ) : (
         props.map((p) => (
           <div key={p.id} className="prop-def">
-            <CommitInput value={p.name} label={`Name of property ${p.name}`} onCommit={(v) => editor.updateComponentProp(owner.id, p.id, { name: v })} />
+            <CommitInput value={p.name} label={t('Name of property {name}', { name: p.name })} onCommit={(v) => editor.updateComponentProp(owner.id, p.id, { name: v })} />
             {p.type === 'TEXT' ? (
-              <CommitInput value={p.defaultValue} label={`Default of ${p.name}`} onCommit={(v) => editor.updateComponentProp(owner.id, p.id, { defaultValue: v })} />
+              <CommitInput value={p.defaultValue} label={t('Default of {name}', { name: p.name })} onCommit={(v) => editor.updateComponentProp(owner.id, p.id, { defaultValue: v })} />
             ) : p.type === 'INSTANCE_SWAP' ? (
-              <ComponentSelect editor={editor} label={`Default of ${p.name}`} value={p.defaultValue} onChange={(v) => editor.updateComponentProp(owner.id, p.id, { defaultValue: v })} />
+              <ComponentSelect editor={editor} label={t('Default of {name}', { name: p.name })} value={p.defaultValue} onChange={(v) => editor.updateComponentProp(owner.id, p.id, { defaultValue: v })} />
             ) : (
               <label className="check-row">
                 <input type="checkbox" checked={p.defaultValue} onChange={(e) => editor.updateComponentProp(owner.id, p.id, { defaultValue: e.target.checked })} />
-                Shown by default
+                {t('Shown by default')}
               </label>
             )}
-            <IconButton label={`Remove property ${p.name}`} onClick={() => editor.removeComponentProp(owner.id, p.id)}>
+            <IconButton label={t('Remove property {name}', { name: p.name })} onClick={() => editor.removeComponentProp(owner.id, p.id)}>
               <Minus {...ICON} />
             </IconButton>
           </div>
@@ -107,21 +108,21 @@ export function ComponentSetSection({ editor, set }: { editor: Editor; set: Scen
   return (
     <>
       <Section
-        title="Variants"
+        title={t('Variants')}
         action={
           <button type="button" className="mini-btn wide" onClick={() => editor.addVariantProp(set.id)}>
-            <Plus {...ICON} /> Property
+            <Plus {...ICON} /> {t('Property')}
           </button>
         }
       >
         {[...options.entries()].map(([prop, values]) => (
           <div key={prop} className="variant-prop">
-            <CommitInput value={prop} label={`Variant property ${prop}`} onCommit={(v) => editor.renameVariantProp(set.id, prop, v)} />
+            <CommitInput value={prop} label={t('Variant property {name}', { name: prop })} onCommit={(v) => editor.renameVariantProp(set.id, prop, v)} />
             <span className="field-caption">{values.join(', ')}</span>
           </div>
         ))}
         <button type="button" className="btn secondary full" onClick={() => editor.addVariant(set.id)}>
-          Add variant
+          {t('Add variant')}
         </button>
       </Section>
       <PropDefinitions editor={editor} owner={set} />
@@ -136,7 +137,7 @@ export function VariantValues({ editor, comp }: { editor: Editor; comp: SceneNod
       {Object.entries(comp.variant ?? {}).map(([prop, value]) => (
         <label key={prop} className="variant-row">
           <span className="field-caption">{prop}</span>
-          <CommitInput value={value} label={`${prop} value`} onCommit={(v) => editor.setVariantValue(comp.id, prop, v)} />
+          <CommitInput value={value} label={t('{name} value', { name: prop })} onCommit={(v) => editor.setVariantValue(comp.id, prop, v)} />
         </label>
       ))}
     </Section>
@@ -199,14 +200,14 @@ export function LinkProps({ editor, layer }: { editor: Editor; layer: SceneNode 
     <Section title="Linked properties">
       {layer.type === 'TEXT' && textProps.length > 0 && (
         <label className="variant-row">
-          <span className="field-caption">Text</span>
+          <span className="field-caption">{t('Text')}</span>
           <select
             className="select-field"
-            aria-label="Text property"
+            aria-label={t('Text property')}
             value={layer.propRefs?.characters ?? ''}
             onChange={(e) => editor.linkProp(layer.id, 'characters', e.target.value || null)}
           >
-            <option value="">Not linked</option>
+            <option value="">{t('Not linked')}</option>
             {textProps.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -217,14 +218,14 @@ export function LinkProps({ editor, layer }: { editor: Editor; layer: SceneNode 
       )}
       {layer.type === 'INSTANCE' && swapProps.length > 0 && (
         <label className="variant-row">
-          <span className="field-caption">Instance</span>
+          <span className="field-caption">{t('Instance')}</span>
           <select
             className="select-field"
-            aria-label="Instance swap property"
+            aria-label={t('Instance swap property')}
             value={layer.propRefs?.swap ?? ''}
             onChange={(e) => editor.linkProp(layer.id, 'swap', e.target.value || null)}
           >
-            <option value="">Not linked</option>
+            <option value="">{t('Not linked')}</option>
             {swapProps.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -235,14 +236,14 @@ export function LinkProps({ editor, layer }: { editor: Editor; layer: SceneNode 
       )}
       {boolProps.length > 0 && (
         <label className="variant-row">
-          <span className="field-caption">Visible</span>
+          <span className="field-caption">{t('Visible')}</span>
           <select
             className="select-field"
-            aria-label="Visibility property"
+            aria-label={t('Visibility property')}
             value={layer.propRefs?.visible ?? ''}
             onChange={(e) => editor.linkProp(layer.id, 'visible', e.target.value || null)}
           >
-            <option value="">Not linked</option>
+            <option value="">{t('Not linked')}</option>
             {boolProps.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -265,26 +266,26 @@ export function InnerLayerSection({ editor }: { editor: Editor }) {
   const override = inst.overrides?.[inner.sourceId];
   const fill = vn.fills[0] as SolidPaint | undefined;
   return (
-    <Section title={`In this instance: ${vn.name}`}>
+    <Section title={`In this instance: ${vn.name}`} label={t('In this instance: {name}', { name: vn.name })}>
       <label className="check-row">
         <input type="checkbox" checked={vn.visible} onChange={(e) => editor.setOverride(inst.id, inner.sourceId, { visible: e.target.checked })} />
-        Visible
+        {t('Visible')}
       </label>
       {vn.type === 'TEXT' && (
         <label className="variant-row">
-          <span className="field-caption">Text</span>
+          <span className="field-caption">{t('Text')}</span>
           <CommitInput
             value={vn.text!.characters}
-            label="Text in this instance"
+            label={t('Text in this instance')}
             multiline
-            onCommit={(t) => editor.setOverride(inst.id, inner.sourceId, { characters: t })}
+            onCommit={(text) => editor.setOverride(inst.id, inner.sourceId, { characters: text })}
           />
         </label>
       )}
       {fill && (
         <PaintEditor
           paint={fill}
-          label="Fill"
+          label={t('Fill')}
           allowImage={false}
           onChange={(p) => editor.setOverride(inst.id, inner.sourceId, { fills: [p, ...vn.fills.slice(1)] })}
           onRemove={() => editor.setOverride(inst.id, inner.sourceId, { fills: vn.fills.slice(1) })}
@@ -292,10 +293,10 @@ export function InnerLayerSection({ editor }: { editor: Editor }) {
       )}
       {override && (
         <button type="button" className="btn secondary full" onClick={() => editor.setOverride(inst.id, inner.sourceId, null)}>
-          Reset this layer
+          {t('Reset this layer')}
         </button>
       )}
-      <p className="field-caption">Esc goes back to the instance.</p>
+      <p className="field-caption">{t('Esc goes back to the instance.')}</p>
     </Section>
   );
 }

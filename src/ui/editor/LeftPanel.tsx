@@ -8,18 +8,19 @@ import { IconButton, Menu, type MenuItem } from '../components.tsx';
 import { useEditorRev } from '../hooks.ts';
 import { LayersPanel } from './LayersPanel.tsx';
 import { StylesList, VariablesDialog } from './assetsPanels.tsx';
+import { t } from '../i18n.ts';
 
 export function LeftPanel({ editor }: { editor: Editor }) {
   const [tab, setTab] = useState<'layers' | 'assets'>('layers');
   return (
-    <aside className="layers" aria-label="Layers and pages">
+    <aside className="layers" aria-label={t('Layers and pages')}>
       <PagesSection editor={editor} />
-      <div className="tabs" role="tablist" aria-label="Left panel">
+      <div className="tabs" role="tablist" aria-label={t('Left panel')}>
         <button type="button" role="tab" aria-selected={tab === 'layers'} className={tab === 'layers' ? 'on' : ''} onClick={() => setTab('layers')}>
-          Layers
+          {t('Layers')}
         </button>
         <button type="button" role="tab" aria-selected={tab === 'assets'} className={tab === 'assets' ? 'on' : ''} onClick={() => setTab('assets')}>
-          Assets
+          {t('Assets')}
         </button>
       </div>
       {tab === 'layers' ? <LayersPanel editor={editor} /> : <AssetsPanel editor={editor} />}
@@ -42,37 +43,37 @@ function PagesSection({ editor }: { editor: Editor }) {
   const items = (id: string): MenuItem[] => {
     const i = editor.pages.findIndex((p) => p.id === id);
     return [
-      { label: 'Rename', onSelect: () => setRenaming(id) },
-      { label: 'Duplicate page', onSelect: () => editor.duplicatePage(id) },
-      { label: 'Move up', disabled: i <= 0, onSelect: () => editor.movePage(id, i - 1) },
-      { label: 'Move down', disabled: i >= editor.pages.length - 1, onSelect: () => editor.movePage(id, i + 1) },
+      { label: t('Rename'), onSelect: () => setRenaming(id) },
+      { label: t('Duplicate page'), onSelect: () => editor.duplicatePage(id) },
+      { label: t('Move up'), disabled: i <= 0, onSelect: () => editor.movePage(id, i - 1) },
+      { label: t('Move down'), disabled: i >= editor.pages.length - 1, onSelect: () => editor.movePage(id, i + 1) },
       'separator',
       {
-        label: 'Delete page',
+        label: t('Delete page'),
         danger: true,
         disabled: editor.pages.length <= 1,
         onSelect: () => {
           const page = editor.pages.find((p) => p.id === id);
-          if (page && window.confirm(`Delete “${page.name}” and everything on it? You can undo this.`)) editor.deletePage(id);
+          if (page && window.confirm(t('Delete “{name}” and everything on it? You can undo this.', { name: page.name }))) editor.deletePage(id);
         },
       },
     ];
   };
 
   return (
-    <section className="pages" aria-label="Pages">
+    <section className="pages" aria-label={t('Pages')}>
       <div className="pages-head">
         <button type="button" className="pages-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
           {open ? <ChevronDown size={12} strokeWidth={1.5} /> : <ChevronRight size={12} strokeWidth={1.5} />}
-          Pages
+          {t('Pages')}
           {!open && <span className="pages-current">{editor.currentPage.name}</span>}
         </button>
-        <IconButton label="Add page" onClick={() => editor.addPage()}>
+        <IconButton label={t('Add page')} onClick={() => editor.addPage()}>
           <Plus size={14} strokeWidth={1.5} />
         </IconButton>
       </div>
       {open && (
-        <ul className="page-list" role="listbox" aria-label="Pages">
+        <ul className="page-list" role="listbox" aria-label={t('Pages')}>
           {editor.pages.map((p) => (
             <li
               key={p.id}
@@ -97,7 +98,7 @@ function PagesSection({ editor }: { editor: Editor }) {
                 <input
                   className="inline-input row-input"
                   defaultValue={p.name}
-                  aria-label="Page name"
+                  aria-label={t('Page name')}
                   autoFocus
                   maxLength={200}
                   onFocus={(e) => e.target.select()}
@@ -119,7 +120,7 @@ function PagesSection({ editor }: { editor: Editor }) {
           ))}
         </ul>
       )}
-      {menu && <Menu label="Page actions" x={menu.x} y={menu.y} items={items(menu.id)} onClose={() => setMenu(null)} />}
+      {menu && <Menu label={t('Page actions')} x={menu.x} y={menu.y} items={items(menu.id)} onClose={() => setMenu(null)} />}
     </section>
   );
 }
@@ -151,10 +152,10 @@ function AssetsPanel({ editor }: { editor: Editor }) {
     <div className="assets-body">
       <div className="assets-actions">
         <button type="button" className="btn secondary small" onClick={() => setVarsOpen(true)}>
-          Variables ({editor.variables.vars.length})
+          {t('Variables ({n})', { n: editor.variables.vars.length })}
         </button>
       </div>
-      <h4 className="asset-heading">Components</h4>
+      <h4 className="asset-heading">{t('Components')}</h4>
       <ComponentList editor={editor} />
       <LibraryPanel editor={editor} />
       <StylesList editor={editor} />
@@ -176,12 +177,12 @@ function ComponentList({ editor }: { editor: Editor }) {
   if (comps.length === 0) {
     return (
       <p className="panel-empty">
-        No components yet. Select a frame and press Ctrl+Alt+K (⌘⌥K on Mac) to make one. Its instances update when you change it.
+        {t('No components yet. Select a frame and press Ctrl+Alt+K (⌘⌥K on Mac) to make one. Its instances update when you change it.')}
       </p>
     );
   }
   return (
-    <ul className="asset-list" aria-label="Components">
+    <ul className="asset-list" aria-label={t('Components')}>
       {comps.map((c) => (
         <li key={c.id} className="asset-row">
           <ComponentPreview editor={editor} node={c} />
@@ -199,7 +200,7 @@ function ComponentList({ editor }: { editor: Editor }) {
               editor.createInstance(c.id, at);
             }}
           >
-            Insert
+            {t('Insert')}
           </button>
         </li>
       ))}

@@ -6,6 +6,7 @@ import type { CommentSpot, Editor } from '../../engine/editor.ts';
 import { hitDeepest } from '../../engine/hit.ts';
 import { type Point, apply, invert, round2 } from '../../engine/math.ts';
 import { useEditorRev } from '../hooks.ts';
+import { t } from '../i18n.ts';
 
 const when = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -100,7 +101,7 @@ export function CommentPins({ editor, store }: { editor: Editor; store: CommentS
   useEditorRev(editor, 'view', 'doc', 'pages', 'tool');
   const threads = useThreads(editor, store);
   if (editor.tool !== 'comment') return null;
-  const openThread = threads.find((t) => t.root.id === store.open);
+  const openThread = threads.find((th) => th.root.id === store.open);
   const size = editor.viewSize;
   const popoverAt = (p: Point) => ({
     left: Math.max(8, Math.min(p.x + 20, size.width - 300)),
@@ -109,16 +110,16 @@ export function CommentPins({ editor, store }: { editor: Editor; store: CommentS
 
   return (
     <div className="comment-layer">
-      {threads.map((t) => (
-        <Pin key={t.root.id} editor={editor} store={store} thread={t.root} number={t.number} open={store.open === t.root.id} />
+      {threads.map((th) => (
+        <Pin key={th.root.id} editor={editor} store={store} thread={th.root} number={th.number} open={store.open === th.root.id} />
       ))}
       {store.draft && (
         <>
           <span className="comment-pin draft" style={pinStyle(editor.toScreen(store.draft))} aria-hidden="true" />
           <div className="comment-popover" style={popoverAt(editor.toScreen(store.draft))}>
             <Composer
-              label="Add a comment"
-              action="Post"
+              label={t('Add a comment')}
+              action={t('Post')}
               onCancel={() => store.setDraft(null)}
               onSubmit={async (body) => {
                 const d = store.draft!;
@@ -133,14 +134,14 @@ export function CommentPins({ editor, store }: { editor: Editor; store: CommentS
         </>
       )}
       {openThread && (
-        <div className="comment-popover" style={popoverAt(editor.toScreen(pinPoint(editor, openThread.root)))} role="dialog" aria-label={`Comment ${openThread.number}`}>
+        <div className="comment-popover" style={popoverAt(editor.toScreen(pinPoint(editor, openThread.root)))} role="dialog" aria-label={t('Comment {n}', { n: openThread.number })}>
           <Thread store={store} root={openThread.root} replies={openThread.replies} number={openThread.number} />
         </div>
       )}
       {store.error && (
         <div className="toast" role="alert">
-          <span>{store.error}</span>
-          <button type="button" className="mini-btn" aria-label="Dismiss" onClick={() => store.setError(null)}>
+          <span>{t(store.error)}</span>
+          <button type="button" className="mini-btn" aria-label={t('Dismiss')} onClick={() => store.setError(null)}>
             ×
           </button>
         </div>
@@ -168,7 +169,7 @@ function Pin(props: { editor: Editor; store: CommentStore; thread: Comment; numb
       type="button"
       className={`comment-pin ${thread.resolved ? 'resolved' : ''} ${props.open ? 'on' : ''}`}
       style={pinStyle(at)}
-      aria-label={`Comment ${props.number}${thread.resolved ? ', resolved' : ''}: ${thread.body}`}
+      aria-label={thread.resolved ? t('Comment {n}, resolved: {body}', { n: props.number, body: thread.body }) : t('Comment {n}: {body}', { n: props.number, body: thread.body })}
       aria-expanded={props.open}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
@@ -218,18 +219,18 @@ function Thread(props: { store: CommentStore; root: Comment; replies: Comment[];
   return (
     <div className="comment-thread">
       <div className="comment-thread-head">
-        <span className="comment-number">Comment {props.number}</span>
+        <span className="comment-number">{t('Comment {n}', { n: props.number })}</span>
         <button
           type="button"
           className="mini-btn"
-          aria-label={root.resolved ? 'Reopen' : 'Resolve'}
-          title={root.resolved ? 'Reopen' : 'Resolve'}
+          aria-label={root.resolved ? t('Reopen') : t('Resolve')}
+          title={root.resolved ? t('Reopen') : t('Resolve')}
           aria-pressed={root.resolved}
           onClick={() => void store.update(root.id, { resolved: !root.resolved })}
         >
           <Check size={14} strokeWidth={1.5} />
         </button>
-        <button type="button" className="mini-btn" aria-label="Close" onClick={() => store.setOpen(null)}>
+        <button type="button" className="mini-btn" aria-label={t('Close')} onClick={() => store.setOpen(null)}>
           <X size={14} strokeWidth={1.5} />
         </button>
       </div>
@@ -238,7 +239,7 @@ function Thread(props: { store: CommentStore; root: Comment; replies: Comment[];
           <Message key={c.id} store={store} comment={c} />
         ))}
       </ol>
-      <Composer key={root.id} label="Reply" action="Reply" onSubmit={async (body) => void (await store.add({ parentId: root.id, pageId: root.pageId, x: root.x, y: root.y, body }))} />
+      <Composer key={root.id} label={t('Reply')} action={t('Reply')} onSubmit={async (body) => void (await store.add({ parentId: root.id, pageId: root.pageId, x: root.x, y: root.y, body }))} />
     </div>
   );
 }
@@ -250,8 +251,8 @@ function Message({ store, comment }: { store: CommentStore; comment: Comment }) 
     return (
       <li className="comment-message">
         <Composer
-          label="Edit comment"
-          action="Save"
+          label={t('Edit comment')}
+          action={t('Save')}
           initial={comment.body}
           onCancel={() => setEditing(false)}
           onSubmit={async (body) => {
@@ -270,19 +271,19 @@ function Message({ store, comment }: { store: CommentStore; comment: Comment }) 
         {confirm ? (
           <>
             <button type="button" className="link-btn" onClick={() => setConfirm(false)}>
-              Keep
+              {t('Keep')}
             </button>
             <button type="button" className="link-btn danger" onClick={() => void store.remove(comment.id)}>
-              {comment.parentId ? 'Delete reply' : 'Delete thread'}
+              {comment.parentId ? t('Delete reply') : t('Delete thread')}
             </button>
           </>
         ) : (
           <>
             <button type="button" className="link-btn" onClick={() => setEditing(true)}>
-              Edit
+              {t('Edit')}
             </button>
             <button type="button" className="link-btn" onClick={() => setConfirm(true)}>
-              Delete
+              {t('Delete')}
             </button>
           </>
         )}
@@ -335,7 +336,7 @@ function Composer(props: { label: string; action: string; initial?: string; onSu
       <div className="comment-composer-actions">
         {props.onCancel && (
           <button type="button" className="mini-btn wide" onClick={props.onCancel}>
-            Cancel
+            {t('Cancel')}
           </button>
         )}
         <button type="submit" className="btn primary small" disabled={busy || !value.trim()}>
@@ -350,28 +351,28 @@ function Composer(props: { label: string; action: string; initial?: string; onSu
 export function CommentsPanel({ editor, store }: { editor: Editor; store: CommentStore }) {
   useEditorRev(editor, 'pages', 'doc');
   const [showResolved, setShowResolved] = useState(false);
-  const threads = useThreads(editor, store).filter((t) => showResolved || !t.root.resolved);
+  const threads = useThreads(editor, store).filter((th) => showResolved || !th.root.resolved);
   return (
-    <aside className="props" aria-label="Comments">
-      <div className="panel-title">Comments</div>
+    <aside className="props" aria-label={t('Comments')}>
+      <div className="panel-title">{t('Comments')}</div>
       <label className="check-row comment-filter">
         <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />
-        Show resolved
+        {t('Show resolved')}
       </label>
       {threads.length === 0 ? (
-        <p className="panel-empty">Click anywhere on the canvas to leave a comment. Comments on a layer move with it.</p>
+        <p className="panel-empty">{t('Click anywhere on the canvas to leave a comment. Comments on a layer move with it.')}</p>
       ) : (
         <ul className="comment-list">
-          {threads.map((t) => (
-            <li key={t.root.id}>
+          {threads.map((th) => (
+            <li key={th.root.id}>
               <button
                 type="button"
-                className={`comment-item ${store.open === t.root.id ? 'on' : ''} ${t.root.resolved ? 'resolved' : ''}`}
+                className={`comment-item ${store.open === th.root.id ? 'on' : ''} ${th.root.resolved ? 'resolved' : ''}`}
                 onClick={() => {
                   store.setDraft(null);
-                  store.setOpen(t.root.id);
+                  store.setOpen(th.root.id);
                   // bring the pin into view
-                  const p = pinPoint(editor, t.root);
+                  const p = pinPoint(editor, th.root);
                   const s = editor.toScreen(p);
                   const { width, height } = editor.viewSize;
                   if (s.x < 40 || s.y < 40 || s.x > width - 320 || s.y > height - 40) {
@@ -381,14 +382,14 @@ export function CommentsPanel({ editor, store }: { editor: Editor; store: Commen
                 }}
               >
                 <span className="comment-pin static" aria-hidden="true">
-                  {t.number}
+                  {th.number}
                 </span>
                 <span className="comment-item-text">
-                  <span className="comment-item-body">{t.root.body}</span>
+                  <span className="comment-item-body">{th.root.body}</span>
                   <span className="file-time">
-                    {t.replies.length ? `${t.replies.length} repl${t.replies.length === 1 ? 'y' : 'ies'}, ` : ''}
-                    {when.format(new Date(t.root.createdAt))}
-                    {t.root.resolved ? ', resolved' : ''}
+                    {th.replies.length ? (th.replies.length === 1 ? t('1 reply, ') : t('{n} replies, ', { n: th.replies.length })) : ''}
+                    {when.format(new Date(th.root.createdAt))}
+                    {th.root.resolved ? t(', resolved') : ''}
                   </span>
                 </span>
               </button>

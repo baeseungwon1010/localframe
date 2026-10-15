@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Circle, Search, Shapes, StickyNote, SquareDa
 import { type SceneNode, isContainerType } from '../../../shared/schema.ts';
 import type { Editor } from '../../engine/editor.ts';
 import { useEditorRev } from '../hooks.ts';
+import { t } from '../i18n.ts';
 
 const ROW_H = 28;
 const INDENT = 12;
@@ -276,8 +277,8 @@ export function LayersPanel({ editor }: { editor: Editor }) {
           <input
             type="search"
             value={query}
-            placeholder="Find layers"
-            aria-label="Find layers"
+            placeholder={t('Find layers')}
+            aria-label={t('Find layers')}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
               e.stopPropagation();
@@ -287,15 +288,15 @@ export function LayersPanel({ editor }: { editor: Editor }) {
         </div>
       )}
       {empty ? (
-        <p className="panel-empty">Draw a frame or shape to see it here. Press F for a frame, R for a rectangle.</p>
+        <p className="panel-empty">{t('Draw a frame or shape to see it here. Press F for a frame, R for a rectangle.')}</p>
       ) : rows.length === 0 ? (
-        <p className="panel-empty">No layers on this page are called “{query.trim()}”.</p>
+        <p className="panel-empty">{t('No layers on this page are called “{query}”.', { query: query.trim() })}</p>
       ) : (
         <div
           ref={listRef}
           className={`layer-list ${drag?.active ? 'dragging' : ''}`}
           role="tree"
-          aria-label="Layer tree"
+          aria-label={t('Layer tree')}
           aria-multiselectable="true"
           tabIndex={0}
           onKeyDown={onKeyDown}
@@ -332,7 +333,7 @@ export function LayersPanel({ editor }: { editor: Editor }) {
                 <button
                   type="button"
                   className="row-chevron"
-                  aria-label={open ? `Collapse ${n.name}` : `Expand ${n.name}`}
+                  aria-label={open ? t('Collapse {name}', { name: n.name }) : t('Expand {name}', { name: n.name })}
                   tabIndex={-1}
                   style={{ visibility: hasKids ? 'visible' : 'hidden' }}
                   onClick={(e) => {
@@ -349,7 +350,7 @@ export function LayersPanel({ editor }: { editor: Editor }) {
                   <input
                     className="inline-input row-input"
                     defaultValue={n.name}
-                    aria-label="Layer name"
+                    aria-label={t('Layer name')}
                     autoFocus
                     maxLength={500}
                     onFocus={(e) => e.target.select()}
@@ -372,7 +373,7 @@ export function LayersPanel({ editor }: { editor: Editor }) {
                   <button
                     type="button"
                     className={`row-btn ${n.locked ? 'on' : ''}`}
-                    aria-label={n.locked ? `Unlock ${n.name}` : `Lock ${n.name}`}
+                    aria-label={n.locked ? t('Unlock {name}', { name: n.name }) : t('Lock {name}', { name: n.name })}
                     aria-pressed={n.locked}
                     tabIndex={-1}
                     onPointerDown={(e) => e.stopPropagation()}
@@ -386,7 +387,7 @@ export function LayersPanel({ editor }: { editor: Editor }) {
                   <button
                     type="button"
                     className={`row-btn ${!n.visible ? 'on' : ''}`}
-                    aria-label={n.visible ? `Hide ${n.name}` : `Show ${n.name}`}
+                    aria-label={n.visible ? t('Hide {name}', { name: n.name }) : t('Show {name}', { name: n.name })}
                     aria-pressed={!n.visible}
                     tabIndex={-1}
                     onPointerDown={(e) => e.stopPropagation()}
