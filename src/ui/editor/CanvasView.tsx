@@ -369,6 +369,7 @@ export function CanvasView(props: {
         ref={canvasRef}
         className="canvas"
         aria-label="Canvas"
+        aria-describedby="canvas-keys"
         role="application"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -388,6 +389,11 @@ export function CanvasView(props: {
         </p>
       )}
       {props.children}
+      <p id="canvas-keys" className="sr-only">
+        Tab and Shift Tab move between layers, arrow keys move the selection, Enter writes in a shape or text, Escape selects the
+        parent. {MOD}/ finds any command.
+      </p>
+      <SelectionAnnouncer editor={editor} />
       <ToolHint editor={editor} />
       <DiagramBar editor={editor} diagram={props.diagram} />
       {menu && <Menu label="Canvas actions" x={menu.x} y={menu.y} fromLongPress={menu.touch} items={menuItems} onClose={() => setMenu(null)} />}
@@ -460,6 +466,42 @@ function LabelEditor({ editor, id }: { editor: Editor; id: string }) {
         color: node.labelColor ?? '#1B1D21',
       }}
     />
+  );
+}
+
+const KIND: Record<string, string> = {
+  FRAME: 'frame',
+  GROUP: 'group',
+  COMPONENT: 'component',
+  COMPONENT_SET: 'component set',
+  INSTANCE: 'instance',
+  RECTANGLE: 'rectangle',
+  ELLIPSE: 'ellipse',
+  LINE: 'line',
+  VECTOR: 'shape',
+  TEXT: 'text',
+  BOOLEAN: 'boolean group',
+};
+
+/**
+ * Says what is selected, for screen readers: the canvas is a picture, so a change of selection
+ * (a click, Tab to the next layer, a new shape) is read out as the layer's name, kind and size.
+ */
+function SelectionAnnouncer({ editor }: { editor: Editor }) {
+  useEditorRev(editor, 'selection');
+  const sel = editor.selectedNodes();
+  let text = '';
+  if (sel.length === 1) {
+    const n = sel[0];
+    const kind = n.sticky ? 'sticky note' : n.section ? 'section' : n.type === 'LINE' && (n.startBind || n.endBind) ? 'connector' : KIND[n.type];
+    const words = n.type === 'TEXT' ? n.text?.characters : n.label?.characters;
+    const said = words && words.trim() && words.trim() !== n.name ? `, “${words.trim().slice(0, 120)}”` : '';
+    text = `${n.name}, ${kind}${said}, ${Math.round(n.width)} by ${Math.round(n.height)}`;
+  } else if (sel.length > 1) text = `${sel.length} layers selected`;
+  return (
+    <p className="sr-only" role="status" aria-live="polite">
+      {text}
+    </p>
   );
 }
 
