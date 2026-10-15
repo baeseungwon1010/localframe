@@ -354,4 +354,12 @@ export const editorChrome: Record<string, string> = {
   'Select something to copy first.': '복사할 것을 먼저 선택하세요.',
   "This browser can't copy pictures. Use Export instead.": '이 브라우저는 그림을 복사할 수 없어요. 내보내기를 써 주세요.',
   "Couldn't copy: {error}": '복사하지 못했어요: {error}',
+  // icons
+  'Insert icon': '아이콘 넣기',
+  'Search {n} icons in English, e.g. arrow, user, heart': '아이콘 {n}개를 영어로 검색 (예: arrow, user, heart)',
+  'Search icons': '아이콘 검색',
+  'No icons are called “{query}”.': '“{query}” 아이콘이 없어요.',
+  'Showing {shown} of {n}: type to find the rest.': '{n}개 중 {shown}개를 보여 줘요. 검색하면 나머지도 찾을 수 있어요.',
+  'Icons by Lucide (ISC License)': '아이콘: Lucide (ISC 라이선스)',
+  "Couldn't add the icon: {error}": '아이콘을 넣지 못했어요: {error}',
 };

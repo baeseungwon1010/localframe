@@ -2952,3 +2952,73 @@ body {
   margin-left: var(--space-3);
   color: var(--color-text-muted);
 }
+
+/* ------------------------------------------------------------- icon picker */
+
+.dialog.icon-picker {
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(640px, calc(100dvh - 48px));
+  gap: var(--space-4);
+  padding: var(--space-5);
+}
+
+.icon-picker-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--color-text-muted);
+}
+
+.icon-picker-head input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: var(--space-1);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.icon-cell {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.icon-cell:hover {
+  background: var(--color-surface-hover);
+}
+
+.icon-cell:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.icon-picker-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.icon-picker-foot pre {
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+}

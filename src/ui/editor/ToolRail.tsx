@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { SquareRoundCorner, ChevronRight, Cylinder, Diamond, FileText, RectangleHorizontal, StickyNote, Circle, Frame, Hand, ImagePlus, MessageCircle, Minus, MousePointer2, MoveUpRight, PenTool, Pencil, Slice, Square, SquareDashed, Star, Triangle, Type } from 'lucide-react';
+import { ChevronRight, Circle, Cylinder, Diamond, FileText, Frame, Hand, ImagePlus, MessageCircle, Minus, MousePointer2, MoveUpRight, PenTool, Pencil, RectangleHorizontal, Slice, Smile, Square, SquareDashed, SquareRoundCorner, Star, StickyNote, Triangle, Type } from 'lucide-react';
 import type { Editor, Tool } from '../../engine/editor.ts';
 import { STAMPS } from '../../engine/templates.ts';
 import { IconButton, MOD, Menu, SHIFT } from '../components.tsx';
@@ -7,7 +7,7 @@ import { useEditorRev } from '../hooks.ts';
 import { t } from '../i18n.ts';
 
 /** A tool button (labels in English, translated where shown); stamps share the stamp tool and differ by `stamp`, drawn as their glyph. */
-type Entry = { tool: Tool | 'image'; label: string; key: string; Icon: typeof Square; stamp?: string };
+type Entry = { tool: Tool | 'image' | 'icon'; label: string; key: string; Icon: typeof Square; stamp?: string };
 type Group = { id: string; label: string; entries: Entry[] };
 
 /** Tools in groups, like Figma's toolbar: a group shows the tool last used from it. */
@@ -40,6 +40,7 @@ const GROUPS: Group[] = [
       { tool: 'line', label: 'Line', key: 'L', Icon: Minus },
       { tool: 'arrow', label: 'Arrow', key: `${SHIFT}L`, Icon: MoveUpRight },
       { tool: 'image', label: 'Place image', key: `${MOD}${SHIFT}K`, Icon: ImagePlus },
+      { tool: 'icon', label: 'Insert icon', key: '', Icon: Smile },
     ],
   },
   {
@@ -74,6 +75,7 @@ const DOCK_GROUPS: Group[] = [
   group('move'),
   { id: 'dock-sticky', label: 'Sticky note', entries: [entry('sticky')] },
   { id: 'dock-shape', label: 'Diagram shapes', entries: [...group('diagram').entries.filter((e) => e.tool !== 'sticky'), entry('ellipse')] },
+  { id: 'dock-icon', label: 'Insert icon', entries: [{ tool: 'icon', label: 'Insert icon', key: '', Icon: Smile }] },
   { id: 'dock-arrow', label: 'Connector', entries: [{ ...entry('arrow'), label: 'Connector' }, entry('line')] },
   group('text'),
   { id: 'dock-draw', label: 'Drawing tools', entries: [entry('pencil'), entry('pen')] },
@@ -107,6 +109,7 @@ export function ToolRail({ editor, dock = false }: { editor: Editor; dock?: bool
 
   const pick = (g: Group, e: Entry) => {
     if (e.tool === 'image') editor.onRequestImage?.();
+    else if (e.tool === 'icon') editor.onRequestIcons?.();
     else if (e.stamp) editor.setStamp(e.stamp);
     else editor.setTool(e.tool);
     const next = { ...last, [g.id]: entryId(e) };

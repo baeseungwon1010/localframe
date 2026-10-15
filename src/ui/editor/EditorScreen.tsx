@@ -46,6 +46,7 @@ const VersionHistory = lazy(() => import('./VersionHistory.tsx').then((m) => ({ 
 const Presenter = lazy(() => import('./Presenter.tsx').then((m) => ({ default: m.Presenter })));
 const FindReplace = lazy(() => import('./FindReplace.tsx').then((m) => ({ default: m.FindReplace })));
 const BoardPresenter = lazy(() => import('./BoardPresenter.tsx').then((m) => ({ default: m.BoardPresenter })));
+const IconPicker = lazy(() => import('./IconPicker.tsx').then((m) => ({ default: m.IconPicker })));
 const QuickActions = lazy(() => import('./QuickActions.tsx').then((m) => ({ default: m.QuickActions })));
 const THUMB_W = 480;
 const THUMB_H = 300;
@@ -113,6 +114,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
   }, [diagramMode, editor]);
   const [presenting, setPresenting] = useState<{ start: string | null } | null>(null);
   const [boardPresenting, setBoardPresenting] = useState(false);
+  const [iconPicking, setIconPicking] = useState(false);
   // a board presents its sections or frames in turn; a design presents its prototype
   const present = () => (diagramMode ? setBoardPresenting(true) : setPresenting({ start: presentFrom(editor) }));
   /** A link that carries this file: through the share sheet on a phone, else copied. */
@@ -267,6 +269,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
     })();
     const offImages = onImageLoaded(() => editor.emit('view'));
     editor.onRequestImage = () => imageInput.current?.click();
+    editor.onRequestIcons = () => setIconPicking(true);
     editor.onRequestRename = () => setRenaming(true);
     editor.onNotice = (text) => setNotice({ text });
     editor.onRequestPresent = () => setPresenting({ start: presentFrom(editor) });
@@ -285,6 +288,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
       cancelled = true;
       offImages();
       editor.onRequestImage = null;
+      editor.onRequestIcons = null;
       editor.onRequestRename = null;
       editor.onNotice = null;
       editor.onRequestPresent = null;
@@ -554,6 +558,7 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
               share: (f) => void share(f),
             presentBoard: () => setBoardPresenting(true),
             copyAs: (f) => void copyPicture(f),
+            insertIcon: () => setIconPicking(true),
               shareLink: BROWSER_STORAGE ? () => void shareLink() : undefined,
             }}
           />
@@ -561,6 +566,13 @@ export function EditorScreen({ fileId, theme, setTheme }: { fileId: string; them
         {finding && <FindReplace editor={editor} onClose={() => setFinding(false)} />}
         {presenting && <Presenter editor={editor} startId={presenting.start} onClose={() => setPresenting(null)} />}
         {boardPresenting && <BoardPresenter editor={editor} onClose={() => setBoardPresenting(false)} />}
+        {iconPicking && (
+          <IconPicker
+            editor={editor}
+            onClose={() => setIconPicking(false)}
+            onError={(message) => setNotice({ text: "Couldn't add the icon: {error}", vars: { error: t(message) } })}
+          />
+        )}
         {history && (
           <VersionHistory
             fileId={fileId}

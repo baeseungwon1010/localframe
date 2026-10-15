@@ -371,6 +371,8 @@ export class Editor {
   private pageViews = new Map<string, Viewport>();
   /** Asks the UI to pick an image file (Ctrl/Cmd+Shift+K). */
   onRequestImage: (() => void) | null = null;
+  /** Opens the icon picker (the interface sets it). */
+  onRequestIcons: (() => void) | null = null;
 
   private interaction: Interaction = { kind: 'none' };
   private undoStack: HistoryEntry[] = [];

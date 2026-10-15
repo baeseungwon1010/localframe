@@ -26,6 +26,7 @@ export type ScreenActions = {
   share?: (format: 'png' | 'pdf') => void;
   presentBoard?: () => void;
   copyAs?: (format: 'png' | 'svg') => void;
+  insertIcon?: () => void;
   shareLink?: () => void;
   diagramMode: boolean;
   /** Absent when the screen can only show the board. */
@@ -75,6 +76,7 @@ export function buildCommands(editor: Editor, screen: ScreenActions): Command[] 
   });
   return [
     ...TOOL_COMMANDS.map((t) => cmd('Tools', `tool-${t.tool}`, t.label, () => editor.setTool(t.tool), always, t.shortcut || undefined, t.keywords)),
+    ...(screen.insertIcon ? [cmd('Tools', 'icon', 'Insert icon', () => screen.insertIcon?.(), always, undefined, 'symbol pictogram lucide')] : []),
     cmd('Tools', 'image', 'Place image', screen.placeImage, always, `${MOD}${SHIFT}K`, 'picture photo upload'),
 
     ...TEMPLATES.map((t) => cmd('Insert', `template-${t.kind}`, `Insert ${t.name.toLowerCase()} template`, () => editor.insertTemplate(t.kind), always, undefined, `board diagram start ${t.description}`)),
