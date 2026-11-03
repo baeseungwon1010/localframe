@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { generateKeyBetween } from 'fractional-indexing';
 
+// In the browser, no compiled validators: the page's CSP forbids eval, and Firefox reports even
+// zod's probe for it. Set here, where the schemas are made, so it holds before anything validates
+// whichever chunk the bundler puts this in.
+if (typeof document !== 'undefined') z.config({ jitless: true });
+
 export const NODE_TYPES = ['FRAME', 'GROUP', 'BOOLEAN', 'COMPONENT_SET', 'COMPONENT', 'INSTANCE', 'RECTANGLE', 'ELLIPSE', 'VECTOR', 'LINE', 'TEXT'] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
 
