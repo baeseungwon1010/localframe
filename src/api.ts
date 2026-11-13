@@ -5,8 +5,8 @@ import { withShapeVectors } from './engine/vector.ts';
 
 export { ApiError };
 
-/** The web build keeps files in the browser; the local app talks to its own server. */
-export const BROWSER_STORAGE = import.meta.env.VITE_STORAGE === 'browser';
+/** The web build keeps files in the browser; the local app talks to its own server. (No env outside Vite, as in scripts.) */
+export const BROWSER_STORAGE = import.meta.env?.VITE_STORAGE === 'browser';
 
 
 async function request<T>(method: string, path: string, body?: unknown, init: RequestInit = {}): Promise<T> {
