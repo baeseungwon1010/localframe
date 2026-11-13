@@ -175,8 +175,8 @@ type Interaction =
   | { kind: 'rotate-many'; start: Point; ids: string[]; originals: Map<string, SceneNode>; center: Point }
   | { kind: 'guide'; axis: 'x' | 'y'; index: number | null }
   | { kind: 'crop'; id: string; start: Point; original: { x: number; y: number; scale: number } }
-  | { kind: 'line-end'; id: string; end: 0 | 1; original: SceneNode }
-  | { kind: 'create'; tool: Tool; start: Point; startScreen: Point; nodeId: string | null; parentId: string | null }
+  | { kind: 'line-end'; id: string; end: 0 | 1; original: SceneNode; bind?: Binding }
+  | { kind: 'create'; tool: Tool; start: Point; startScreen: Point; nodeId: string | null; parentId: string | null; endBind?: Binding }
   | { kind: 'pen-handle' }
   | { kind: 'quick-connect'; side: 'top' | 'right' | 'bottom' | 'left' }
   | { kind: 'stamp'; at: Point }
@@ -3199,7 +3199,7 @@ export class Editor {
     if (handle.kind === 'line-end') {
       const loose: SceneNode = handle.end === 0 ? { ...sel[0], startBind: undefined } : { ...sel[0], endBind: undefined };
       this.put(loose);
-      this.interaction = { kind: 'line-end', id: sel[0].id, end: handle.end, original: loose };
+      this.interaction = { kind: 'line-end', id: sel[0].id, end: handle.end, original: loose, bind: handle.end === 0 ? sel[0].startBind : sel[0].endBind };
     } else if (handle.kind === 'rotate' && sel.length > 1) {
       const ids = this.selectionRoots();
       const b = this.selectionBounds()!;
@@ -3357,7 +3357,8 @@ export class Editor {
         const fixed = ends[1 - it.end];
         let moving = apply(toParent, this.snapPoint(p, new Set([n.id])));
         if (e.shift) moving = snapAngle(fixed, moving);
-        const bind = e.mod ? null : bindingAt(this.doc, p, this.hitTolerance(), new Set([n.id]));
+        const bind = e.mod ? null : bindingAt(this.doc, p, this.hitTolerance(), new Set([n.id]), it.bind);
+        it.bind = bind ?? undefined;
         this.bindTarget = bind?.nodeId ?? null;
         let next = it.end === 1 ? lineFromEnds(n, fixed, moving) : lineFromEnds(n, moving, fixed);
         if (bind) next = settleLine(this.doc, it.end === 1 ? { ...next, endBind: bind } : { ...next, startBind: bind });
@@ -3428,7 +3429,7 @@ export class Editor {
       }
       case 'line-end': {
         const p = this.toWorld(e.sx, e.sy);
-        const bind = e.mod ? null : bindingAt(this.doc, p, this.hitTolerance(), new Set([it.id]));
+        const bind = e.mod ? null : bindingAt(this.doc, p, this.hitTolerance(), new Set([it.id]), it.bind);
         const n = this.doc.get(it.id);
         if (n && bind) this.put(it.end === 1 ? { ...n, endBind: bind } : { ...n, startBind: bind });
         this.bindTarget = null;
@@ -4213,9 +4214,12 @@ export class Editor {
     let cur = this.snapPoint(p, new Set([n.id]));
     if (type === 'LINE') {
       if (e.shift) cur = snapAngle(it.start, cur);
-      const next = lineFromEnds(n, apply(toParent, it.start), apply(toParent, cur));
-      this.bindTarget = e.mod ? null : (bindingAt(this.doc, p, this.hitTolerance(), new Set([n.id]))?.nodeId ?? null);
-      this.put(next);
+      const next = lineFromEnds({ ...n, endBind: undefined }, apply(toParent, it.start), apply(toParent, cur));
+      const bind = e.mod ? null : bindingAt(this.doc, p, this.hitTolerance(), new Set([n.id]), it.endBind);
+      it.endBind = bind ?? undefined;
+      this.bindTarget = bind?.nodeId ?? null;
+      // a bound end shows where it will attach (and slides along its side) while drawing
+      this.put(bind ? settleLine(this.doc, { ...next, endBind: bind }) : next);
       this.sizeBadge = { text: `${Math.round(next.width)}`, at: { x: e.sx + 16, y: e.sy + 16 } };
     } else {
       let w = cur.x - it.start.x;
@@ -4365,13 +4369,17 @@ export class Editor {
     } else if (type === 'TEXT') {
       const n = this.doc.get(it.nodeId)!;
       this.put(fitText(n));
-    } else if (type === 'LINE' && !e.mod) {
+    } else if (type === 'LINE' && e.mod) {
+      // held to keep the line loose: drop the end the preview attached
+      const n = this.doc.get(it.nodeId)!;
+      if (n.endBind) this.put({ ...n, endBind: undefined });
+    } else if (type === 'LINE') {
       // connector: attach ends that start or finish on a shape
       const n = this.doc.get(it.nodeId)!;
       const skip = new Set([n.id]);
       const tol = this.hitTolerance();
       const startBind = bindingAt(this.doc, it.start, tol, skip) ?? undefined;
-      const endBind = bindingAt(this.doc, this.toWorld(e.sx, e.sy), tol, skip) ?? undefined;
+      const endBind = bindingAt(this.doc, this.toWorld(e.sx, e.sy), tol, skip, it.endBind) ?? undefined;
       if (startBind || endBind) {
         // a connector between diagram shapes takes the diagram look
         const ends = [startBind, endBind].map((b) => (b ? this.doc.get(b.nodeId) : undefined));

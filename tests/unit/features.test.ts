@@ -186,6 +186,45 @@ describe('connectors', () => {
     expect(line().endBind).toBeUndefined();
     valid(ed);
   });
+  it('an end takes a side at its middle, then slides along it', () => {
+    const ed = setup();
+    draw(ed, 'rect', [100, 100], [200, 200]);
+    const b = draw(ed, 'rect', [400, 100], [500, 200]);
+    const end = (id: string) => {
+      const l = ed.doc.get(id)!;
+      return { x: l.x + l.width * Math.cos((l.rotation * Math.PI) / 180), y: l.y + l.width * Math.sin((l.rotation * Math.PI) / 180) };
+    };
+    // straight onto the side away from its middle: the end goes to the middle
+    const plain = draw(ed, 'arrow', [150, 150], [400, 185]);
+    expect(end(plain).y).toBeCloseTo(150, 0);
+
+    // touch the left side's middle, then run down it
+    ed.setTool('arrow');
+    ed.pointerDown(ptr(150, 150));
+    ed.pointerMove(ptr(300, 150));
+    ed.pointerMove(ptr(401, 150));
+    ed.pointerMove(ptr(402, 170));
+    ed.pointerMove(ptr(401, 180));
+    ed.pointerUp(ptr(401, 180));
+    const arrow = ed.selection[0];
+    expect(ed.doc.get(arrow)!.endBind).toEqual({ nodeId: b, anchor: 'left', at: 0.8 });
+    expect(end(arrow)).toEqual({ x: expect.closeTo(400, 0), y: expect.closeTo(180, 0) });
+
+    // the spot along the side holds when the shape moves
+    ed.setSelection([b]);
+    drag(ed, [450, 150], [450, 250]);
+    expect(end(arrow)).toEqual({ x: expect.closeTo(400, 0), y: expect.closeTo(280, 0) });
+
+    // back near the middle it settles there again
+    ed.setSelection([arrow]);
+    const at = end(arrow);
+    ed.pointerDown(ptr(at.x, at.y));
+    ed.pointerMove(ptr(401, 255));
+    ed.pointerMove(ptr(401, 251));
+    ed.pointerUp(ptr(401, 251));
+    expect(ed.doc.get(arrow)!.endBind).toEqual({ nodeId: b, anchor: 'left' });
+    valid(ed);
+  });
 });
 
 describe('elbow connectors', () => {

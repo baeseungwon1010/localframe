@@ -69,8 +69,9 @@ to keep. For a copy that keeps files on disk, run it locally (below).
   fit, stretch, crop or tile, with exposure, contrast and saturation; drop and inner shadows, layer,
   background and progressive blur, and noise; layer blend modes (multiply, screen, overlay and the rest).
 - **Connectors**: a line or arrow drawn from one shape to another attaches to both and follows them when
-  they move. Lines can be straight or elbow (right-angled). Dropping an end on a side's midpoint pins it to
-  that side; Ctrl/Cmd while drawing leaves the ends loose.
+  they move. Lines can be straight or elbow (right-angled). An end brought to a side's midpoint pins to that
+  side, then slides along it while you keep dragging by the side (and settles back on the middle near it);
+  Ctrl/Cmd while drawing leaves the ends loose.
 - **Diagrams (like FigJam)**: sticky notes (N), rounded boxes, diamonds, parallelograms, cylinders,
   documents and chevrons in soft colours. Double-click a shape or connector (or press Enter) to write in
   it; the "+" on a selected shape's sides adds the next shape with an elbow arrow; a colour bar above

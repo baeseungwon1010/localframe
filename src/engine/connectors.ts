@@ -20,9 +20,22 @@ export function canBindTo(n: SceneNode | undefined): boolean {
   return !!n && n.visible && n.type !== 'LINE' && n.type !== 'FRAME' && n.type !== 'COMPONENT';
 }
 
-export function sidePoint(doc: SceneDoc, n: SceneNode, side: Side): Point {
+/** A point on a side: `at` runs along it from its top or left end, 0.5 being the middle. */
+export function sidePoint(doc: SceneDoc, n: SceneNode, side: Side, at = 0.5): Point {
   const p = SIDE_POS[side];
-  return apply(doc.world(n.id), { x: p.x * n.width, y: p.y * n.height });
+  const q = side === 'top' || side === 'bottom' ? { x: at, y: p.y } : { x: p.x, y: at };
+  return apply(doc.world(n.id), { x: q.x * n.width, y: q.y * n.height });
+}
+
+/** Where along `side` of `n` the point `p` is (0 to 1), or null if it is more than `reach` off that side. */
+function alongSide(doc: SceneDoc, n: SceneNode, side: Side, p: Point, reach: number): number | null {
+  const q = apply(invert(doc.world(n.id)), p);
+  const horizontal = side === 'top' || side === 'bottom';
+  const len = horizontal ? n.width : n.height;
+  const off = side === 'top' ? q.y : side === 'bottom' ? q.y - n.height : side === 'left' ? q.x : q.x - n.width;
+  const run = horizontal ? q.x : q.y;
+  if (len <= 0 || Math.abs(off) > reach || run < -reach || run > len + reach) return null;
+  return Math.max(0, Math.min(1, run / len));
 }
 
 export function centerPoint(doc: SceneDoc, n: SceneNode): Point {
@@ -44,12 +57,24 @@ export function nearestSide(doc: SceneDoc, n: SceneNode, toward: Point): Side {
   return best;
 }
 
-/** The layer a line end dropped at `p` attaches to, and which side (or auto). */
-export function bindingAt(doc: SceneDoc, p: Point, tolerance: number, skip: Set<string>): Binding | null {
-  const id = hitDeepest(doc, p, tolerance, skip);
+/**
+ * The layer a line end dropped at `p` attaches to, and which side (or auto). An end first takes a
+ * side at its middle; from then on (`prev`, the end's binding a moment ago) it slides along that
+ * side while the pointer stays by it, settling back on the middle near it.
+ */
+export function bindingAt(doc: SceneDoc, p: Point, tolerance: number, skip: Set<string>, prev?: Binding): Binding | null {
+  // other lines can't be attached to, so an end finds the shape under them
+  const id = hitDeepest(doc, p, tolerance, skip, (n) => n.type === 'LINE');
   if (!id) return null;
   const n = doc.get(id)!;
   if (!canBindTo(n)) return null;
+  if (prev && prev.nodeId === id && prev.anchor !== 'auto') {
+    const at = alongSide(doc, n, prev.anchor, p, tolerance * 3);
+    if (at !== null) {
+      const len = prev.anchor === 'top' || prev.anchor === 'bottom' ? n.width : n.height;
+      return Math.abs(at - 0.5) * len <= tolerance * 2 ? { nodeId: id, anchor: prev.anchor } : { nodeId: id, anchor: prev.anchor, at: Math.round(at * 1e4) / 1e4 };
+    }
+  }
   // Dropped right on a side's midpoint: stick to that side. Anywhere else: follow the other end.
   for (const s of SIDES) {
     const q = sidePoint(doc, n, s);
@@ -62,8 +87,11 @@ export function bindingAt(doc: SceneDoc, p: Point, tolerance: number, skip: Set<
 function boundPoint(doc: SceneDoc, b: Binding, other: Point): { at: Point; side: Side } | null {
   const n = doc.get(b.nodeId);
   if (!n || !doc.isEffectivelyVisible(n.id)) return null;
-  const side = b.anchor === 'auto' ? nearestSide(doc, n, other) : b.anchor;
-  return { at: sidePoint(doc, n, side), side };
+  if (b.anchor === 'auto') {
+    const side = nearestSide(doc, n, other);
+    return { at: sidePoint(doc, n, side), side };
+  }
+  return { at: sidePoint(doc, n, b.anchor, b.at), side: b.anchor };
 }
 
 const SIDE_DIR: Record<Side, Point> = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 } };

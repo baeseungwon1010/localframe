@@ -50,7 +50,7 @@ function insideBox(doc: SceneDoc, n: SceneNode, p: Point): boolean {
 }
 
 /** Deepest visible, unlocked node under the point, top-most first. */
-export function hitDeepest(doc: SceneDoc, p: Point, tolerance: number, skip?: Set<string>): string | null {
+export function hitDeepest(doc: SceneDoc, p: Point, tolerance: number, skip?: Set<string>, passThrough?: (n: SceneNode) => boolean): string | null {
   const visit = (parentId: string | null): string | null => {
     const kids = doc.children(parentId);
     for (let i = kids.length - 1; i >= 0; i--) {
@@ -61,7 +61,7 @@ export function hitDeepest(doc: SceneDoc, p: Point, tolerance: number, skip?: Se
         const inner = visit(n.id);
         if (inner) return inner;
       }
-      if (hitsShape(doc, n, p, tolerance)) return n.id;
+      if (!passThrough?.(n) && hitsShape(doc, n, p, tolerance)) return n.id;
     }
     return null;
   };

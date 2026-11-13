@@ -269,7 +269,8 @@ export const BOOLEAN_OPS = ['union', 'subtract', 'intersect', 'exclude'] as cons
 export type BooleanOp = (typeof BOOLEAN_OPS)[number];
 
 export const ANCHORS = ['top', 'right', 'bottom', 'left', 'auto'] as const;
-export const BindingSchema = z.object({ nodeId: id, anchor: z.enum(ANCHORS) }).strict();
+/** `at` is where on a fixed side the end sits, from its top or left end (0 to 1); the middle if unset. */
+export const BindingSchema = z.object({ nodeId: id, anchor: z.enum(ANCHORS), at: z.number().min(0).max(1).optional() }).strict();
 export type Binding = z.infer<typeof BindingSchema>;
 
 export const OverrideSchema = z
