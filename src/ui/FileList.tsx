@@ -11,6 +11,7 @@ import { backupDue, backupFolder, canBackUpToFolder, forgetBackupFolder, lastBac
 
 /** Backing up and restoring (ZIP writing and reading) load when first used. */
 const backupWork = () => import('./backup.ts');
+import { fileFromSpec, isDiagramSpec } from './diagramFile.ts';
 import { downloadBlob } from './download.ts';
 import { t } from './i18n.ts';
 import { forgetHistory } from './undoStore.ts';
@@ -192,12 +193,51 @@ export function FileList({ theme, setTheme }: { theme: Theme; setTheme: (t: Them
     }
   };
 
+  /** A diagram spec (docs/diagram-spec.md), imported or pasted: drawn, saved and opened as a board. */
+  const openSpec = async (spec: unknown) => {
+    let file;
+    try {
+      file = await fileFromSpec(spec);
+    } catch (e) {
+      setError(t("Couldn't draw that diagram:\n{reason}", { reason: e instanceof Error ? e.message : String(e) }));
+      return;
+    }
+    try {
+      const meta = await api.importFile(file);
+      rememberDiagramMode(meta.id);
+      navigate(`#/file/${meta.id}`);
+    } catch (e) {
+      setError(e instanceof ApiError ? t("Couldn't import that file: {reason}", { reason: t(e.message) }) : t(STORAGE_DOWN));
+    }
+  };
+
+  // a spec pasted on the file list opens as a diagram
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (e.target instanceof Element && e.target.closest('input, textarea, [contenteditable="true"]')) return;
+      const text = e.clipboardData?.getData('text/plain')?.trim();
+      if (!text?.startsWith('{')) return;
+      let data: unknown;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        return;
+      }
+      if (!isDiagramSpec(data)) return;
+      e.preventDefault();
+      void openSpec(data);
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  });
+
   const onImport = async (file: File | undefined) => {
     if (!file) return;
     if (/\.zip$/i.test(file.name)) return onRestore(file);
     if (file.size > MAX_IMPORT_BYTES) return setError(t('That file is larger than 150 MB, which is the import limit.'));
     try {
       const data = JSON.parse(await file.text());
+      if (isDiagramSpec(data)) return void (await openSpec(data));
       const meta = await api.importFile(data);
       setNotice(t('Imported “{name}”.', { name: meta.name }));
       await refresh();

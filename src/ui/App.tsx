@@ -4,7 +4,7 @@ import { useTheme } from './hooks.ts';
 import { t, useLang } from './i18n.ts';
 import { useAppUpdate } from './pwa.ts';
 import { SharedScreen } from './SharedScreen.tsx';
-import { SHARE_ROUTE } from './shareLink.ts';
+import { DIAGRAM_ROUTE, SHARE_ROUTE } from './shareLink.ts';
 
 // the editor (canvas engine, panels, fonts) loads the first time a file is opened
 const loadEditor = () => import('./editor/EditorScreen.tsx');
@@ -18,11 +18,12 @@ function prefetchEditor() {
   idle(() => void loadEditor().catch(() => {}));
 }
 
-type Route = { name: 'files' } | { name: 'file'; id: string } | { name: 'shared'; payload: string };
+type Route = { name: 'files' } | { name: 'file'; id: string } | { name: 'shared'; payload: string; kind: 'file' | 'diagram' };
 
 function parseHash(): Route {
   const hash = window.location.hash;
-  if (hash.startsWith(SHARE_ROUTE)) return { name: 'shared', payload: hash.slice(SHARE_ROUTE.length) };
+  if (hash.startsWith(SHARE_ROUTE)) return { name: 'shared', payload: hash.slice(SHARE_ROUTE.length), kind: 'file' };
+  if (hash.startsWith(DIAGRAM_ROUTE)) return { name: 'shared', payload: hash.slice(DIAGRAM_ROUTE.length), kind: 'diagram' };
   const m = /^#\/file\/([A-Za-z0-9_-]{1,64})$/.exec(hash);
   return m ? { name: 'file', id: m[1] } : { name: 'files' };
 }
@@ -66,7 +67,7 @@ export function App() {
           <EditorScreen key={route.id} fileId={route.id} theme={theme} setTheme={setTheme} />
         </Suspense>
       ) : route.name === 'shared' ? (
-        <SharedScreen payload={route.payload} />
+        <SharedScreen key={route.payload} payload={route.payload} kind={route.kind} />
       ) : (
         <FileList theme={theme} setTheme={setTheme} />
       )}

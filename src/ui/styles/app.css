@@ -2806,6 +2806,12 @@ body {
   color: var(--color-text-muted);
 }
 
+.shared-error,
+.status-line.error {
+  /* a spec's problems come one per line */
+  white-space: pre-line;
+}
+
 .shared-preview {
   display: block;
   max-width: 100%;

@@ -3,12 +3,15 @@ import { type ExportedFile, ExportedFileSchema, validateTree } from '../../share
 import { ApiError, api } from '../api.ts';
 import { navigate } from './App.tsx';
 import { t } from './i18n.ts';
-import { readSharedFile } from './shareLink.ts';
+import { readDiagramLink, readSharedFile } from './shareLink.ts';
 
 type State = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ready'; file: ExportedFile; preview: string | null };
 
-/** A file someone sent as a link: what it is, a picture of its first page, and a copy to keep. */
-export function SharedScreen({ payload }: { payload: string }) {
+/**
+ * A file someone sent as a link: what it is, a picture of its first page, and a copy to keep. A
+ * diagram link carries a spec instead of a file: it is drawn here first.
+ */
+export function SharedScreen({ payload, kind = 'file' }: { payload: string; kind?: 'file' | 'diagram' }) {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [saving, setSaving] = useState(false);
 
@@ -17,7 +20,8 @@ export function SharedScreen({ payload }: { payload: string }) {
     document.title = t('Shared file · localframe');
     void (async () => {
       try {
-        const parsed = ExportedFileSchema.safeParse(await readSharedFile(payload));
+        const data = kind === 'diagram' ? await readDiagramLink(payload).then(async (spec) => (await import('./diagramFile.ts')).fileFromSpec(spec)) : await readSharedFile(payload);
+        const parsed = ExportedFileSchema.safeParse(data);
         if (!parsed.success) throw new Error("This link doesn't hold a file this app can open.");
         const file = parsed.data;
         const problem = validateTree(file.nodes, file.pages ?? [{ id: 'page-1', name: 'Page 1', background: file.background }]);
@@ -35,7 +39,7 @@ export function SharedScreen({ payload }: { payload: string }) {
     return () => {
       cancelled = true;
     };
-  }, [payload]);
+  }, [payload, kind]);
 
   const save = async (file: ExportedFile) => {
     setSaving(true);
@@ -55,7 +59,7 @@ export function SharedScreen({ payload }: { payload: string }) {
       {state.kind === 'error' && (
         <>
           <h1>{t("Couldn't open this link")}</h1>
-          <p role="alert">{state.message}</p>
+          <p role="alert" className="shared-error">{state.message}</p>
           <button type="button" className="btn secondary" onClick={() => navigate('#/')}>
             {t('Go to your files')}
           </button>
@@ -63,7 +67,7 @@ export function SharedScreen({ payload }: { payload: string }) {
       )}
       {state.kind === 'ready' && (
         <>
-          <p className="shared-kicker">{t('Someone shared a file with you')}</p>
+          <p className="shared-kicker">{kind === 'diagram' ? t('A diagram drawn from its description') : t('Someone shared a file with you')}</p>
           <h1>{state.file.name}</h1>
           <p className="shared-facts">
             {t('{pages}, {layers}. Links carry no images.', {

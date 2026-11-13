@@ -68,3 +68,22 @@ describe('diagram specs', () => {
     expect(busy.issues.map((i) => i.code)).toEqual(expect.arrayContaining(['long-text', 'too-much-colour']));
   });
 });
+
+describe('diagram specs in the app', () => {
+  it('are told apart from localframe files', async () => {
+    const { isDiagramSpec } = await import('../../src/ui/diagramFile.ts');
+    expect(isDiagramSpec(flow)).toBe(true);
+    expect(isDiagramSpec(buildDiagram(flow).file)).toBe(false);
+    expect(isDiagramSpec({ nodes: [{ id: 'a', type: 'RECTANGLE' }] })).toBe(false);
+    expect(isDiagramSpec([flow])).toBe(false);
+  });
+
+  it('come in links, plain or packed', async () => {
+    const { readDiagramLink } = await import('../../src/ui/shareLink.ts');
+    expect(await readDiagramLink(encodeURIComponent(JSON.stringify(flow)))).toEqual(flow);
+    const { deflateRawSync } = await import('node:zlib');
+    const packed = `v1.${deflateRawSync(JSON.stringify(flow)).toString('base64url')}`;
+    expect(await readDiagramLink(packed)).toEqual(flow);
+    await expect(readDiagramLink('%7Bnope')).rejects.toThrow(/diagram link/);
+  });
+});

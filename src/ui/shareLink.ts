@@ -63,8 +63,11 @@ export async function makeShareLink(file: ExportedFile): Promise<{ url: string; 
 
 /** The file a link carries, as untrusted data (check it like an import). */
 export async function readSharedFile(payload: string): Promise<unknown> {
-  if (!payload.startsWith(VERSION) || payload.length > MAX_LINK_CHARS || !/^[A-Za-z0-9_-]+$/.test(payload.slice(VERSION.length)))
-    throw new Error("This link isn't a localframe file link, or it was cut short.");
+  return readPacked(payload, "This link isn't a localframe file link, or it was cut short.");
+}
+
+async function readPacked(payload: string, notOurs: string): Promise<unknown> {
+  if (!payload.startsWith(VERSION) || payload.length > MAX_LINK_CHARS || !/^[A-Za-z0-9_-]+$/.test(payload.slice(VERSION.length))) throw new Error(notOurs);
   let bytes: Uint8Array;
   try {
     bytes = await pipe(fromBase64Url(payload.slice(VERSION.length)), new DecompressionStream('deflate-raw'), MAX_JSON_BYTES);
@@ -78,3 +81,23 @@ export async function readSharedFile(payload: string): Promise<unknown> {
     throw new Error('This link is damaged or was cut short. Ask for it again.');
   }
 }
+
+/**
+ * Links that carry a diagram spec (docs/diagram-spec.md), drawn when opened. The spec is either
+ * packed like a file link ("v1." and deflated JSON) or plain JSON, percent-encoded, which anyone
+ * (an AI in a chat, too) can write without any tool.
+ */
+export const DIAGRAM_ROUTE = '#/diagram/';
+
+/** The spec a diagram link carries, as untrusted data (readSpec checks it). */
+export async function readDiagramLink(payload: string): Promise<unknown> {
+  const notOurs = "This link isn't a localframe diagram link, or it was cut short.";
+  if (payload.startsWith(VERSION)) return readPacked(payload, notOurs);
+  if (payload.length > MAX_LINK_CHARS) throw new Error(notOurs);
+  try {
+    return JSON.parse(decodeURIComponent(payload));
+  } catch {
+    throw new Error(notOurs);
+  }
+}
+

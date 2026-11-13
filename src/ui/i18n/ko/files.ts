@@ -106,6 +106,9 @@ export const files: Record<string, string> = {
   'This file is too big to share as a link. Export it instead.': '파일이 너무 커서 링크로 공유할 수 없어요. 대신 내보내기를 사용하세요.',
   "This link isn't a localframe file link, or it was cut short.": 'localframe 파일 링크가 아니거나 링크가 잘렸어요.',
   'This link is damaged or was cut short. Ask for it again.': '링크가 손상됐거나 잘렸어요. 다시 보내 달라고 요청하세요.',
+  "This link isn't a localframe diagram link, or it was cut short.": 'localframe 다이어그램 링크가 아니거나 링크가 잘렸어요.',
+  'A diagram drawn from its description': '설명으로 그린 다이어그램',
+  "Couldn't draw that diagram:\n{reason}": '다이어그램을 그리지 못했어요:\n{reason}',
 
   // ------------------------------------------------------------------ app
   'A new version of localframe is ready.': 'localframe의 새 버전이 준비됐어요.',
