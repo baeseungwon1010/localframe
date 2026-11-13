@@ -361,3 +361,34 @@ export function hitsVector(n: SceneNode, p: Point, tolerance: number): boolean {
   ctx.lineWidth = Math.max(n.strokeWeight, tolerance * 2);
   return ctx.isPointInStroke(path, p.x, p.y);
 }
+
+const SHAPE_KINDS = new Set(['polygon', 'star', 'diamond', 'parallelogram', 'cylinder', 'document', 'chevron', 'bubble']);
+
+/**
+ * An imported file with the outline of every drawn shape (polygon, star, diagram shape, bubble)
+ * worked out from its `shape`, as the editor does on every change. A file written by hand or by
+ * another tool can then leave `vector` out, and an outline that disagrees with its shape is
+ * redrawn. Anything else is left as it is, for the importer's checks to judge.
+ */
+export function withShapeVectors(data: unknown): unknown {
+  if (!data || typeof data !== 'object' || !Array.isArray((data as { nodes?: unknown }).nodes)) return data;
+  const nodes = (data as { nodes: unknown[] }).nodes.map((n) => {
+    if (!n || typeof n !== 'object') return n;
+    const { type, shape, width, height } = n as Partial<SceneNode>;
+    const ok =
+      type === 'VECTOR' &&
+      shape &&
+      typeof shape === 'object' &&
+      SHAPE_KINDS.has(shape.kind) &&
+      Number.isInteger(shape.count) &&
+      shape.count >= 3 &&
+      shape.count <= 60 &&
+      typeof shape.ratio === 'number' &&
+      Number.isFinite(width) &&
+      Number.isFinite(height) &&
+      width! > 0 &&
+      height! > 0;
+    return ok ? { ...n, vector: shapeVector(shape, width!, height!) } : n;
+  });
+  return { ...data, nodes };
+}

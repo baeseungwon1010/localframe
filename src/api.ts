@@ -1,6 +1,7 @@
 import type { Changes, Comment, ExportedFile, FileMeta, SceneNode, VersionMeta } from '../shared/schema.ts';
 import { ApiError } from './apiError.ts';
 import { BrowserStore } from './browserStore.ts';
+import { withShapeVectors } from './engine/vector.ts';
 
 export { ApiError };
 
@@ -44,7 +45,7 @@ const httpApi = {
   putThumbnail: (id: string, dataUrl: string) =>
     request<void>('PUT', `/api/files/${encodeURIComponent(id)}/thumbnail`, { dataUrl }),
   exportFile: (id: string) => request<ExportedFile>('GET', `/api/files/${encodeURIComponent(id)}/export`),
-  importFile: (data: unknown) => request<FileMeta>('POST', '/api/files/import', data),
+  importFile: (data: unknown) => request<FileMeta>('POST', '/api/files/import', withShapeVectors(data)),
   listVersions: (id: string) => request<VersionMeta[]>('GET', `/api/files/${encodeURIComponent(id)}/versions`),
   saveVersion: (id: string, name: string) => request<VersionMeta>('POST', `/api/files/${encodeURIComponent(id)}/versions`, { name }),
   renameVersion: (id: string, vid: number, name: string) =>
@@ -95,7 +96,7 @@ function browserApi(): Api {
     saveChanges: (id, changes) => store.saveChanges(id, changes),
     putThumbnail: (id, dataUrl) => store.putThumbnail(id, dataUrl),
     exportFile: (id) => store.exportFile(id),
-    importFile: (data) => store.importFile(data),
+    importFile: (data) => store.importFile(withShapeVectors(data)),
     listVersions: (id) => store.listVersions(id),
     saveVersion: (id, name) => store.saveVersion(id, name),
     renameVersion: (id, vid, name) => store.renameVersion(id, vid, name),

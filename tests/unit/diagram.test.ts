@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { Editor, type PointerInput } from '../../src/engine/editor.ts';
 import { svgMarkup } from '../../src/engine/export.ts';
 import { heightForLabel, labelNode, lineMidpoint } from '../../src/engine/labels.ts';
-import { shapeVector } from '../../src/engine/vector.ts';
-import { SceneNodeSchema, validateTree } from '../../shared/schema.ts';
+import { shapeVector, withShapeVectors } from '../../src/engine/vector.ts';
+import { ExportedFileSchema, SceneNodeSchema, validateTree } from '../../shared/schema.ts';
 
 const ptr = (sx: number, sy: number): PointerInput => ({ sx, sy, button: 0, shift: false, alt: false, mod: false });
 function setup() {
@@ -114,6 +114,22 @@ describe('diagramming', () => {
     ed.undo();
     expect(ed.doc.get(id)!.shape!.tail).toBeUndefined();
     valid(ed);
+  });
+
+  it('a file written by hand can leave out the outline of a drawn shape', () => {
+    const bubble = {
+      id: 'b', type: 'VECTOR', parentId: null, order: 'a0', name: 'Bubble', visible: true, locked: false, opacity: 1,
+      x: 0, y: 0, width: 200, height: 100, rotation: 0, fills: [], strokes: [], strokeWeight: 2, strokeAlign: 'inside', strokeDash: [],
+      shape: { kind: 'bubble', count: 4, ratio: 0.5, tail: { side: 'right', at: 0.3 } },
+    };
+    const file = { format: 'localframe-file', version: 2, name: 'Hand', background: '#FFFFFF', nodes: [bubble] };
+    expect(ExportedFileSchema.safeParse(file).success).toBe(false);
+    const fixed = ExportedFileSchema.parse(withShapeVectors(file));
+    expect(fixed.nodes[0].vector!.points.some((p) => p.x === 200 && p.y === 30)).toBe(true);
+    // a stale outline is redrawn from the shape
+    const stale = { ...file, nodes: [{ ...bubble, vector: { closed: true, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] } }] };
+    expect(ExportedFileSchema.parse(withShapeVectors(stale)).nodes[0].vector!.points.length).toBe(11);
+    expect(withShapeVectors('nonsense')).toBe('nonsense');
   });
 
   it('quick connect adds the same shape beyond a side, joined by an elbow arrow', () => {
