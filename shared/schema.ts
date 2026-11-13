@@ -491,7 +491,7 @@ export const SceneNodeSchema = z
     /** A vector drawn as a polygon or star: its points are rebuilt from these when it changes size. */
     shape: z
       .object({
-        kind: z.enum(['polygon', 'star', 'diamond', 'parallelogram', 'cylinder', 'document', 'chevron']),
+        kind: z.enum(['polygon', 'star', 'diamond', 'parallelogram', 'cylinder', 'document', 'chevron', 'bubble']),
         count: z.number().int().min(3).max(60),
         ratio: z.number().min(0.01).max(1),
       })

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronRight, Circle, Cylinder, Diamond, FileText, Frame, Hand, ImagePlus, MessageCircle, Minus, MousePointer2, MoveUpRight, PenTool, Pencil, RectangleHorizontal, Slice, Smile, Square, SquareDashed, SquareRoundCorner, Star, StickyNote, Triangle, Type } from 'lucide-react';
+import { ChevronRight, Circle, Cylinder, Diamond, FileText, Frame, Hand, ImagePlus, MessageCircle, MessageSquare, Minus, MousePointer2, MoveUpRight, PenTool, Pencil, RectangleHorizontal, Slice, Smile, Square, SquareDashed, SquareRoundCorner, Star, StickyNote, Triangle, Type } from 'lucide-react';
 import type { Editor, Tool } from '../../engine/editor.ts';
 import { STAMPS } from '../../engine/templates.ts';
 import { IconButton, MOD, Menu, SHIFT } from '../components.tsx';
@@ -54,6 +54,7 @@ const GROUPS: Group[] = [
       { tool: 'cylinder', label: 'Cylinder (database)', key: '', Icon: Cylinder },
       { tool: 'document', label: 'Document', key: '', Icon: FileText },
       { tool: 'chevron', label: 'Chevron', key: '', Icon: ChevronRight },
+      { tool: 'bubble', label: 'Speech bubble', key: '', Icon: MessageSquare },
     ],
   },
   {

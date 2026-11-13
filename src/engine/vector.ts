@@ -157,6 +157,17 @@ export function smoothPath(pts: Point[]): VectorPoint[] {
   });
 }
 
+/**
+ * A speech bubble's tail: how tall it is (below the body), where it starts along the bottom and
+ * how wide its base is. Fixed sizes, so the tail keeps its shape however the bubble is resized.
+ */
+export function bubbleTail(w: number, h: number) {
+  const height = Math.min(20, h * 0.3);
+  const radius = Math.min(12, w / 4, (h - height) / 4);
+  const x = Math.max(radius, Math.min(w * 0.15, 28));
+  return { height, radius, x, width: Math.max(0, Math.min(24, w - x - radius)) };
+}
+
 /** Outlines of the diagram shapes, filling a w × h box. */
 function diagramVector(kind: NonNullable<SceneNode['shape']>['kind'], w: number, h: number): Vector | null {
   const P = (x: number, y: number, inn?: Point, out?: Point): VectorPoint => ({
@@ -171,6 +182,29 @@ function diagramVector(kind: NonNullable<SceneNode['shape']>['kind'], w: number,
     case 'parallelogram': {
       const k = Math.min(w * 0.2, h);
       return { closed: true, points: [P(k, 0), P(w, 0), P(w - k, h), P(0, h)] };
+    }
+    case 'bubble': {
+      // a rounded box with a tail from its bottom edge down to the box's bottom
+      const t = bubbleTail(w, h);
+      const r = t.radius;
+      const b = h - t.height;
+      const k = r * KAPPA;
+      return {
+        closed: true,
+        points: [
+          P(r, 0, { x: r - k, y: 0 }),
+          P(w - r, 0, undefined, { x: w - r + k, y: 0 }),
+          P(w, r, { x: w, y: r - k }),
+          P(w, b - r, undefined, { x: w, y: b - r + k }),
+          P(w - r, b, { x: w - r + k, y: b }),
+          P(t.x + t.width, b),
+          P(t.x, h),
+          P(t.x, b),
+          P(r, b, undefined, { x: r - k, y: b }),
+          P(0, b - r, { x: 0, y: b - r + k }),
+          P(0, r, undefined, { x: 0, y: r - k }),
+        ],
+      };
     }
     case 'chevron': {
       const k = Math.min(w * 0.25, h / 2);

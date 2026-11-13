@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Editor, type PointerInput } from '../../src/engine/editor.ts';
 import { svgMarkup } from '../../src/engine/export.ts';
-import { labelNode, lineMidpoint } from '../../src/engine/labels.ts';
+import { heightForLabel, labelNode, lineMidpoint } from '../../src/engine/labels.ts';
+import { shapeVector } from '../../src/engine/vector.ts';
 import { SceneNodeSchema, validateTree } from '../../shared/schema.ts';
 
 const ptr = (sx: number, sy: number): PointerInput => ({ sx, sy, button: 0, shift: false, alt: false, mod: false });
@@ -45,7 +46,7 @@ describe('diagramming', () => {
 
   it('draws diagram shapes, sticky notes and connector text', () => {
     const ed = setup();
-    for (const tool of ['diamond', 'parallelogram', 'cylinder', 'document', 'chevron'] as const) {
+    for (const tool of ['diamond', 'parallelogram', 'cylinder', 'document', 'chevron', 'bubble'] as const) {
       const id = draw(ed, tool, [100, 100], [220, 180]);
       const n = ed.doc.get(id)!;
       expect(n.shape!.kind).toBe(tool);
@@ -66,6 +67,26 @@ describe('diagramming', () => {
     const mid = lineMidpoint(l);
     const ln = labelNode(l)!;
     expect(ln.x + ln.width / 2).toBeCloseTo(mid.x, 1);
+    valid(ed);
+  });
+
+  it('a speech bubble keeps its tail when resized, and its text stays above the tail', () => {
+    const ed = setup();
+    const id = draw(ed, 'bubble', [100, 100], [260, 200]);
+    const n = ed.doc.get(id)!;
+    const tip = (v: ReturnType<typeof shapeVector>) => v.points.reduce((a, p) => (p.y > a.y ? p : a));
+    expect(tip(n.vector!)).toMatchObject({ x: 24, y: 100 });
+    // twice as big: the tail is the same size, still at the bottom
+    const big = shapeVector(n.shape!, 320, 200);
+    expect(tip(big)).toMatchObject({ x: 28, y: 200 });
+    expect(big.points.find((p) => p.x === 28 && p.y < 200)?.y).toBe(180); // the tail's base, 20 above
+
+    ed.startLabelEdit(id);
+    ed.commitLabelEdit('Hi');
+    const b = ed.doc.get(id)!;
+    const ln = labelNode(b)!;
+    expect(ln.y + ln.height / 2).toBeCloseTo((b.height - 20) / 2, 1);
+    expect(heightForLabel(b, 'a\nb\nc\nd\ne')).toBeGreaterThan(b.height);
     valid(ed);
   });
 

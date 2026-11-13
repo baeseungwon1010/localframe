@@ -82,6 +82,7 @@ export const editorChrome: Record<string, string> = {
   Cylinder: '원통',
   Document: '문서',
   Chevron: '셰브론',
+  'Speech bubble': '말풍선',
   Pen: '펜',
   Pencil: '연필',
   Text: '텍스트',
@@ -131,6 +132,7 @@ export const editorChrome: Record<string, string> = {
   'Drag to draw a database. Double-click a shape to write in it.': '드래그해서 데이터베이스를 그리세요. 도형을 더블클릭하면 글을 쓸 수 있어요.',
   'Drag to draw a document. Double-click a shape to write in it.': '드래그해서 문서를 그리세요. 도형을 더블클릭하면 글을 쓸 수 있어요.',
   'Drag to draw a process step. Double-click a shape to write in it.': '드래그해서 처리 단계를 그리세요. 도형을 더블클릭하면 글을 쓸 수 있어요.',
+  'Drag to draw a speech bubble. Double-click it to write in it.': '드래그해서 말풍선을 그리세요. 더블클릭하면 글을 쓸 수 있어요.',
   'Drag points and handles. {alt}drag a handle to break the curve. Enter or Esc to finish.':
     '포인트와 핸들을 드래그하세요. {alt}키를 누른 채 핸들을 드래그하면 곡선이 꺾여요. Enter나 Esc를 누르면 끝나요.',
   'Drag to move the image in its shape; set the zoom on the right. Enter or Esc to finish.':

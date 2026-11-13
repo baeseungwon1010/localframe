@@ -34,6 +34,7 @@ const TOOL_HINTS: Partial<Record<Tool, string>> = {
   cylinder: 'Drag to draw a database. Double-click a shape to write in it.',
   document: 'Drag to draw a document. Double-click a shape to write in it.',
   chevron: 'Drag to draw a process step. Double-click a shape to write in it.',
+  bubble: 'Drag to draw a speech bubble. Double-click it to write in it.',
 };
 
 /** One line of help at the bottom of the canvas for the tool or mode in use. */

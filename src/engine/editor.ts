@@ -91,8 +91,8 @@ import { CONNECTOR_COLOR, DEFAULT_SHAPE_COLOR, DEFAULT_STICKY_COLOR, DIAGRAM_COL
 
 export { fitText };
 
-export type DiagramShape = 'diamond' | 'parallelogram' | 'cylinder' | 'document' | 'chevron';
-const DIAGRAM_SHAPES: readonly string[] = ['diamond', 'parallelogram', 'cylinder', 'document', 'chevron'];
+export type DiagramShape = 'diamond' | 'parallelogram' | 'cylinder' | 'document' | 'chevron' | 'bubble';
+const DIAGRAM_SHAPES: readonly string[] = ['diamond', 'parallelogram', 'cylinder', 'document', 'chevron', 'bubble'];
 
 export type Tool = DiagramShape | 'sticky' | 'stamp' | 'box' | 'move' | 'hand' | 'frame' | 'section' | 'slice' | 'pencil' | 'rect' | 'ellipse' | 'polygon' | 'star' | 'line' | 'arrow' | 'text' | 'pen' | 'comment';
 
@@ -207,6 +207,7 @@ const TOOL_TYPE: Partial<Record<Tool, NodeType>> = {
   cylinder: 'VECTOR',
   document: 'VECTOR',
   chevron: 'VECTOR',
+  bubble: 'VECTOR',
   polygon: 'VECTOR',
   star: 'VECTOR',
   text: 'TEXT',
@@ -4357,7 +4358,7 @@ export class Editor {
       let node = createNode(this.doc, type, it.parentId, {
         x: round2(at.x),
         y: round2(at.y),
-        width: it.tool === 'sticky' ? 200 : it.tool === 'box' ? 160 : it.tool === 'parallelogram' || it.tool === 'chevron' || it.tool === 'document' ? 140 : 100,
+        width: it.tool === 'sticky' ? 200 : it.tool === 'box' ? 160 : it.tool === 'parallelogram' || it.tool === 'chevron' || it.tool === 'document' || it.tool === 'bubble' ? 140 : 100,
         height: type === 'LINE' ? 0 : it.tool === 'sticky' ? 200 : it.tool === 'box' ? 80 : 100,
       });
       if (it.tool === 'arrow') node = { ...node, arrowEnd: true, name: nextName(this.doc, 'Arrow') };

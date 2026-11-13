@@ -30,7 +30,8 @@ export const editorPanels: Record<string, string> = {
   Parallelogram: '평행사변형',
   Cylinder: '원기둥',
   Document: '문서',
-  Chevron: '쉐브론',
+  Chevron: '셰브론',
+  Bubble: '말풍선',
 
   // section titles
   Background: '배경',
