@@ -27,6 +27,19 @@ It prints the problems too, and exits 1 on a spec it can't read or a diagram wit
 again. Stop when there are no warnings left that you can fix and the picture says what it should.
 Never edit the `.localframe.json` to fix layout: change the spec.
 
+## Without a terminal: a link, or a paste
+
+An AI in a chat (with no tools to run) can still hand over a finished diagram:
+
+- **A link.** `https://baeseungwon1010.github.io/localframe/#/diagram/` followed by the spec as
+  JSON, percent-encoded (what `encodeURIComponent` does). Opening it draws the diagram, shows it
+  and offers to save it. The spec stays in the link: the part after `#` never reaches a server.
+  Chat apps may cut links over about 8000 characters, so keep the spec short.
+- **A paste.** Copy the spec's JSON, open localframe and press Ctrl+V (⌘V) on the file list, or
+  use Import file on a `.json` file holding it. It opens as a board.
+
+Without the picture and the lint, check the spec against the rules below before handing it over.
+
 ## The spec
 
 ```json

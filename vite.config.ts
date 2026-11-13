@@ -196,6 +196,30 @@ function installableApp(): Plugin {
 }
 
 /**
+ * `llms.txt`: what an AI reading the site needs to draw a diagram in it, which is the diagram spec
+ * guide (docs/diagram-spec.md) under a short note on what the site is.
+ */
+function llmsTxt(): Plugin {
+  return {
+    name: 'localframe-llms-txt',
+    generateBundle() {
+      const guide = readFileSync(join(process.cwd(), 'docs/diagram-spec.md'), 'utf8').replace(/^# .*\n/, '');
+      const source = [
+        '# localframe',
+        '',
+        '> A design and diagram editor that runs in the browser and keeps files on the device. An AI can draw a diagram in it by writing a short JSON spec of what the diagram says; localframe does the layout and the look.',
+        '',
+        'To give someone a diagram, write a spec as described below and send them a link to it (see "Without a terminal"). The rest of this file is the guide to specs.',
+        '',
+        guide.trim(),
+        '',
+      ].join('\n');
+      this.emitFile({ type: 'asset', fileName: 'llms.txt', source });
+    },
+  };
+}
+
+/**
  * `virtual:lucide-icons`: every Lucide icon as [name, elements] plus the Lucide license, read from
  * the installed lucide-react package at build time (its icon files hold plain object literals, so
  * nothing is run). The app imports it only when the icon picker opens.
@@ -224,7 +248,7 @@ function lucideIcons(): Plugin {
 }
 
 export default defineConfig(({ mode }) => ({
-  plugins: mode === 'web' ? [react(), woff2Only(), lucideIcons(), webCsp(), installableApp()] : [react(), woff2Only(), lucideIcons()],
+  plugins: mode === 'web' ? [react(), woff2Only(), lucideIcons(), webCsp(), installableApp(), llmsTxt()] : [react(), woff2Only(), lucideIcons()],
   base: mode === 'web' ? (process.env.LOCALFRAME_BASE ?? '/localframe/') : '/',
   define: {
     ...(mode === 'web' ? { 'import.meta.env.VITE_STORAGE': JSON.stringify('browser') } : {}),
