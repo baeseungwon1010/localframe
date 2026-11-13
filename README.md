@@ -278,6 +278,11 @@ guide), `diagram_render` (a spec in; a picture at reading size, the lint and a l
 anywhere. Claude Code picks it up from `.mcp.json` when opened in this repository. Pictures need a
 Chromium: Playwright's, or Chrome or Edge on the machine.
 
+For Claude Desktop it comes as an extension, with no config to edit: download
+[localframe.mcpb](https://baeseungwon1010.github.io/localframe/localframe.mcpb) and open it (or drop
+it on Settings → Extensions), then ask Claude for a diagram. `npm run build:mcpb` builds it into
+`dist-mcpb/`; the deploy puts it on the site.
+
 ### Languages
 
 The interface is in English and Korean: it follows the browser's language, and the language button

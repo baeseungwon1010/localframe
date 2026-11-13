@@ -42,6 +42,8 @@ jobs:
           LOCALFRAME_SITE_URL: ${{ vars.SITE_URL || format('https://{0}.github.io/{1}/', github.repository_owner, github.event.repository.name) }}
           # "Send feedback" opens a new issue here
           LOCALFRAME_FEEDBACK_URL: https://github.com/${{ github.repository }}/issues/new
+      # the Claude Desktop extension, downloadable from the site
+      - run: npm run build:mcpb && cp dist-mcpb/localframe.mcpb dist-web/
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
