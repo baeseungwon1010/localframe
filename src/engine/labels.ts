@@ -46,7 +46,7 @@ export function lineMidpoint(n: SceneNode): Point {
   const pts = linePoints(n);
   let total = 0;
   for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
-  let left = total / 2;
+  let left = total * (n.labelAt ?? 0.5);
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1];
     const b = pts[i];

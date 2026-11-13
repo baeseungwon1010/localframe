@@ -482,6 +482,8 @@ export const SceneNodeSchema = z
     /** Text inside a shape, or along a connector (like FigJam). */
     label: TextStyleSchema.optional(),
     labelColor: hexColor.optional(),
+    /** Where along a connector its text sits, as a share of its length (the middle if unset). */
+    labelAt: z.number().min(0).max(1).optional(),
     /** A rectangle used as a sticky note: its text starts top-left. */
     sticky: z.boolean().optional(),
     /** A frame used as a slice: never drawn, holds nothing, exports the area under it. */
