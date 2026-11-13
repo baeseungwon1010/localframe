@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "localframe": {
+      "command": "node",
+      "args": ["scripts/mcp.ts"]
+    }
+  }
+}

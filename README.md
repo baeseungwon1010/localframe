@@ -268,6 +268,16 @@ would trip over (text too small to read, crossings, crowded steps). It is meant 
 much as people: they describe, the tool draws, and they fix what the lint reports.
 See [docs/diagram-spec.md](docs/diagram-spec.md).
 
+The web app draws specs too: a `#/diagram/<spec>` link opens one (the spec stays in the link and
+never reaches a server), and a spec pasted on the file list or imported as a `.json` opens as a
+board. The site publishes the guide as `llms.txt`, so an AI in a chat can write such a link.
+
+**For AI apps (MCP).** `scripts/mcp.ts` is an MCP server with three tools: `diagram_guide` (the
+guide), `diagram_render` (a spec in; a picture at reading size, the lint and a link out) and
+`diagram_save` (writes the `.localframe.json` and a PNG). It runs on your machine and sends nothing
+anywhere. Claude Code picks it up from `.mcp.json` when opened in this repository. Pictures need a
+Chromium: Playwright's, or Chrome or Edge on the machine.
+
 ### Languages
 
 The interface is in English and Korean: it follows the browser's language, and the language button
