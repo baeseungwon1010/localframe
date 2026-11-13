@@ -62,15 +62,33 @@ export type Measure = (text: string, font: string) => number;
 
 let measureCtx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null;
 
+/**
+ * Roughly how wide text is, in ems, without a canvas: Hangul, kana and CJK are a full em, capitals
+ * wider than lowercase, spaces and punctuation narrow. Close enough to size boxes with some room.
+ */
+function estimateWidth(text: string): number {
+  let w = 0;
+  for (const ch of text) {
+    const c = ch.codePointAt(0)!;
+    if ((c >= 0x1100 && c <= 0x11ff) || (c >= 0x2e80 && c <= 0xa4cf) || (c >= 0xac00 && c <= 0xd7a3) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0xff00 && c <= 0xffef)) w += 0.95;
+    else if (ch === ' ') w += 0.28;
+    else if (/[A-Z0-9]/.test(ch)) w += 0.66;
+    else if (/[a-z]/.test(ch)) w += 0.55;
+    else if (/[.,:;'"!|()[\]{}·-]/.test(ch)) w += 0.32;
+    else w += 0.6;
+  }
+  return w;
+}
+
 export const canvasMeasure: Measure = (text, font) => {
   if (!measureCtx) {
     if (typeof OffscreenCanvas !== 'undefined') measureCtx = new OffscreenCanvas(1, 1).getContext('2d');
     else if (typeof document !== 'undefined') measureCtx = document.createElement('canvas').getContext('2d');
   }
   if (!measureCtx) {
-    // No canvas (tests, server): a rough estimate from the font size.
+    // No canvas (tests, scripts, server): an estimate from the font size, by kind of character
     const size = Number(/(\d+(?:\.\d+)?)px/.exec(font)?.[1] ?? 16);
-    return [...text].length * size * 0.5;
+    return estimateWidth(text) * size;
   }
   measureCtx.font = font;
   return measureCtx.measureText(text).width;
