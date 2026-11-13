@@ -357,7 +357,7 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
       ctx.closePath();
       haloStroke(ctx, c);
     }
-    if (!editor.isInteracting || editor.interactionKind === 'resize' || editor.interactionKind === 'line-end') {
+    if (!editor.isInteracting || editor.interactionKind === 'resize' || editor.interactionKind === 'line-end' || editor.interactionKind === 'bubble-tail') {
       const { w, h } = editor.selectionFrame();
       const screenW = Math.abs(w * v.zoom);
       const screenH = Math.abs(h * v.zoom);
@@ -370,7 +370,7 @@ export function renderEditor(ctx: CanvasRenderingContext2D, editor: Editor, dpr:
         ctx.beginPath();
         const line = handle.kind === 'line-end' ? sel[0] : null;
         const bound = line && (handle.kind === 'line-end' && handle.end === 0 ? line.startBind : line.endBind);
-        if (handle.kind === 'line-end') ctx.arc(at.x, at.y, bound ? 5.5 : 4.5, 0, Math.PI * 2);
+        if (handle.kind === 'line-end' || handle.kind === 'bubble-tail') ctx.arc(at.x, at.y, bound ? 5.5 : 4.5, 0, Math.PI * 2);
         else ctx.rect(crisp(at.x - s / 2), crisp(at.y - s / 2), s - 1, s - 1);
         // attached connector ends are filled, loose ends are hollow
         ctx.fillStyle = bound ? c.accent : c.handleFill;

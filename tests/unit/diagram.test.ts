@@ -90,6 +90,32 @@ describe('diagramming', () => {
     valid(ed);
   });
 
+  it("a speech bubble's tail is dragged round to any side", () => {
+    const ed = setup();
+    const id = draw(ed, 'bubble', [100, 100], [260, 200]);
+    ed.setSelection([id]);
+    const tip = ed.handlePositions().find((h) => h.handle.kind === 'bubble-tail')!.at;
+    expect(ed.handleAt(tip.x, tip.y)).toEqual({ kind: 'bubble-tail' });
+    // pull it out past the right side, two thirds of the way down
+    ed.pointerDown(ptr(tip.x, tip.y));
+    ed.pointerMove(ptr(200, 170));
+    ed.pointerMove(ptr(300, 167));
+    ed.pointerUp(ptr(300, 167));
+    const n = ed.doc.get(id)!;
+    expect(n.shape!.tail).toEqual({ side: 'right', at: 0.67 });
+    const far = n.vector!.points.reduce((a, p) => (p.x > a.x ? p : a));
+    expect(far).toMatchObject({ x: 160, y: 67 });
+    // the text keeps clear of the tail
+    ed.startLabelEdit(id);
+    ed.commitLabelEdit('Hi');
+    const ln = labelNode(ed.doc.get(id)!)!;
+    expect(ln.x + ln.width).toBeLessThanOrEqual(140);
+    ed.undo();
+    ed.undo();
+    expect(ed.doc.get(id)!.shape!.tail).toBeUndefined();
+    valid(ed);
+  });
+
   it('quick connect adds the same shape beyond a side, joined by an elbow arrow', () => {
     const ed = setup();
     const a = draw(ed, 'diamond', [100, 100], [200, 180]);

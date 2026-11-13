@@ -494,6 +494,8 @@ export const SceneNodeSchema = z
         kind: z.enum(['polygon', 'star', 'diamond', 'parallelogram', 'cylinder', 'document', 'chevron', 'bubble']),
         count: z.number().int().min(3).max(60),
         ratio: z.number().min(0.01).max(1),
+        /** A speech bubble's tail: the side it comes from and where along it (0 to 1) its tip is. */
+        tail: z.object({ side: z.enum(['top', 'right', 'bottom', 'left']), at: z.number().min(0).max(1) }).strict().optional(),
       })
       .strict()
       .optional(),

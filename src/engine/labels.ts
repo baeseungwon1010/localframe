@@ -2,7 +2,7 @@ import type { SceneNode, TextStyle } from '../../shared/schema.ts';
 import { linePoints } from './geometry.ts';
 import { type Mat, type Point, multiply, rotateDeg, translate } from './math.ts';
 import { layoutText } from './text.ts';
-import { bubbleTail } from './vector.ts';
+import { bubbleParts } from './vector.ts';
 
 /** Shapes and lines that can hold text. */
 export const canHaveLabel = (n: SceneNode) =>
@@ -90,7 +90,9 @@ export function labelNode(n: SceneNode, characters = n.label?.characters ?? ''):
     return { ...base, x: mid.x - width / 2, y: mid.y - layout.height / 2, width, height: layout.height, text: { ...t, autoResize: 'height' } };
   }
   const pad = n.sticky ? 16 : 8;
-  const full = Math.max(1, n.width - pad * 2);
+  // a bubble's text sits in its body, clear of the tail
+  const box = n.shape?.kind === 'bubble' ? bubbleParts(n.shape, n.width, n.height).body : { x: 0, y: 0, width: n.width, height: n.height };
+  const full = Math.max(1, box.width - pad * 2);
   // narrow shapes keep text in their middle, but never so narrow that a word breaks in two
   const longest =
     widthFactor(n) < 1
@@ -100,10 +102,8 @@ export function labelNode(n: SceneNode, characters = n.label?.characters ?? ''):
   const layout = layoutText({ ...t, characters: characters || ' ' }, width);
   // a chevron's body sits right of its notch
   const shift = n.shape?.kind === 'chevron' ? Math.min(n.width * 0.25, n.height / 2) / 2 : 0;
-  const x = (n.width - width) / 2 + shift;
-  // a bubble's text sits in its body, above the tail
-  const body = n.shape?.kind === 'bubble' ? n.height - bubbleTail(n.width, n.height).height : n.height;
-  const y = n.sticky ? pad : (body - layout.height) / 2;
+  const x = box.x + (box.width - width) / 2 + shift;
+  const y = n.sticky ? pad : box.y + (box.height - layout.height) / 2;
   return { ...base, x, y, width, height: layout.height, text: { ...t, autoResize: 'height' } };
 }
 
@@ -134,7 +134,7 @@ export function heightForLabel(n: SceneNode, characters = n.label?.characters ??
   const ln = labelNode(n.label ? n : { ...n, label: defaultLabel(n) }, characters);
   if (!ln) return n.height;
   const pad = n.sticky ? 16 : 8;
-  const tail = n.shape?.kind === 'bubble' ? bubbleTail(n.width, n.height).height : 0;
+  const tail = n.shape?.kind === 'bubble' ? n.height - bubbleParts(n.shape, n.width, n.height).body.height : 0;
   const need = Math.ceil(ln.height / heightFactor(n) + pad * 2 + tail);
   return Math.min(100_000, Math.max(n.height, need));
 }

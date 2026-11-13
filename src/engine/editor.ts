@@ -76,7 +76,7 @@ import {
 import { canHaveChildren, createNode, fitText, keyAt, keyOnTop, keysAbove, keysOnTop, newId, nextName, solid } from './nodes.ts';
 import { canvasMeasure } from './text.ts';
 import { type RunProps, adjustRuns, styleRange } from './textRuns.ts';
-import { fitVector, outlineVector, scaleVector, shapeVector, simplifyPoints, smoothPath } from './vector.ts';
+import { bubbleParts, bubbleTailAt, fitVector, outlineVector, scaleVector, shapeVector, simplifyPoints, smoothPath } from './vector.ts';
 import type * as PathOps from './pathOps.ts';
 
 /** Outlining and boolean geometry (polygon clipping) load the first time they are needed. */
@@ -117,7 +117,8 @@ export type KeyInput = { code: string; key: string; shift: boolean; alt: boolean
 export type SelectionHandle =
   | { kind: 'resize'; handle: Handle }
   | { kind: 'rotate'; handle: Handle }
-  | { kind: 'line-end'; end: 0 | 1 };
+  | { kind: 'line-end'; end: 0 | 1 }
+  | { kind: 'bubble-tail' };
 
 type HistoryEntry = {
   patches: Patch[];
@@ -176,6 +177,7 @@ type Interaction =
   | { kind: 'guide'; axis: 'x' | 'y'; index: number | null }
   | { kind: 'crop'; id: string; start: Point; original: { x: number; y: number; scale: number } }
   | { kind: 'line-end'; id: string; end: 0 | 1; original: SceneNode; bind?: Binding }
+  | { kind: 'bubble-tail'; id: string }
   | { kind: 'create'; tool: Tool; start: Point; startScreen: Point; nodeId: string | null; parentId: string | null; endBind?: Binding }
   | { kind: 'pen-handle' }
   | { kind: 'quick-connect'; side: 'top' | 'right' | 'bottom' | 'left' }
@@ -3002,10 +3004,16 @@ export class Editor {
       ];
     }
     const { m, w, h } = this.selectionFrame();
-    return HANDLES.map((handle) => ({
+    const handles: { handle: SelectionHandle; at: Point }[] = HANDLES.map((handle) => ({
       handle: { kind: 'resize' as const, handle },
       at: apply(m, { x: HANDLE_POS[handle].x * w, y: HANDLE_POS[handle].y * h }),
     }));
+    // a speech bubble's tail tip, first so it wins over a resize handle it sits on
+    const n = sel[0];
+    if (sel.length === 1 && n.shape?.kind === 'bubble' && !this.doc.isEffectivelyLocked(n.id)) {
+      handles.unshift({ handle: { kind: 'bubble-tail' }, at: apply(m, bubbleParts(n.shape, n.width, n.height).tipPoint) });
+    }
+    return handles;
   }
 
   /** Screen matrix and size of the selection box (rotated for one node, axis-aligned for many). */
@@ -3197,7 +3205,9 @@ export class Editor {
   private startHandleDrag(handle: SelectionHandle, p: Point) {
     const sel = this.selectedNodes();
     this.begin();
-    if (handle.kind === 'line-end') {
+    if (handle.kind === 'bubble-tail') {
+      this.interaction = { kind: 'bubble-tail', id: sel[0].id };
+    } else if (handle.kind === 'line-end') {
       const loose: SceneNode = handle.end === 0 ? { ...sel[0], startBind: undefined } : { ...sel[0], endBind: undefined };
       this.put(loose);
       this.interaction = { kind: 'line-end', id: sel[0].id, end: handle.end, original: loose, bind: handle.end === 0 ? sel[0].startBind : sel[0].endBind };
@@ -3322,6 +3332,15 @@ export class Editor {
         return this.updateMove(it, p, e);
       case 'resize':
         return this.updateResize(it, p, e);
+      case 'bubble-tail': {
+        // the tail comes from the side the pointer is beyond, its tip as near the pointer as fits
+        const n = this.doc.get(it.id);
+        if (!n?.shape) return;
+        const tail = bubbleTailAt(n.width, n.height, apply(invert(this.doc.world(n.id)), p));
+        if (tail.side !== n.shape.tail?.side || tail.at !== n.shape.tail.at) this.put({ ...n, shape: { ...n.shape, tail } });
+        this.emit('doc');
+        return;
+      }
       case 'rotate': {
         const a0 = Math.atan2(it.start.y - it.center.y, it.start.x - it.center.x);
         const a1 = Math.atan2(p.y - it.center.y, p.x - it.center.x);
@@ -3440,6 +3459,7 @@ export class Editor {
       case 'resize':
       case 'rotate':
       case 'rotate-many':
+      case 'bubble-tail':
         this.end();
         break;
       case 'guide':
@@ -4701,6 +4721,7 @@ export class Editor {
     const h = this.handleAt(sx, sy);
     if (!h) return 'default';
     if (h.kind === 'line-end') return 'crosshair';
+    if (h.kind === 'bubble-tail') return 'move';
     if (h.kind === 'rotate') return 'alias';
     const { m } = this.selectionFrame();
     const angle = (Math.atan2(m[1], m[0]) / DEG + 360) % 180;

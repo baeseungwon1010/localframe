@@ -157,26 +157,60 @@ export function smoothPath(pts: Point[]): VectorPoint[] {
   });
 }
 
+type Shape = NonNullable<SceneNode['shape']>;
+type Side = 'top' | 'right' | 'bottom' | 'left';
+
 /**
- * A speech bubble's tail: how tall it is (below the body), where it starts along the bottom and
- * how wide its base is. Fixed sizes, so the tail keeps its shape however the bubble is resized.
+ * A speech bubble's parts. Worked out as if the tail came from the bottom: `len` runs along the
+ * tail's side, `depth` across it, and `toBox` turns those into the bubble's own coordinates. The
+ * tail keeps a fixed size however the bubble is resized; its base leans towards the middle.
  */
-export function bubbleTail(w: number, h: number) {
-  const height = Math.min(20, h * 0.3);
-  const radius = Math.min(12, w / 4, (h - height) / 4);
-  const x = Math.max(radius, Math.min(w * 0.15, 28));
-  return { height, radius, x, width: Math.max(0, Math.min(24, w - x - radius)) };
+export function bubbleParts(shape: Shape, w: number, h: number) {
+  const side: Side = shape.tail?.side ?? 'bottom';
+  const across = side === 'left' || side === 'right';
+  const len = across ? h : w;
+  const depth = across ? w : h;
+  const tail = Math.min(20, depth * 0.3);
+  const radius = Math.min(12, len / 4, (depth - tail) / 4);
+  const base = Math.min(24, Math.max(0, len - radius * 2));
+  const at = shape.tail ? shape.tail.at * len : Math.min(len * 0.15, 28);
+  const tip = Math.max(radius, Math.min(len - radius, at));
+  // the base runs from the tip towards the middle, kept off the rounded corners
+  const toRight = tip <= len / 2;
+  const a = toRight ? tip : Math.max(radius, tip - base);
+  const b = toRight ? Math.min(len - radius, tip + base) : tip;
+  const toBox = (p: Point): Point =>
+    side === 'bottom' ? p : side === 'top' ? { x: p.x, y: h - p.y } : side === 'right' ? { x: p.y, y: p.x } : { x: w - p.y, y: p.x };
+  // where text goes: the box without the tail's strip
+  const body =
+    side === 'bottom'
+      ? { x: 0, y: 0, width: w, height: h - tail }
+      : side === 'top'
+        ? { x: 0, y: tail, width: w, height: h - tail }
+        : side === 'right'
+          ? { x: 0, y: 0, width: w - tail, height: h }
+          : { x: tail, y: 0, width: w - tail, height: h };
+  return { side, len, depth, tail, radius, tip, a, b, toBox, body, tipPoint: toBox({ x: tip, y: depth }) };
+}
+
+/** The side and place along it for a bubble's tail pulled to `p` (in the bubble's coordinates). */
+export function bubbleTailAt(w: number, h: number, p: Point): { side: Side; at: number } {
+  const dx = (p.x - w / 2) / (w || 1);
+  const dy = (p.y - h / 2) / (h || 1);
+  const side: Side = Math.abs(dy) >= Math.abs(dx) ? (dy > 0 ? 'bottom' : 'top') : dx > 0 ? 'right' : 'left';
+  const at = side === 'top' || side === 'bottom' ? p.x / (w || 1) : p.y / (h || 1);
+  return { side, at: Math.round(Math.max(0, Math.min(1, at)) * 1e4) / 1e4 };
 }
 
 /** Outlines of the diagram shapes, filling a w × h box. */
-function diagramVector(kind: NonNullable<SceneNode['shape']>['kind'], w: number, h: number): Vector | null {
+function diagramVector(shape: Shape, w: number, h: number): Vector | null {
   const P = (x: number, y: number, inn?: Point, out?: Point): VectorPoint => ({
     x: round2(x),
     y: round2(y),
     ...(inn ? { in: { x: round2(inn.x), y: round2(inn.y) } } : {}),
     ...(out ? { out: { x: round2(out.x), y: round2(out.y) } } : {}),
   });
-  switch (kind) {
+  switch (shape.kind) {
     case 'diamond':
       return { closed: true, points: [P(w / 2, 0), P(w, h / 2), P(w / 2, h), P(0, h / 2)] };
     case 'parallelogram': {
@@ -184,27 +218,27 @@ function diagramVector(kind: NonNullable<SceneNode['shape']>['kind'], w: number,
       return { closed: true, points: [P(k, 0), P(w, 0), P(w - k, h), P(0, h)] };
     }
     case 'bubble': {
-      // a rounded box with a tail from its bottom edge down to the box's bottom
-      const t = bubbleTail(w, h);
-      const r = t.radius;
-      const b = h - t.height;
+      // a rounded box with a tail, drawn as if from the bottom and then turned to its side
+      const t = bubbleParts(shape, w, h);
+      const [L, r, B] = [t.len, t.radius, t.depth - t.tail];
       const k = r * KAPPA;
-      return {
+      const v: Vector = {
         closed: true,
         points: [
           P(r, 0, { x: r - k, y: 0 }),
-          P(w - r, 0, undefined, { x: w - r + k, y: 0 }),
-          P(w, r, { x: w, y: r - k }),
-          P(w, b - r, undefined, { x: w, y: b - r + k }),
-          P(w - r, b, { x: w - r + k, y: b }),
-          P(t.x + t.width, b),
-          P(t.x, h),
-          P(t.x, b),
-          P(r, b, undefined, { x: r - k, y: b }),
-          P(0, b - r, { x: 0, y: b - r + k }),
+          P(L - r, 0, undefined, { x: L - r + k, y: 0 }),
+          P(L, r, { x: L, y: r - k }),
+          P(L, B - r, undefined, { x: L, y: B - r + k }),
+          P(L - r, B, { x: L - r + k, y: B }),
+          P(t.b, B),
+          P(t.tip, t.depth),
+          P(t.a, B),
+          P(r, B, undefined, { x: r - k, y: B }),
+          P(0, B - r, { x: 0, y: B - r + k }),
           P(0, r, undefined, { x: 0, y: r - k }),
         ],
       };
+      return t.side === 'bottom' ? v : mapVector(v, (p) => { const q = t.toBox(p); return { x: round2(q.x), y: round2(q.y) }; });
     }
     case 'chevron': {
       const k = Math.min(w * 0.25, h / 2);
@@ -248,7 +282,7 @@ function diagramVector(kind: NonNullable<SceneNode['shape']>['kind'], w: number,
 
 /** Points of a polygon or star filling a w × h box, first point at the top. */
 export function shapeVector(shape: NonNullable<SceneNode['shape']>, w: number, h: number): Vector {
-  const diagram = diagramVector(shape.kind, w, h);
+  const diagram = diagramVector(shape, w, h);
   if (diagram) return diagram;
   const n = shape.kind === 'star' ? shape.count * 2 : shape.count;
   const unit: Point[] = [];
