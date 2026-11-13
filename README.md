@@ -259,6 +259,15 @@ order, gliding from one to the next; arrow keys, a swipe or a tap move on, F goe
 reaches back past a reload: each file's recent history is kept in the browser while the file is as
 that history left it. After an update the file list says once what's new, with a link for feedback.
 
+### Diagrams from a description
+
+`npm run diagram -- spec.json` builds a diagram from a short JSON description of its boxes, edges
+and groups: it lays it out, sizes and colours it with one type scale and colours that mean
+something, and writes a `.localframe.json` to import, a PNG to look at, and a list of what a reader
+would trip over (text too small to read, crossings, crowded steps). It is meant for AI agents as
+much as people: they describe, the tool draws, and they fix what the lint reports.
+See [docs/diagram-spec.md](docs/diagram-spec.md).
+
 ### Languages
 
 The interface is in English and Korean: it follows the browser's language, and the language button
