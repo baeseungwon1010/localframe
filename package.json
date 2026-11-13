@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:e2e:web": "playwright test -c playwright.web.config.ts"
+    "test:e2e:web": "playwright test -c playwright.web.config.ts",
+    "diagram": "node scripts/diagram.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-sans": "5.3.0",
